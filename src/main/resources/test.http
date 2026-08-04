@@ -1,0 +1,41 @@
+### 1. 注册用户（只需执行一次）
+POST http://localhost:8082/api/user/register
+Content-Type: application/json
+
+{
+  "username": "test1",
+  "password": "123456",
+  "department": "技术部",
+  "role": "user"
+}
+
+### 2. 用户登录（可反复执行）
+POST http://localhost:8082/api/user/login
+Content-Type: application/json
+
+{
+  "username": "test1",
+  "password": "123456"
+}
+
+
+
+### 新增股票（把下面 token 的值换成上面登录返回的那一串）
+POST http://localhost:8082/api/stock/add
+Content-Type: application/json
+token: eyJhbGciOiJIUzM4NCJ9.eyJyb2xlIjoidXNlciIsImRlcGFydG1lbnQiOiLmioDmnK_pg6giLCJ1c2VySWQiOjIsInVzZXJuYW1lIjoidGVzdDEiLCJpYXQiOjE3Nzc3MTM5OTQsImV4cCI6MTc3NzgwMDM5NH0.H7Eop1mz9L78TebAeOMwUzTNYknNRaRhK7tc5_7P0R7LqOrHlEngKVq1123X60zk
+
+{
+"stockCode": "600519",
+"stockName": "贵州茅台",
+"recordedPrice": 1680.00,
+"note": "重点关注"
+}
+
+
+
+### 查列表
+GET http://localhost:8082/api/stock/list
+token: eyJhbGciOiJIUzM4NCJ9.eyJyb2xlIjoidXNlciIsImRlcGFydG1lbnQiOiLmioDmnK_pg6giLCJ1c2VySWQiOjIsInVzZXJuYW1lIjoidGVzdDEiLCJpYXQiOjE3Nzc3MTM5OTQsImV4cCI6MTc3NzgwMDM5NH0.H7Eop1mz9L78TebAeOMwUzTNYknNRaRhK7tc5_7P0R7LqOrHlEngKVq1123X60zk
+
+
