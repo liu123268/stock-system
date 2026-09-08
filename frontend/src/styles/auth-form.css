@@ -1,0 +1,159 @@
+.auth-form-heading {
+  margin-bottom: 34px;
+}
+
+.auth-form-heading p {
+  margin-bottom: 13px;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.auth-form-heading h2 {
+  margin-bottom: 13px;
+  color: var(--color-heading);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.18;
+  text-wrap: balance;
+}
+
+.auth-form-heading > span {
+  display: block;
+  max-width: 42ch;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.auth-sheet .el-form-item {
+  margin-bottom: 21px;
+}
+
+.auth-sheet .el-form-item__label {
+  padding-bottom: 8px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.auth-sheet .el-input__wrapper {
+  min-height: 52px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: none;
+  transition:
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out);
+}
+
+.auth-sheet .el-input__wrapper:hover {
+  border-color: var(--color-faint);
+}
+
+.auth-sheet .el-input__wrapper.is-focus {
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-focus) 16%, transparent);
+}
+
+.auth-sheet .el-input__inner::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
+}
+
+.auth-sheet .el-form-item.is-error .el-input__wrapper {
+  border-color: var(--color-danger);
+}
+
+.auth-sheet .el-form-item__error {
+  color: var(--color-danger);
+}
+
+.auth-submit-button {
+  display: flex;
+  width: 100%;
+  height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 9px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius-action);
+  background: var(--color-ink);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+.auth-submit-button:hover:not(:disabled) {
+  background: oklch(0.16 0.006 255);
+}
+
+.auth-submit-button:active:not(:disabled) {
+  transform: scale(0.995);
+}
+
+.auth-submit-button:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.auth-switch-note {
+  margin-top: 26px;
+  color: var(--color-muted);
+  text-align: left;
+  font-size: 13px;
+}
+
+.auth-switch-note button {
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid var(--color-ink);
+  background: none;
+  color: var(--color-ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.auth-switch-note button:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--color-focus) 28%, transparent);
+  outline-offset: 3px;
+}
+
+.auth-security-note {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.auth-security-mark {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid var(--color-faint);
+  border-radius: 50%;
+  color: var(--color-ink);
+  font-size: 10px;
+}
+
+@media (max-width: 520px) {
+  .auth-form-heading h2 {
+    font-size: 29px;
+  }
+}

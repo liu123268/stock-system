@@ -29,6 +29,18 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- 参数校验：校验注册、登录等接口收到的数据是否合法 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Spring Security：提供认证过滤器链、无状态会话配置和 BCrypt -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus：操作数据库 -->
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -43,10 +55,14 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- JDBC：Spring Boot 数据源基础 -->
+        <!-- Flyway：按版本自动创建和升级数据库结构 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
 
         <!-- Lombok：省写get/set -->

@@ -1,8 +1,18 @@
-HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+
+### Local environment and secrets ###
+.env
+.env.*
+!.env.example
+
+### Logs and operating system files ###
+*.log
+*.pid
+.DS_Store
+Thumbs.db
 
 ### STS ###
 .apt_generated
@@ -15,9 +25,13 @@ target/
 
 ### IntelliJ IDEA ###
 .idea
+.run/
 *.iws
 *.iml
 *.ipr
+
+### Local design-tool metadata ###
+.impeccable/
 
 ### NetBeans ###
 /nbproject/private/
