@@ -122,6 +122,27 @@ class LongbridgeJsonRpcClientTest {
     }
 
     @Test
+    void preservesMinuteHistoryBeginDateWithoutExposingUpstreamMessageAsPublicText() throws Exception {
+        FakeProcess fakeProcess = new FakeProcess(server -> {
+            JsonNode request = server.readRequest();
+            server.respondError(
+                    request.path("id").asLong(), 7,
+                    "out of minute candlestick limit begin date:2023-09-01", "301600");
+        });
+
+        try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
+            assertThatThrownBy(() -> client.getCandlesticksOnDate(
+                    "600089.SH", CandlestickPeriod.MINUTE_1, LocalDate.of(2023, 5, 9)))
+                    .isInstanceOfSatisfying(LongbridgeCliException.class, exception -> {
+                        assertThat(exception.minuteHistoryBeginDate())
+                                .contains(LocalDate.of(2023, 9, 1));
+                        assertThat(exception.getMessage())
+                                .doesNotContain("out of minute candlestick limit");
+                    });
+        }
+    }
+
+    @Test
     void requestsHistoricalCandlesticksByMarketDateForLeftEdgeLoading() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
@@ -158,6 +179,40 @@ class LongbridgeJsonRpcClientTest {
             assertThat(client.getIntraday("600519.SH")).hasSize(1);
             assertThat(client.getIntraday("600519.SH")).hasSize(1);
             assertThat(fakeProcess.receivedRequestCount()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void requestsTradingDayByMarketAndCachesTheImmutableDateResult() throws Exception {
+        FakeProcess fakeProcess = new FakeProcess(server -> {
+            JsonNode request = server.readRequest();
+            assertThat(request.path("method").asText()).isEqualTo("quote.trading_days");
+            assertThat(request.path("params").path("market").asText()).isEqualTo("CN");
+            assertThat(request.path("params").path("start").asText()).isEqualTo("2026-09-10");
+            assertThat(request.path("params").path("end").asText()).isEqualTo("2026-09-10");
+            server.respondResult(request.path("id").asLong(),
+                    "{\"trading_days\":[\"2026-09-10\"],\"half_trading_days\":[]}");
+        });
+
+        try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
+            LocalDate date = LocalDate.of(2026, 9, 10);
+            assertThat(client.isTradingDay("600519.SH", date)).isTrue();
+            assertThat(client.isTradingDay("000001.SZ", date)).isTrue();
+            assertThat(fakeProcess.receivedRequestCount()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void treatsHongKongHalfTradingDayAsTradingDay() throws Exception {
+        FakeProcess fakeProcess = new FakeProcess(server -> {
+            JsonNode request = server.readRequest();
+            assertThat(request.path("params").path("market").asText()).isEqualTo("HK");
+            server.respondResult(request.path("id").asLong(),
+                    "{\"trading_days\":[],\"half_trading_days\":[\"2026-12-24\"]}");
+        });
+
+        try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
+            assertThat(client.isTradingDay("00700.HK", LocalDate.of(2026, 12, 24))).isTrue();
         }
     }
 
@@ -349,6 +404,13 @@ class LongbridgeJsonRpcClientTest {
         private void respond(long id, List<String> quoteJsonItems) throws IOException {
             String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":["
                     + String.join(",", quoteJsonItems) + "]}\n";
+            output.write(response.getBytes(StandardCharsets.UTF_8));
+            output.flush();
+        }
+
+        private void respondResult(long id, String resultJson) throws IOException {
+            String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id
+                    + ",\"result\":" + resultJson + "}\n";
             output.write(response.getBytes(StandardCharsets.UTF_8));
             output.flush();
         }

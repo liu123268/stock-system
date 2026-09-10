@@ -70,11 +70,11 @@ Longbridge 官方 CLI 已经完成账号授权并能读取真实行情，但 Jav
 
 ### 完整回答
 
-> 我把供应商传输细节隔离在 `LongbridgeJsonRpcClient` 后，由 Spring Boot 按需启动并独占一个 `longbridge serve` 子进程。页面仍只调用项目 API；Java 只允许四个固定只读行情方法，通过递增 ID 对应乱序响应，并统一处理限流、短缓存、超时、进程退出和关闭。这样复用了官方 CLI 已经完成的认证和长连接，又没有读取它的私有 Token 文件。代价是部署机必须额外安装 CLI、授权必须属于运行 Spring Boot 的同一系统账号，而且同一 Longbridge 账号不能简单水平启动多个行情副本。这个方案是供应商适配层的实现选择，将来 Java SDK 提供可复用的正式授权入口时，可以替换网关实现，不需要改业务 API。
+> 我把供应商传输细节隔离在 `LongbridgeJsonRpcClient` 后，由 Spring Boot 按需启动并独占一个 `longbridge serve` 子进程。页面仍只调用项目 API；Java 只允许报价、最近 K 线、历史 K 线、当天分时和交易日历五个固定只读方法，通过递增 ID 对应乱序响应，并统一处理限流、短缓存、超时、进程退出和关闭。这样复用了官方 CLI 已经完成的认证和长连接，又没有读取它的私有 Token 文件。代价是部署机必须额外安装 CLI、授权必须属于运行 Spring Boot 的同一系统账号，而且同一 Longbridge 账号不能简单水平启动多个行情副本。这个方案是供应商适配层的实现选择，将来 Java SDK 提供可复用的正式授权入口时，可以替换网关实现，不需要改业务 API。
 
 ### 项目证据
 
-- `LongbridgeJsonRpcClient` 只开放报价、最近 K 线、历史 K 线和当天分时四个方法；
+- `LongbridgeJsonRpcClient` 只开放报价、最近 K 线、历史 K 线、当天分时和交易日历五个方法；
 - 报价和当天分时使用 5 秒进程内缓存，K 线与历史批次使用 1 分钟缓存；
 - 普通回归使用假 sidecar，不依赖真实账号；真实探测显式启用并精确核对进程退出；
 - 完整取舍、部署代价和重新评估条件见 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。

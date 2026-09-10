@@ -5,6 +5,8 @@ import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.entity.Stock;
 import com.stock.system.stock.mapper.WorkspaceStockMapper;
 import com.stock.system.stock.market.MarketIntradayLimitExceededException;
+import com.stock.system.stock.market.MarketIntradayHistoryRangeExceededException;
+import com.stock.system.stock.market.MarketIntradayNonTradingDayException;
 import com.stock.system.stock.market.MarketIntradayProvider;
 import com.stock.system.stock.market.MarketIntradayUnavailableException;
 import com.stock.system.stock.market.MarketTradingSessions;
@@ -70,6 +72,15 @@ public class StockIntradayService {
                     LocalDateTime.ofInstant(series.retrievedAt(), PROJECT_ZONE), points);
         } catch (MarketIntradayLimitExceededException exception) {
             throw new BusinessException(ErrorCode.MARKET_INTRADAY_HISTORY_LIMIT_EXCEEDED);
+        } catch (MarketIntradayHistoryRangeExceededException exception) {
+            throw new BusinessException(
+                    ErrorCode.MARKET_INTRADAY_HISTORY_RANGE_EXCEEDED,
+                    "当前账户的历史分钟行情最早可查看至 "
+                            + exception.getEarliestAvailableDate()
+                            + "，请选择该日期或之后的交易日"
+            );
+        } catch (MarketIntradayNonTradingDayException exception) {
+            throw new BusinessException(ErrorCode.MARKET_INTRADAY_NON_TRADING_DAY);
         } catch (MarketIntradayUnavailableException exception) {
             throw new BusinessException(ErrorCode.MARKET_INTRADAY_UNAVAILABLE);
         }

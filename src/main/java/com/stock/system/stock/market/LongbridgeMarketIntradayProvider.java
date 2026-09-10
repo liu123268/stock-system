@@ -1,13 +1,14 @@
 package com.stock.system.stock.market;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.DayOfWeek;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -21,25 +22,41 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
 
     private final LongbridgeIntradayGateway intradayGateway;
     private final LongbridgeCandlestickGateway candlestickGateway;
+    private final LongbridgeTradingDayGateway tradingDayGateway;
+    private final Clock clock;
+
+    @Autowired
+    LongbridgeMarketIntradayProvider(
+            LongbridgeIntradayGateway intradayGateway,
+            LongbridgeCandlestickGateway candlestickGateway,
+            LongbridgeTradingDayGateway tradingDayGateway
+    ) {
+        this(intradayGateway, candlestickGateway, tradingDayGateway, Clock.systemUTC());
+    }
 
     LongbridgeMarketIntradayProvider(
             LongbridgeIntradayGateway intradayGateway,
-            LongbridgeCandlestickGateway candlestickGateway
+            LongbridgeCandlestickGateway candlestickGateway,
+            LongbridgeTradingDayGateway tradingDayGateway,
+            Clock clock
     ) {
         this.intradayGateway = intradayGateway;
         this.candlestickGateway = candlestickGateway;
+        this.tradingDayGateway = tradingDayGateway;
+        this.clock = clock;
     }
 
     @Override
     public MarketIntradaySeries getIntraday(String code, LocalDate tradeDate) {
         ZoneId zone = marketZone(code);
-        LocalDate marketToday = LocalDate.now(zone);
+        LocalDate marketToday = LocalDate.now(clock.withZone(zone));
         if (tradeDate.isAfter(marketToday)) {
             throw new MarketIntradayUnavailableException("Future intraday data is unavailable");
         }
         try {
+            boolean tradingDay = validateTradingDay(code, tradeDate, marketToday);
             List<MarketIntradayPoint> points = tradeDate.equals(marketToday)
-                    ? currentPoints(code)
+                    ? currentPoints(code, tradeDate, zone)
                     : historicalPoints(code, tradeDate);
             if (points.isEmpty()) {
                 throw new MarketIntradayUnavailableException("Longbridge returned no intraday data");
@@ -49,13 +66,18 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
                     zone.getId(),
                     MarketTradingSessions.forSymbol(code),
                     previousClose(code, tradeDate, zone),
-                    isUpdating(tradeDate, zone),
+                    isUpdating(tradeDate, zone, tradingDay),
                     points,
                     SOURCE,
                     false,
-                    Instant.now()
+                    clock.instant()
             );
         } catch (LongbridgeCliException exception) {
+            var earliestDate = exception.minuteHistoryBeginDate();
+            if (earliestDate.isPresent()) {
+                throw new MarketIntradayHistoryRangeExceededException(
+                        earliestDate.get(), exception);
+            }
             if (exception.hasProviderCode("301607")) {
                 throw new MarketIntradayLimitExceededException(exception);
             }
@@ -64,8 +86,23 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
         }
     }
 
-    private List<MarketIntradayPoint> currentPoints(String code) {
+    private boolean validateTradingDay(String code, LocalDate tradeDate, LocalDate marketToday) {
+        if (tradeDate.isBefore(marketToday.minusYears(1))) {
+            return true;
+        }
+        if (!tradingDayGateway.isTradingDay(code, tradeDate)) {
+            throw new MarketIntradayNonTradingDayException();
+        }
+        return true;
+    }
+
+    private List<MarketIntradayPoint> currentPoints(
+            String code,
+            LocalDate tradeDate,
+            ZoneId zone
+    ) {
         return intradayGateway.getIntraday(code).stream()
+                .filter(item -> item.timestamp().atZone(zone).toLocalDate().equals(tradeDate))
                 .sorted(Comparator.comparing(LongbridgeIntradayPoint::timestamp))
                 .map(item -> new MarketIntradayPoint(
                         item.timestamp(), item.price(), item.averagePrice(), item.volume(),
@@ -122,11 +159,9 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
         return MarketTradingSessions.zoneFor(symbol);
     }
 
-    private boolean isUpdating(LocalDate tradeDate, ZoneId zone) {
-        var now = java.time.ZonedDateTime.now(zone);
-        if (!tradeDate.equals(now.toLocalDate())
-                || now.getDayOfWeek() == DayOfWeek.SATURDAY
-                || now.getDayOfWeek() == DayOfWeek.SUNDAY) {
+    private boolean isUpdating(LocalDate tradeDate, ZoneId zone, boolean tradingDay) {
+        var now = java.time.ZonedDateTime.now(clock.withZone(zone));
+        if (!tradingDay || !tradeDate.equals(now.toLocalDate())) {
             return false;
         }
         LocalTime time = now.toLocalTime();

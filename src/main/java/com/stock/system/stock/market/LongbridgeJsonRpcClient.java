@@ -45,7 +45,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Component
 @ConditionalOnProperty(name = "stock-system.market.mode", havingValue = "longbridge")
 class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandlestickGateway,
-        LongbridgeIntradayGateway, AutoCloseable {
+        LongbridgeIntradayGateway, LongbridgeTradingDayGateway, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LongbridgeJsonRpcClient.class);
     private static final String QUOTE_METHOD = "quote.quote";
@@ -53,6 +53,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     private static final String HISTORY_CANDLESTICK_BY_DATE_METHOD =
             "quote.history_candlesticks_by_date";
     private static final String INTRADAY_METHOD = "quote.intraday";
+    private static final String TRADING_DAYS_METHOD = "quote.trading_days";
 
     private final ObjectMapper objectMapper;
     private final ProcessStarter processStarter;
@@ -67,6 +68,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     private final Map<CandlestickCacheKey, CachedCandlesticks> candlestickCache =
             new ConcurrentHashMap<>();
     private final Map<String, CachedIntraday> intradayCache = new ConcurrentHashMap<>();
+    private final Map<TradingDayCacheKey, Boolean> tradingDayCache = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private final Object writeLock = new Object();
     private final Object rateLock = new Object();
@@ -323,6 +325,46 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         return loaded;
     }
 
+    @Override
+    public boolean isTradingDay(String rawSymbol, LocalDate date) {
+        String symbol = normalizeCandlestickRequest(rawSymbol, 1);
+        String market = marketCode(symbol);
+        TradingDayCacheKey key = new TradingDayCacheKey(market, date);
+        return tradingDayCache.computeIfAbsent(key, ignored -> requestTradingDay(market, date));
+    }
+
+    private boolean requestTradingDay(String market, LocalDate date) {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("market", market);
+        params.put("start", date.toString());
+        params.put("end", date.toString());
+        JsonNode result = executeRequest(TRADING_DAYS_METHOD, params);
+        return containsDate(result.path("trading_days"), date)
+                || containsDate(result.path("half_trading_days"), date);
+    }
+
+    private boolean containsDate(JsonNode dates, LocalDate expected) {
+        if (!dates.isArray()) {
+            throw new LongbridgeCliException("Longbridge trading-day result has an unexpected shape");
+        }
+        for (JsonNode date : dates) {
+            if (expected.toString().equals(date.asText())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String marketCode(String symbol) {
+        if (symbol.endsWith(".HK")) {
+            return "HK";
+        }
+        if (symbol.endsWith(".SH") || symbol.endsWith(".SZ") || symbol.endsWith(".BJ")) {
+            return "CN";
+        }
+        throw new IllegalArgumentException("Unsupported Longbridge trading-day market");
+    }
+
     private ZoneId marketZone(String symbol) {
         if (symbol.endsWith(".US")) {
             return ZoneId.of("America/New_York");
@@ -459,8 +501,10 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             JsonNode error = json.get("error");
             if (error != null && !error.isNull()) {
                 String code = providerErrorCode(error);
+                String providerMessage = error.path("message").asText("");
                 pending.completeExceptionally(new LongbridgeCliException(
-                        code, "Longbridge RPC request was rejected with code " + code));
+                        code, "Longbridge RPC request was rejected with code " + code,
+                        providerMessage));
                 return;
             }
             JsonNode result = json.get("result");
@@ -725,6 +769,9 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     }
 
     private record CachedIntraday(List<LongbridgeIntradayPoint> items, Instant expiresAt) {
+    }
+
+    private record TradingDayCacheKey(String market, LocalDate date) {
     }
 
     @FunctionalInterface

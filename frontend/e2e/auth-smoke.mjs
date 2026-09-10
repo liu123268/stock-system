@@ -23,6 +23,8 @@ const password = 'BrowserPass123'
 const ownerNickname = '浏览器 OWNER'
 const memberNickname = '浏览器 MEMBER'
 const searchedStockCode = '600519.SH'
+const marketMode = process.env.E2E_MARKET_MODE ?? 'mock'
+const expectedStockSource = marketMode === 'longbridge' ? 'LONGBRIDGE_OPENAPI' : 'LOCAL_MOCK'
 
 async function readDatabaseConfig() {
   const content = `${await readFile(applicationPropertiesUrl, 'utf8')}\n${await readFile(testPropertiesUrl, 'utf8')}`
@@ -79,6 +81,28 @@ async function testStockExists() {
   return Number(output.trim()) > 0
 }
 
+async function ensureTestStock(stockExistedBefore) {
+  if (stockExistedBefore || marketMode !== 'longbridge') return
+
+  const database = await readDatabaseConfig()
+  const sql = `INSERT INTO stock (code, name, exchange, currency, listing_status, source, search_aliases, last_synced_at) VALUES ('${searchedStockCode}', '贵州茅台', 'SSE', 'CNY', 'LISTED', 'A_SHARE_DIRECTORY', '贵州茅台 600519.SH', CURRENT_TIMESTAMP(3))`
+  execFileSync(
+    mysqlPath,
+    [
+      `--host=${database.host}`,
+      `--port=${database.port}`,
+      `--user=${database.user}`,
+      `--database=${database.database}`,
+      '--default-character-set=utf8mb4',
+      `--execute=${sql}`,
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, MYSQL_PWD: database.password },
+    },
+  )
+}
+
 async function cleanupTestUser(stockExistedBefore) {
   if (![ownerUsername, memberUsername].every((item) => /^browser_[a-z0-9_]+$/.test(item))) {
     throw new Error(`拒绝清理非测试账号：${ownerUsername}、${memberUsername}`)
@@ -104,7 +128,7 @@ async function cleanupTestUser(stockExistedBefore) {
     ...(stockExistedBefore
       ? []
       : [
-          `DELETE FROM stock WHERE code = '${searchedStockCode}' AND source = 'LOCAL_MOCK' AND NOT EXISTS (SELECT 1 FROM workspace_stock WHERE stock_id = stock.id)`,
+          `DELETE FROM stock WHERE code = '${searchedStockCode}' AND source IN ('${expectedStockSource}', 'A_SHARE_DIRECTORY') AND NOT EXISTS (SELECT 1 FROM workspace_stock WHERE stock_id = stock.id)`,
         ]),
     `DELETE FROM workspace_invitation WHERE workspace_id = @test_workspace_id`,
     `DELETE FROM workspace_member WHERE workspace_id = @test_workspace_id`,
@@ -165,11 +189,12 @@ async function checkServices() {
 
 await checkServices()
 const stockExistedBefore = await testStockExists()
-
-const browser = await chromium.launch({ executablePath: chromePath, headless: true })
+let browser
 let testResult
 
 try {
+  await ensureTestStock(stockExistedBefore)
+  browser = await chromium.launch({ executablePath: chromePath, headless: true })
   const page = await browser.newPage()
   const apiResponses = []
   const browserErrors = []
@@ -286,10 +311,87 @@ try {
   await page.getByText(/已加入共享自选，初始观点已经保存。/).waitFor()
   await page.getByText('贵州茅台', { exact: true }).last().waitFor()
   const stockPageText = await page.locator('body').innerText()
-  if (!stockPageText.includes('本地模拟行情') || !stockPageText.includes('看多')) {
-    throw new Error(`共享自选列表没有显示模拟行情和初始观点摘要：${stockPageText}`)
+  const expectedSourceText = marketMode === 'longbridge' ? 'LONGBRIDGE_OPENAPI' : '本地模拟行情'
+  if (!stockPageText.includes(expectedSourceText) || !stockPageText.includes('看多')) {
+    throw new Error(`共享自选列表没有显示预期行情来源和初始观点摘要：${stockPageText}`)
   }
-  if (process.env.E2E_SCREENSHOT_PATH) {
+
+  let realMarketChartsCompleted = false
+  let realMarketScreenshotCaptured = false
+  if (marketMode === 'longbridge') {
+    const chartApiPath = (suffix) =>
+      new RegExp(`^/api/workspaces/\\d+/stocks/\\d+/${suffix}$`)
+    const waitForChartResponse = (suffix, expectedStatus = 200) =>
+      page.waitForResponse((response) => {
+        const path = new URL(response.url()).pathname
+        return (
+          response.request().method() === 'GET' &&
+          chartApiPath(suffix).test(path) &&
+          response.status() === expectedStatus
+        )
+      })
+
+    const dailyKlineResponse = waitForChartResponse('candlesticks')
+    await page.getByRole('button', { name: '查看行情图', exact: true }).click()
+    await dailyKlineResponse
+    await page.locator('.candlestick-chart canvas').waitFor()
+
+    const minuteKlineResponse = waitForChartResponse('candlesticks')
+    await page.getByRole('button', { name: '1 分', exact: true }).click()
+    await minuteKlineResponse
+    await page.getByText(/已加载 \d+ 根 · 数据源：LONGBRIDGE_OPENAPI/).waitFor()
+
+    const todayIntradayResponse = waitForChartResponse('intraday')
+    await page.getByRole('button', { name: '分时', exact: true }).click()
+    await todayIntradayResponse
+    await page.locator('.intraday-chart canvas').waitFor()
+
+    const selectIntradayDate = async (date) => {
+      await page.locator('.intraday-date input').evaluate((input, value) => {
+        input.value = value
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      }, date)
+    }
+
+    const historicalIntradayResponse = waitForChartResponse('intraday')
+    await selectIntradayDate('2026-09-09')
+    await historicalIntradayResponse
+    await page.getByText(/2026-09-09 · 已收盘历史快照/).waitFor()
+    if (process.env.E2E_SCREENSHOT_PATH) {
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.screenshot({ path: process.env.E2E_SCREENSHOT_PATH, fullPage: true })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.screenshot({
+        path: process.env.E2E_SCREENSHOT_PATH.replace(/\.png$/i, '-mobile.png'),
+        fullPage: true,
+      })
+      await page.setViewportSize({ width: 1280, height: 720 })
+      realMarketScreenshotCaptured = true
+    }
+
+    const rangeResponsePromise = waitForChartResponse('intraday', 422)
+    await selectIntradayDate('2023-05-09')
+    const rangeResponse = await rangeResponsePromise
+    const rangeResult = await rangeResponse.json()
+    if (
+      rangeResult.code !== 'MARKET_INTRADAY_HISTORY_RANGE_EXCEEDED' ||
+      !rangeResult.message.includes('2023-09-01')
+    ) {
+      throw new Error(`历史分钟范围提示不明确：${JSON.stringify(rangeResult)}`)
+    }
+    await page.getByText(/最早可查看至 2023-09-01/).waitFor()
+
+    const holidayResponsePromise = waitForChartResponse('intraday', 400)
+    await selectIntradayDate('2026-09-05')
+    const holidayResult = await (await holidayResponsePromise).json()
+    if (holidayResult.code !== 'MARKET_INTRADAY_NON_TRADING_DAY') {
+      throw new Error(`非交易日没有返回专用错误：${JSON.stringify(holidayResult)}`)
+    }
+    await page.getByText('所选日期不是该市场的交易日', { exact: true }).waitFor()
+    realMarketChartsCompleted = true
+  }
+  if (process.env.E2E_SCREENSHOT_PATH && !realMarketScreenshotCaptured) {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.screenshot({ path: process.env.E2E_SCREENSHOT_PATH, fullPage: true })
     await page.setViewportSize({ width: 390, height: 844 })
@@ -547,6 +649,7 @@ try {
     memberLifecycleCompleted: true,
     ownershipTransferred: true,
     sharedStockAndInitialOpinionCompleted: true,
+    realMarketChartsCompleted,
     workspaceArchivedAndRestored: true,
     logoutClearedSession,
     jwtSaved: tokenSaved,
@@ -554,7 +657,7 @@ try {
   }
 } finally {
   try {
-    await browser.close()
+    if (browser) await browser.close()
   } finally {
     await cleanupTestUser(stockExistedBefore)
   }

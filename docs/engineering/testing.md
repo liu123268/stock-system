@@ -25,7 +25,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 ### 2.1 Longbridge sidecar 测试
 
-- 普通回归不依赖真实账号：`LongbridgeJsonRpcClientTest` 用内存假进程覆盖报价、最近／历史 K 线与当天分时协议、乱序 ID 对应、短缓存、`301607` 保留、超时和关闭；provider 测试覆盖目录身份合并、K 线转换、历史分时均价重建、配额映射与不可用降级。当前仍缺交易所节假日、“当天返回点日期必须匹配请求日期”和响应明确返回交易时段范围的测试，不能把固定工作日时段测试当成完整交易日历验收。
+- 普通回归不依赖真实账号：`LongbridgeJsonRpcClientTest` 用内存假进程覆盖报价、最近／历史 K 线、当天分时和交易日历协议、乱序 ID 对应、短缓存、`301607`／分钟最早日期保留、超时和关闭；provider 测试覆盖目录身份合并、K 线转换、历史分时均价重建、配额映射、休市日拦截、当天点日期过滤与不可用降级。分时交易时段响应另由 provider 和前端坐标测试覆盖，不能用固定工作日逻辑替代官方交易日历。
 - 真实 CLI 测试默认跳过，只有明确验证本机/部署账号授权时才用系统属性 `stock.longbridge.cli.integration=true` 单独启用。测试不得输出 Token、CLI 私有缓存或完整账号信息。
 - `LongbridgeCliIntegrationTest` 只证明 Java 管理器能启动/关闭 sidecar 并取得真实报价；`LongbridgeMarketDataIntegrationTest` 还必须通过 `MySqlIntegrationTest` 核对实际 catalog 为 `stock_system_test`，临时目录记录使用专用来源并在事务后核对剩余为 0。
 - `LongbridgeCandlestickRealProbeTest` 由 `STOCK_LONGBRIDGE_KLINE_PROBE=true` 显式启用，只读取已批准的 `600519.SH` 两根日 K；`LongbridgeIntradayRealProbeTest` 由 `STOCK_LONGBRIDGE_INTRADAY_PROBE=true` 启用，读取同一股票当天分时和指定交易日 1 分钟 K。两者都不启动 Spring、不写数据库；历史 K 线会占月度不同标的额度，新增探测代码前必须先说明并优先选择已经计入过的标的。
