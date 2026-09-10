@@ -70,8 +70,12 @@ class StockResearchSchemaIntegrationTest extends MySqlIntegrationTest {
                 .isInstanceOf(DuplicateKeyException.class);
 
         jdbcTemplate.update(
-                "UPDATE research_cycle SET status = 'ENDED', ended_at = ? WHERE id = ?",
-                Timestamp.valueOf(LocalDateTime.now()), firstCycleId
+                """
+                        UPDATE research_cycle
+                        SET status = 'ENDED', ended_at = DATE_ADD(started_at, INTERVAL 1 SECOND)
+                        WHERE id = ?
+                        """,
+                firstCycleId
         );
         long nextCycleId = insertActiveCycle(fixture.workspaceStockId(), fixture.userId());
 

@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { OpinionHorizon, StockSearchResponseVO, StockStance } from '@/api/stock'
+import type {
+  CandlestickPeriod,
+  OpinionHorizon,
+  StockSearchResponseVO,
+  StockStance,
+  WorkspaceStockListResponseVO,
+} from '@/api/stock'
 import { useAuthStore } from '@/stores/auth'
 import { useStockStore } from '@/stores/stock'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -12,6 +18,12 @@ const router = useRouter()
 const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
 const stockStore = useStockStore()
+const StockCandlestickChart = defineAsyncComponent(
+  () => import('@/components/StockCandlestickChart.vue'),
+)
+const StockIntradayChart = defineAsyncComponent(
+  () => import('@/components/StockIntradayChart.vue'),
+)
 
 const workspaceId = computed(() => Number(route.params.workspaceId))
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
@@ -21,6 +33,22 @@ const searchHasRun = ref(false)
 const selectedStock = ref<StockSearchResponseVO | null>(null)
 const formError = ref('')
 const successMessage = ref('')
+const expandedStockId = ref<number | null>(null)
+const selectedPeriod = ref<CandlestickPeriod>('day')
+const chartMode = ref<'kline' | 'intraday'>('kline')
+const intradayDate = ref('')
+let intradayRefreshTimer: ReturnType<typeof setTimeout> | null = null
+const candlestickPeriods: { value: CandlestickPeriod; label: string }[] = [
+  { value: '1m', label: '1 分' },
+  { value: '5m', label: '5 分' },
+  { value: '15m', label: '15 分' },
+  { value: '30m', label: '30 分' },
+  { value: '1h', label: '1 小时' },
+  { value: 'day', label: '日 K' },
+  { value: 'week', label: '周 K' },
+  { value: 'month', label: '月 K' },
+  { value: 'year', label: '年 K' },
+]
 
 const opinion = reactive({
   stance: 'NEUTRAL' as StockStance,
@@ -166,6 +194,100 @@ function horizonLabel(horizon: OpinionHorizon) {
   return { SHORT: '短期', MEDIUM: '中期', LONG: '长期' }[horizon]
 }
 
+function candlestickPeriodLabel(period: CandlestickPeriod) {
+  return candlestickPeriods.find((item) => item.value === period)?.label ?? period
+}
+
+async function requestCandlesticks(workspaceStockId: number, period: CandlestickPeriod) {
+  try {
+    await stockStore.loadCandlesticks(workspaceId.value, workspaceStockId, period)
+  } catch (error) {
+    await handleWorkspaceApiError(error, router)
+  }
+}
+
+async function toggleCandlesticks(item: WorkspaceStockListResponseVO) {
+  if (expandedStockId.value === item.workspaceStockId) {
+    stopIntradayRefresh()
+    expandedStockId.value = null
+    stockStore.clearCandlesticks()
+    stockStore.clearIntraday()
+    return
+  }
+  stopIntradayRefresh()
+  expandedStockId.value = item.workspaceStockId
+  chartMode.value = 'kline'
+  selectedPeriod.value = 'day'
+  stockStore.clearCandlesticks()
+  await requestCandlesticks(item.workspaceStockId, selectedPeriod.value)
+}
+
+function stopIntradayRefresh() {
+  if (intradayRefreshTimer) clearTimeout(intradayRefreshTimer)
+  intradayRefreshTimer = null
+}
+
+function scheduleIntradayRefresh(workspaceStockId: number) {
+  stopIntradayRefresh()
+  if (!stockStore.intradaySeries?.updating) return
+  intradayRefreshTimer = setTimeout(async () => {
+    if (
+      chartMode.value !== 'intraday'
+      || expandedStockId.value !== workspaceStockId
+      || document.hidden
+    ) {
+      scheduleIntradayRefresh(workspaceStockId)
+      return
+    }
+    try {
+      await stockStore.loadIntraday(workspaceId.value, workspaceStockId, intradayDate.value, true)
+    } catch {
+      // The current chart remains visible; the next controlled refresh can recover.
+    }
+    scheduleIntradayRefresh(workspaceStockId)
+  }, 30_000)
+}
+
+async function requestIntraday(workspaceStockId: number) {
+  stopIntradayRefresh()
+  try {
+    const series = await stockStore.loadIntraday(
+      workspaceId.value,
+      workspaceStockId,
+      intradayDate.value || undefined,
+    )
+    intradayDate.value = series.tradeDate
+    scheduleIntradayRefresh(workspaceStockId)
+  } catch (error) {
+    await handleWorkspaceApiError(error, router)
+  }
+}
+
+async function selectChartMode(mode: 'kline' | 'intraday', workspaceStockId: number) {
+  if (chartMode.value === mode) return
+  chartMode.value = mode
+  if (mode === 'intraday') {
+    stockStore.clearIntraday()
+    await requestIntraday(workspaceStockId)
+  } else {
+    stopIntradayRefresh()
+  }
+}
+
+async function selectCandlestickPeriod(period: CandlestickPeriod) {
+  if (expandedStockId.value === null || selectedPeriod.value === period) return
+  selectedPeriod.value = period
+  await requestCandlesticks(expandedStockId.value, period)
+}
+
+async function loadOlderCandlesticks(workspaceStockId: number) {
+  try {
+    await stockStore.loadOlderCandlesticks(workspaceId.value, workspaceStockId)
+  } catch (error) {
+    await handleWorkspaceApiError(error, router)
+  }
+}
+
 function switchWorkspace() {
   workspaceStore.clearCurrent()
   stockStore.clearAll()
@@ -179,6 +301,7 @@ function logout() {
 }
 
 onMounted(load)
+onBeforeUnmount(stopIntradayRefresh)
 </script>
 
 <template>
@@ -443,6 +566,151 @@ onMounted(load)
                   <small>{{ horizonLabel(item.horizon) }} · {{ item.authorNickname }}</small>
                 </div>
               </div>
+              <div class="stock-actions">
+                <button
+                  class="kline-toggle"
+                  type="button"
+                  :aria-expanded="expandedStockId === item.workspaceStockId"
+                  :aria-controls="`stock-chart-${item.workspaceStockId}`"
+                  @click="toggleCandlesticks(item)"
+                >
+                  {{ expandedStockId === item.workspaceStockId ? '收起行情图' : '查看行情图' }}
+                </button>
+                <small>展开后才请求该股票的行情，不会为搜索候选预取。</small>
+              </div>
+              <section
+                v-if="expandedStockId === item.workspaceStockId"
+                :id="`stock-chart-${item.workspaceStockId}`"
+                class="kline-panel"
+                :aria-label="`${item.name} K 线与分时图`"
+              >
+                <div class="kline-heading">
+                  <div>
+                    <strong>
+                      {{ item.name }} ·
+                      {{ chartMode === 'kline' ? candlestickPeriodLabel(selectedPeriod) : '分时' }}
+                    </strong>
+                    <small v-if="chartMode === 'kline'">
+                      不复权 · 首次最多 1000 根，向左拖动继续读取更早历史
+                    </small>
+                    <small v-else>今天盘中每 30 秒刷新；历史日期只读取一次</small>
+                  </div>
+                  <div class="period-switch" aria-label="选择图表类型">
+                    <button
+                      type="button"
+                      :class="{ active: chartMode === 'kline' }"
+                      :aria-pressed="chartMode === 'kline'"
+                      @click="selectChartMode('kline', item.workspaceStockId)"
+                    >
+                      K 线
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: chartMode === 'intraday' }"
+                      :aria-pressed="chartMode === 'intraday'"
+                      @click="selectChartMode('intraday', item.workspaceStockId)"
+                    >
+                      分时
+                    </button>
+                  </div>
+                  <div v-if="chartMode === 'kline'" class="period-switch" aria-label="选择 K 线周期">
+                    <button
+                      v-for="period in candlestickPeriods"
+                      :key="period.value"
+                      type="button"
+                      :class="{ active: selectedPeriod === period.value }"
+                      :aria-pressed="selectedPeriod === period.value"
+                      :disabled="stockStore.candlestickLoading"
+                      @click="selectCandlestickPeriod(period.value)"
+                    >
+                      {{ period.label }}
+                    </button>
+                  </div>
+                  <label v-else class="intraday-date">
+                    交易日
+                    <input
+                      v-model="intradayDate"
+                      type="date"
+                      :disabled="stockStore.intradayLoading"
+                      @change="requestIntraday(item.workspaceStockId)"
+                    />
+                  </label>
+                </div>
+                <template v-if="chartMode === 'kline'">
+                <div
+                  v-if="stockStore.candlestickLoading"
+                  class="kline-loading"
+                  aria-live="polite"
+                >
+                  <span></span><span></span><span></span>
+                  <p>正在读取 {{ candlestickPeriodLabel(selectedPeriod) }}</p>
+                </div>
+                <div v-else-if="stockStore.candlestickError" class="kline-error" role="alert">
+                  <p>{{ stockStore.candlestickError }}</p>
+                  <button
+                    type="button"
+                    @click="requestCandlesticks(item.workspaceStockId, selectedPeriod)"
+                  >
+                    重新加载 K 线
+                  </button>
+                </div>
+                <template v-else-if="stockStore.candlestickSeries">
+                  <StockCandlestickChart
+                    :candlesticks="stockStore.candlestickSeries.candlesticks"
+                    :name="stockStore.candlestickSeries.name"
+                    :period="selectedPeriod"
+                    :period-label="candlestickPeriodLabel(selectedPeriod)"
+                    @reach-start="loadOlderCandlesticks(item.workspaceStockId)"
+                  />
+                  <p v-if="stockStore.candlestickLoadingOlder" class="kline-meta" aria-live="polite">
+                    正在补充更早的 1000 根 K 线…
+                  </p>
+                  <p v-else-if="stockStore.candlestickHistoryError" class="kline-error" role="alert">
+                    {{ stockStore.candlestickHistoryError }}，再次拖到最左侧可重试。
+                  </p>
+                  <p v-else-if="!stockStore.candlestickSeries.hasMore" class="kline-meta">
+                    已到达当前数据源可提供的最早记录。
+                  </p>
+                  <p class="kline-meta">
+                    已加载 {{ stockStore.candlestickSeries.candlesticks.length }} 根 ·
+                    数据源：{{
+                      stockStore.candlestickSeries.simulated
+                        ? '本地模拟行情'
+                        : stockStore.candlestickSeries.source
+                    }}
+                    · 获取于 {{ formatTime(stockStore.candlestickSeries.retrievedAt) }}
+                  </p>
+                </template>
+                </template>
+                <template v-else>
+                  <div v-if="stockStore.intradayLoading" class="kline-loading" aria-live="polite">
+                    <span></span><span></span><span></span><p>正在读取分时数据</p>
+                  </div>
+                  <div v-else-if="stockStore.intradayError" class="kline-error" role="alert">
+                    <p>{{ stockStore.intradayError }}</p>
+                    <button type="button" @click="requestIntraday(item.workspaceStockId)">
+                      重新加载分时图
+                    </button>
+                  </div>
+                  <template v-else-if="stockStore.intradaySeries">
+                    <StockIntradayChart
+                      :points="stockStore.intradaySeries.points"
+                      :trading-sessions="stockStore.intradaySeries.tradingSessions"
+                      :reference-price="stockStore.intradaySeries.referencePrice"
+                      :name="stockStore.intradaySeries.name"
+                    />
+                    <p class="kline-meta">
+                      {{ stockStore.intradaySeries.tradeDate }} ·
+                      {{ stockStore.intradaySeries.updating ? '盘中受控刷新' : '已收盘历史快照' }} ·
+                      已加载 {{ stockStore.intradaySeries.points.length }} 个点 · 数据源：{{
+                        stockStore.intradaySeries.simulated
+                          ? '本地模拟行情'
+                          : stockStore.intradaySeries.source
+                      }}
+                    </p>
+                  </template>
+                </template>
+              </section>
               <details>
                 <summary>查看初始观点与行情记录</summary>
                 <div class="opinion-detail">
@@ -847,6 +1115,128 @@ textarea:focus {
   align-items: center;
   padding: 27px 4px 22px;
 }
+.stock-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 18px;
+}
+.stock-actions small,
+.kline-heading small,
+.kline-meta {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.kline-toggle,
+.period-switch button,
+.kline-error button {
+  border: 0;
+  background: transparent;
+  color: var(--color-focus);
+  cursor: pointer;
+  font-weight: 650;
+}
+.kline-toggle {
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.kline-toggle:focus-visible,
+.period-switch button:focus-visible,
+.kline-error button:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
+  outline-offset: 3px;
+}
+.kline-panel {
+  margin: 0 4px 24px;
+  padding: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.kline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+.kline-heading strong,
+.kline-heading small {
+  display: block;
+}
+.kline-heading small {
+  margin-top: 4px;
+}
+.period-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.period-switch button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-action);
+  color: var(--color-muted);
+}
+.period-switch button:hover,
+.period-switch button.active {
+  background: color-mix(in oklab, var(--color-focus) 10%, transparent);
+  color: var(--color-focus);
+}
+.period-switch button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.intraday-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.intraday-date input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-action);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.kline-loading {
+  padding: 72px 6%;
+}
+.kline-loading span {
+  display: block;
+  height: 16px;
+  margin-bottom: 12px;
+  background: var(--color-border);
+  animation: pulse 1.4s ease-in-out infinite alternate;
+}
+.kline-loading span:nth-child(2) {
+  width: 78%;
+}
+.kline-loading span:nth-child(3) {
+  width: 58%;
+}
+.kline-loading p,
+.kline-error p {
+  margin-top: 16px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.kline-error {
+  padding: 48px 0;
+  text-align: center;
+}
+.kline-error button {
+  margin-top: 14px;
+}
+.kline-meta {
+  margin-top: 8px;
+  text-align: right;
+}
 .identity h3 {
   margin: 6px 0 2px;
   font-size: 21px;
@@ -960,6 +1350,13 @@ summary {
     opacity: 0.4;
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .loading-line,
+  .list-skeleton span,
+  .kline-loading span {
+    animation: none;
+  }
+}
 @media (max-width: 820px) {
   .workspace-shell {
     display: block;
@@ -1000,6 +1397,10 @@ summary {
   }
   .opinion-detail dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kline-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 @media (max-width: 640px) {
@@ -1050,6 +1451,14 @@ summary {
   }
   .stock-summary {
     gap: 18px;
+  }
+  .stock-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .kline-panel {
+    margin-inline: 0;
+    padding: 16px 10px;
   }
   .opinion-detail dl {
     grid-column: auto;

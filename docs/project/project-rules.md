@@ -20,7 +20,8 @@ AI 自动选择匹配行，多场景取并集；先定位相关章节，再读�
 | 登录、JWT、认证问题 | [authentication.md](../architecture/authentication.md)、相关代码和测试 |
 | Vue、Store、HTTP、页面行为 | [frontend.md](../engineering/frontend.md) 的实施要求及对应模块章节 |
 | UI、响应式、动效、可访问性 | [ui-design-system.md](../architecture/ui-design-system.md)；产品目的变化再读 [product-principles.md](../product/product-principles.md) |
-| 启动、端口、配置 | [development.md](../engineering/development.md)；启动进程前同时读下一行 |
+| 本地启动、端口、开发配置 | [development.md](../engineering/development.md)；启动进程前同时读下一行 |
+| 生产部署、服务账号、密钥、外部依赖、上线与回滚 | [deployment.md](../engineering/deployment.md)；涉及测试或临时进程时同时读下一行 |
 | 任何测试、临时进程、测试数据 | [testing.md](../engineering/testing.md)，完整读取执行与清理要求，再选对应测试层次 |
 | 文档整理、交接写法与维护要求、教学沉淀、Bug 复盘、面试或里程碑收尾 | [documentation.md](documentation.md)，再读目标工程或 `career` 文件；只有根因对应时才读 `engineering/bugs` |
 

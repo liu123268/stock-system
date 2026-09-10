@@ -537,7 +537,7 @@
     <header class="topbar">
       <div class="shell topbar-inner">
         <div class="brand"><span class="brand-mark">同研</span> 同研自选</div>
-        <div class="topbar-meta">系统功能地图 · 2026-09-07</div>
+        <div class="topbar-meta">系统功能地图 · 2026-09-10</div>
       </div>
     </header>
 
@@ -555,7 +555,7 @@
           <div class="progress-value">股票首个闭环已完成</div>
           <div class="progress-track" aria-hidden="true"><span></span></div>
           <p class="progress-note">
-            下一步：选择研究周期或多人观点的最小闭环（PLAN-206）
+            下一步：补齐交易日／交易时段元数据边界，复验分钟 K、左拖历史、当天／历史分时与真实添加（PLAN-206）
           </p>
         </aside>
       </section>
@@ -605,7 +605,7 @@
       <section aria-labelledby="capabilities-title">
         <div class="section-heading">
           <h2 id="capabilities-title">功能清单</h2>
-          <p id="visible-count" aria-live="polite">显示 10 项</p>
+          <p id="visible-count" aria-live="polite">显示 11 项</p>
         </div>
 
         <div class="capability-list">
@@ -696,13 +696,13 @@
           <article class="capability" data-status="ui">
             <div class="capability-kicker">股票研究</div>
             <div>
-              <h3>搜索 A 股、港股模拟行情</h3>
+              <h3>搜索 A 股、港股真实目录</h3>
               <p>
-                登录用户可通过后端按标准代码或名称搜索一组本地模拟标的，结果包含市场、币种、价格、行情时间、来源和模拟标识。
+                登录用户可通过后端按标准代码、中文名称、繁体或英文别名搜索 MySQL 中的 8318 条真实目录记录；开发后端通过 Longbridge sidecar 批量补充真实价格和行情时间，真实搜索页面已经验收。
               </p>
               <ul class="operations">
-                <li>支持标准代码和名称检索</li>
-                <li>明确标记 MOCK 与 simulated，不冒充真实行情</li>
+                <li>覆盖沪、深、北和港股候选，保留交易所后缀</li>
+                <li>Longbridge 不可用时明确显示“暂无报价”，不以 Mock 价格填补</li>
                 <li>从空间“共享自选”页面直接搜索</li>
               </ul>
             </div>
@@ -715,12 +715,28 @@
               <h3>原子添加股票与初始观点</h3>
               <p>
                 后端可以把空间共享股票、活动研究周期和 INITIAL
-                初始观点作为一个事务提交；任一步失败都整体回滚。
+                初始观点作为一个事务提交；任一步失败都整体回滚。该闭环已在明确的 Mock 模式完成浏览器验证，Longbridge 真实报价 provider 已完成后端集成，真实页面添加仍待复验。
               </p>
               <ul class="operations">
                 <li>OWNER 与 MEMBER 权限相同，非成员和归档空间被拒绝</li>
                 <li>作者、行情和时间等可信字段由后端写入</li>
                 <li>选择候选后填写倾向、理由、风险、周期和可选价格</li>
+              </ul>
+            </div>
+            <span class="status status-ui">页面可操作</span>
+          </article>
+
+          <article class="capability" data-status="ui">
+            <div class="capability-kicker">股票研究</div>
+            <div>
+              <h3>按需查看九种周期 K 线与分时</h3>
+              <p>
+                已加入空间的股票可以在共享列表中展开行情面板；后端重新校验成员关系，只请求当前股票并复用一个 Longbridge sidecar，搜索候选和整张共享列表不会预取。
+              </p>
+              <ul class="operations">
+                <li>支持 1/5/15/30 分钟、1 小时、日／周／月／年，首次最多 1000 根并可左拖补历史</li>
+                <li>支持当天和历史日期分时；当前可见盘中图每 30 秒受控刷新</li>
+                <li>显示不复权、来源、获取时间和明确 429；浏览器复验及交易日／交易时段元数据边界仍待完成</li>
               </ul>
             </div>
             <span class="status status-ui">页面可操作</span>

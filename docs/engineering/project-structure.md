@@ -1,6 +1,6 @@
 # 项目结构与文件职责
 
-更新时间：2026-09-03
+更新时间：2026-09-10
 
 ## 0. 项目位置
 
@@ -44,6 +44,15 @@ com.stock.system
 │  ├─ entity
 │  ├─ dto
 │  └─ vo
+├─ stock
+│  ├─ controller
+│  ├─ service
+│  ├─ mapper
+│  ├─ entity
+│  ├─ dto
+│  ├─ vo
+│  ├─ directory
+│  └─ market
 ├─ admin
 │  ├─ controller
 │  ├─ service
@@ -73,6 +82,7 @@ com.stock.system
 | `auth` | 注册、登录、当前会话接口 | 调用 `user` 提供的账号能力和 `security` |
 | `user` | 用户实体、持久化和账号状态 | `common` |
 | `workspace` | 空间、成员、邀请及所有权 | 调用 `user` 查询有效账号，使用 `common` |
+| `stock` | 标准股票目录、共享自选、研究周期、观点与行情适配 | 调用 `workspace` 校验成员边界；外部行情只经 `market` 适配，不向前端暴露供应商协议 |
 | `admin` | 唯一超级管理员及治理操作记录 | 调用 `user`、`workspace` 的业务能力 |
 | `security` | JWT、认证上下文和 Security 过滤链 | 只提供跨业务认证基础设施 |
 | `config` | Spring 框架配置 | 不承载业务规则 |
@@ -145,10 +155,10 @@ frontend
 
 | 目录 | 放什么 | 当前例子 |
 | --- | --- | --- |
-| `views` | 一个完整页面 | `LoginView.vue`、`HomeView.vue` |
-| `components` | 可以被页面复用的局部界面 | `AuthLayout.vue` |
-| `api` | Axios客户端和后端接口函数 | `http.ts`、`auth.ts` |
-| `stores` | 多个页面共享的Pinia状态 | `auth.ts` |
+| `views` | 一个完整页面 | `LoginView.vue`、`WorkspaceStocksView.vue` |
+| `components` | 可以被页面复用的局部界面 | `AuthLayout.vue`、`StockCandlestickChart.vue`、`StockIntradayChart.vue` |
+| `api` | Axios客户端和后端接口函数 | `http.ts`、`auth.ts`、`stock.ts` |
+| `stores` | 多个页面共享的Pinia状态 | `auth.ts`、`workspace.ts`、`stock.ts` |
 | `router` | URL对应哪个页面、访问权限 | `index.ts` |
 | `styles` | 全局基础样式和共享样式 | `main.css` |
 | `__tests__` | 前端单元测试 | `auth-store.spec.ts` |

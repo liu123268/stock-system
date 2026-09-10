@@ -1,6 +1,6 @@
 # 系统架构总览
 
-更新时间：2026-09-03
+更新时间：2026-09-10
 
 ## 1. 架构目标
 
@@ -19,7 +19,8 @@ Spring Boot REST API
   │
   ├─ Spring Security + JWT
   ├─ Controller / Service / Mapper
-  └─ MarketDataProvider（本地模拟适配，外部供应商待接入）
+  └─ 行情适配（目录、Mock、Longbridge 报价、K 线与分时）
+       └─ Spring Boot 管理的 `longbridge serve` 子进程
   │
   ▼
 MySQL 8
@@ -54,9 +55,9 @@ MySQL 8
 
 ## 6. 外部行情边界
 
-业务 Service 依赖 MarketDataProvider，本地模拟已落地，供应商 DTO 不进入研究事务。当前接口和调用位置见 [SPEC-002 设计](../specs/002-stock-research/design.md)。
+业务 Service 分别依赖项目自己的 `MarketDataProvider`、`MarketCandlestickProvider` 和 `MarketIntradayProvider`，供应商 DTO 不进入研究事务或 Controller。开发默认由 MySQL 搜索标准股票身份，再通过 Spring Boot 管理的官方 `longbridge serve` 子进程批量补充真实价格，并为已加入空间的单只股票按需读取 K 线或分时；测试继续使用明确的 Mock。当前接口和调用位置见 [SPEC-002 设计](../specs/002-stock-research/design.md)。
 
-真实行情链路必须使用 Redis 缓存最新行情和热点股票基础信息，并承担对外部供应商的访问保护；Redis 不是业务事实源。股票标准身份、需要长期保留的日行情和研究周期开始时的不可变行情快照仍由 MySQL 持久化。真实接入设计必须同时定义缓存一致性、TTL、穿透/击穿/雪崩防护，以及 Redis 或供应商不可用时不得把过期数据冒充实时行情的降级边界。
+当前低频基础报价使用批量请求、并发/速率上限和 5 秒进程内缓存保护外部供应商；当天分时也按股票缓存 5 秒，K 线及历史日期批次缓存 1 分钟。K 线和分时都不随搜索候选或共享列表预取，只有当前展开面板按需读取；盘中分时仅在页面可见、面板展开且后端返回 `updating=true` 时每 30 秒刷新。进入多实例、多个热点股票同时动态更新或 WebSocket/SSE 推送层时再使用 Redis 共享最新行情和访问保护，并定义一致性、TTL、穿透/击穿/雪崩以及 Redis 或供应商不可用时不得把过期数据冒充实时行情的降级边界。Redis 不是业务事实源；股票标准身份、需要长期保留的行情事实和研究周期开始时的不可变报价快照仍由 MySQL 持久化。
 
 ## 7. 元数据策略：V1 采用轻量元数据
 
@@ -81,4 +82,4 @@ V1 不建设以下完整元数据能力：
 
 ## 8. 架构取舍
 
-选择、代价和重新评估条件统一见 [ADR-001](decisions/ADR-001-modular-monolith.md)。
+模块化单体见 [ADR-001](decisions/ADR-001-modular-monolith.md)，Longbridge sidecar 选择、代价和替换条件见 [ADR-002](decisions/ADR-002-longbridge-cli-sidecar.md)。

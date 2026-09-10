@@ -1,6 +1,6 @@
 # 本地开发与启动说明
 
-更新时间：2026-09-04
+更新时间：2026-09-10
 
 ## 1. “前端”到底是什么
 
@@ -69,7 +69,7 @@ MySQL：3306
 
 需要运行真实浏览器自动化时，改为双击 `scripts/start-test.cmd`。它明确激活 `test` profile，并使用独立的 18082/18083 端口，避免误复用正在连接开发库的 8082 后端。IntelliJ 中也提供 `StockSystemApplication`（dev）和 `StockSystemApplicationTest`（test）两套共享运行配置。
 
-配置职责如下：`application.properties` 保存两边共用的配置，各 profile 文件保存数据库地址和该环境的行情模式。默认 profile 是 dev，所以普通启动仍进入开发库；自动化测试必须显式进入 test。开发默认 `stock-system.market.mode=directory`，测试默认 `mock`；开发可通过环境变量 `MARKET_MODE=mock` 显式选择模拟模式。
+配置职责如下：`application.properties` 保存两边共用的配置，各 profile 文件保存数据库地址和该环境的行情模式。默认 profile 是 dev，所以普通启动仍进入开发库；自动化测试必须显式进入 test。开发默认 `stock-system.market.mode=longbridge`，测试固定 `mock`；开发可通过 `MARKET_MODE=directory` 暂停外部报价，或用 `MARKET_MODE=mock` 明确进入模拟模式。
 
 ## 5. 为什么正式上线后不用手工运行 `npm run dev`
 
@@ -108,3 +108,56 @@ PowerShell 使用 npm.cmd，Maven 使用系统 mvn。本机 Maven 缓存位于�
 Java 源文件启动入口 `scripts/ImportStockDirectory.java` 调用正式 `StockDirectoryImporter`。在项目根目录、编译完成且 classpath 包含 target/classes 和项目依赖时执行：`java --class-path <classpath> scripts/ImportStockDirectory.java test verify <目录JSON>`，会核对实际测试库、迁移、导入、重复导入和回滚；`dev inspect` 只读核对开发库，`dev apply <目录JSON>` 才执行真实开发数据导入。凭据从现有配置/环境读取，不放入命令参数。它不启动应用或端口；迁移前检查 catalog，数据批次异常整体回滚。apply 在 target 保存原股票信息备份、核对已有 ID 不变及全部导入字段后提交，不删除目录缺失记录。
 
 本轮生成的 `target/directory-classpath.txt` 来自实际 Maven 测试报告的 java.class.path，仅为本机运行辅助文件。它会随依赖与工作区变化，不能作为永久部署配置。已经运行的 IntelliJ 后端需要重启才能加载新的 Java 搜索逻辑；导入本身立即对数据库可见。
+
+## 9. Longbridge 真实报价
+
+### 9.1 这套方案怎样运行
+
+本地数据流是：
+
+```text
+搜索：Vue → Spring Boot → MySQL 标准目录 → 一次批量 quote.quote → 返回候选和真实价格
+添加：Vue → Spring Boot → 再取可信报价 → 研究事务保存不可变开始快照
+K 线：Vue 展开已加入股票 → Spring Boot → quote.candlesticks／history_candlesticks_by_date → 当前图表
+分时：Vue 切换分时／日期 → Spring Boot → quote.intraday 或历史 1 分钟 K 线 → 当前图表
+                                                       ↑
+                                          一个长期运行的 longbridge serve
+```
+
+Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。第一次需要报价时，它启动一个官方 `longbridge serve` 子进程；后续请求通过 stdin/stdout JSON-RPC 复用该进程，应用关闭时一并关闭。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。相同代码 5 秒内重复读取会命中本进程缓存；Java 端还限制最多 5 并发且相邻上游请求至少 100ms。
+
+当前[官方定价说明](https://open.longbridge.com/zh-CN/pricing)写明 OpenAPI 不收激活或接口使用费，因此一次报价不是“消耗一张 OAuth 授权码”或按次扣费；需要控制的是调用速率、长连接数量和各市场行情权限。授权码只用于建立/刷新授权，Token 会复用。[实时报价接口](https://open.longbridge.com/zh-CN/docs/quote/pull/quote)当前没有公开的每日或每月不同标的总量硬上限；单次最多接收 500 个代码，所以理论上查询 5000 只需要拆成至少 10 个请求并遵守每秒 10 次、并发 5 次，不能一次请求或同时订阅 5000 只。项目搜索只取最多 30 个候选并合并成一次请求。
+
+[K 线 CLI 官方说明](https://open.longbridge.com/zh-CN/docs/cli/market-data/kline)支持 `1m/5m/15m/30m/1h/day/week/month/year`，并与[历史 K 线接口](https://open.longbridge.com/zh-CN/docs/quote/pull/history-candlestick)记录了另一套额度：按自然月统计查询过的不同股票代码，基础开户档为 100 只，随账户等级最高到 3000 只；同一股票当月切换周期、回看不同日期或重复查询都只计一个不同标的，但每次未命中项目缓存的读取仍是一笔上游请求。历史 K 线还有每 30 秒最多 60 次的接口频率限制。当前页面已开放全部九种周期，并只在用户展开已经加入空间的单只股票时加载；当天分时同样按需读取，历史分时复用 1 分钟历史 K 线，所以也计入历史 K 线不同标的额度。搜索候选和整张共享列表不会预取这些序列。费用、额度与行情权限可能变化，上线前仍按 [部署检查](deployment.md) 重新核对，不能据此承诺所有市场永久免费实时。
+
+官方文档的“我的行情权限”链接进入 [Longbridge Account Center](https://open.longbridge.com/account)，可核对账号权限和档位；当前公开文档和 CLI 帮助没有提供“本月已用／剩余不同 K 线标的数”的查询命令，不能承诺该页一定显示实时已用计数。项目也不自称掌握供应商全局余量，因为同一账号可能被其他客户端调用；当前只能避免搜索预取、复用同股缓存，并在上游限制错误时明确显示。以后若做本地用量看板，只能标为项目自身请求估算，不能冒充 Longbridge 官方剩余额度。
+
+### 9.2 第一次准备
+
+在运行 Spring Boot 的同一个 Windows 账号下完成以下核对：
+
+1. `longbridge --version`：确认 CLI 已安装且当前终端能找到它；本机已验证版本为 `v0.28.5`。
+2. `longbridge auth login`：只在首次使用、Token 失效或授权被撤销时完成浏览器授权，不是每次查行情都执行。
+3. `longbridge quote 600519.SH`：先把账号、网络和 A 股只读权限与项目代码分开验证；能返回价格后再启动 Spring Boot。
+
+本机 `longbridge.exe` 为 16,547,328 字节（约 15.8 MiB）；项目不复制它，也不读取 CLI 保存在 `~/.longbridge/openapi/tokens/<client_id>` 的 Token。若新终端能运行 CLI、但从旧 IntelliJ 启动的 Java 找不到它，原因通常是 IntelliJ 没继承更新后的 PATH。重启 IntelliJ，或在运行配置中设置：
+
+```text
+LONGBRIDGE_CLI_PATH=C:\实际安装位置\longbridge.exe
+```
+
+项目在 Windows 下还会从当前账号的 `LOCALAPPDATA\Programs\longbridge\longbridge.exe` 查找官方默认安装位置；找不到时才依赖 PATH。`LONGBRIDGE_CLI_PATH` 是可执行文件路径，不是 Token。不能把授权码或 Token 放进环境变量、启动参数、项目配置或日志。
+
+### 9.3 可配置项与降级
+
+| 环境变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `MARKET_MODE` | `longbridge` | `longbridge` 取真实报价；`directory` 只搜目录；`mock` 只用于明确模拟 |
+| `LONGBRIDGE_CLI_PATH` | `longbridge` | CLI 可执行文件；服务/IDE 找不到 PATH 时设绝对路径 |
+| `LONGBRIDGE_REQUEST_TIMEOUT` | `5s` | 单个 JSON-RPC 请求等待上限 |
+| `LONGBRIDGE_CACHE_TTL` | `5s` | 相同报价批次或当天分时股票的进程内短缓存；不是历史数据缓存 |
+| `LONGBRIDGE_CANDLESTICK_CACHE_TTL` | `1m` | 相同股票、周期、数量和最新／历史日期边界的 K 线进程内短缓存；重启即失效 |
+
+CLI 未安装、当前 OS 账号未授权、日志或 Token 目录无权限、网络超时、上游报错或 sidecar 退出时，搜索仍返回 MySQL 可信目录，但价格和行情时间为空；添加研究按 `MARKET_QUOTE_UNAVAILABLE` 失败且不写业务记录。系统不会静默改用 Mock，也不会把缓存过期数据标成实时行情。异常退出后的当前请求失败，下一次报价请求才尝试重新启动 sidecar。
+
+`longbridge serve` 本身包含交易方法，但项目 Java 客户端只允许 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date` 和 `quote.intraday` 四个固定只读方法，没有向 Controller 或前端开放任意方法。K 线 `301607` 会作为 HTTP 429 和 `MARKET_KLINE_LIMIT_EXCEEDED` 返回；历史分时遇到该码返回 `MARKET_INTRADAY_HISTORY_LIMIT_EXCEEDED`。这些错误可在页面错误区、开发者工具 Network 响应或后端 API 调用结果中看到。当前交易时段判断尚未接入交易所节假日日历，也未核对当天分时点确实属于请求日期，因此非交易日边界仍需修正和验收。部署到服务器还需要固定服务账号、持久化授权、实例数和回滚设计，不能把本机登录成功等同于部署完成；完整清单见 [部署说明](deployment.md#3-longbridge-sidecar-部署前置条件)。

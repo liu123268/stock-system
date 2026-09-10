@@ -1,7 +1,7 @@
 # SPEC-002：股票与初始观点技术设计
 
-状态：首个股票与初始观点纵向闭环已实现并通过双角色浏览器验收  
-更新时间：2026-09-08
+状态：首个股票与初始观点纵向闭环已实现；真实报价和基础 K 线已完成页面验收；分钟 K、同图长历史与 pull 版分时主体已实现，真实分时协议已验证，交易日／交易时段元数据边界待补齐、页面待验收
+更新时间：2026-09-10
 
 ## 1. 文档职责
 
@@ -57,19 +57,19 @@ MarketDataProvider
 - 只用于打通业务和页面，不声称外部行情已经接入；
 - 后续替换真实提供者时，Controller、空间权限和研究事务不随供应商 DTO 改写。
 
-开发环境默认使用 `directory` 模式：搜索 Service 查询 `stock`，不再调用 Mock 搜索；`DirectoryMarketDataProvider` 暂时返回报价不可用，防止真实股票混用模拟价格。测试环境固定 `mock`，开发可通过 `MARKET_MODE=mock` 显式选择模拟模式。真实报价的权限、频率、费用和条款仍需单独验证。
+目录接入阶段曾默认使用 `directory` 模式；当前开发环境已默认使用 `longbridge`，搜索 Service 先查询 `stock`，再由 Longbridge provider 补充真实报价。需要停用外部报价时可显式选择 `directory`，测试环境固定 `mock`，三种模式不能静默回退或混用。
 
 ### 4.0 外部行情调用与密钥边界
 
-真实行情供应商（优先验证 Longbridge OpenAPI，必要时评估其他供应商）只允许作为 Spring Boot 服务端的上游。Vue/React 前端只能调用本项目的 Spring Boot API，不得直接调用供应商，也不得接收、保存或暴露 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等凭据。服务端通过 SDK、REST 或 WebSocket 调用供应商，校验返回的股票身份、价格、行情时间、来源和延迟标识，再结合 Redis/MySQL 向前端提供受项目权限和数据规则约束的结果。
+真实行情供应商只允许作为 Spring Boot 服务端的上游。Vue/React 前端只能调用本项目的 Spring Boot API，不得直接调用供应商，也不得接收、保存或暴露 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等凭据。当前服务端通过官方 CLI sidecar 调用 Longbridge，校验返回的股票身份、价格、行情时间、来源和状态，再结合 MySQL 标准身份与进程内短缓存向前端提供受项目权限和数据规则约束的结果；Redis 与 WebSocket/SSE 仍是达到对应容量条件后才实施的动态层。
 
 ```text
-Longbridge / 其他供应商
-          ↑ SDK、REST 或 WebSocket
+Longbridge
+          ↑ 官方 CLI `serve` / JSON-RPC
           │
 Vue/React ←→ Spring Boot
               ↑
-          Redis / MySQL
+      进程内短缓存 / MySQL
 ```
 
 凭据只能通过服务端环境变量、受保护的本机配置或部署平台密钥管理提供，不能进入前端源码、浏览器响应、日志、Git 或构建产物。供应商凭据泄漏可能影响关联账户，因此真实接入的验收必须包含“浏览器和构建产物中不存在供应商密钥”的检查。该边界是全局行情接入规则，不因某个页面需要行情而放宽。
@@ -94,7 +94,7 @@ Vue/React ←→ Spring Boot
 
 现有添加流程要求可信价格快照，目录搜索成功不代表已经能对所有股票完成真实添加。目录先上线时，报价不可用仍按 STOCK-009 明确失败；不得用 Mock 价格静默填补真实行情。测试和显式模拟模式继续独立使用 Mock。
 
-后续已完成公开目录下载、字段转换、数据库迁移和实际导入，证据见 tasks 的目录实施记录。账号行情权限、真实报价与 K 线、北交所完整覆盖核对仍未完成。
+后续已完成公开目录下载、字段转换、数据库迁移、实际导入、账号授权、A 股行情权限、基础真实报价和按需 K 线，证据见 tasks 的目录与 CODE-206B/C 实施记录。北交所完整覆盖核对仍未完成。
 
 ### 4.2 目录字段接入核对（2026-09-08）
 
@@ -117,6 +117,85 @@ Vue/React ←→ Spring Boot
 
 重复同步按 code 更新，保留已有 stock.id 和关联研究记录；不删除目录中暂时缺失的股票。首次目录已导入开发库，尚未实现每日定时同步、退市状态核验和供应商自动切换。北交所使用巨潮 920xxx A 股目录作为当前补充来源，完整性未确认；港股范围为主板/GEM 的 HKD 股权证券，未将所有证券类型或其他币种柜台混入。
 
+### 4.3 Longbridge 基础报价接入（2026-09-09）
+
+真实最短链路已经从“等待 Java SDK 浏览器 OAuth”调整为“复用官方 CLI 已完成的 Device Authorization Flow”。Java SDK 已升级至 `4.5.0`，但仍没有通过公开 API 导入 CLI Token 的能力；官方 CLI `v0.28.5` 的 `quote` 和稳定 `serve` JSON-RPC 都已实测成功。因此当前传输层使用 Spring Boot 管理 `longbridge serve` sidecar，完整取舍见 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。
+
+```text
+搜索关键字
+  → StockMapper.searchDirectory：最多 30 个可信本地身份
+  → LongbridgeMarketDataProvider：收集标准代码
+  → LongbridgeJsonRpcClient：一个 quote.quote 批量请求
+  → 按 symbol 把价格和供应商时间合并回本地身份
+  → StockSearchResponseVO
+
+添加标准代码
+  → StockMapper 再确认代码存在且不是 Mock
+  → 短缓存命中或 quote.quote
+  → StockQuoteSnapshot
+  → 事务外行情成功后才进入原有研究事务
+```
+
+`LongbridgeJsonRpcClient` 负责传输，provider 负责业务模型映射：
+
+- 客户端按需启动一个 CLI 子进程，用 UTF-8 换行 JSON-RPC 通信；请求 ID 递增，pending Map 允许响应乱序；stderr 只排空，不复制可能含账号信息的上游日志。
+- 默认请求超时 5 秒。进程退出、写入失败、JSON-RPC error、结果结构错误或超时都转换为报价不可用；超时会终止该 sidecar，使同进程未完成请求一起明确失败，下一次请求再干净重启，避免旧请求继续占用上游并发。
+- 关闭 Spring Context 时关闭 stdin 并等待 CLI 退出，超时后只销毁自己创建的进程。CLI 没有单独 HTTP 端口，也不应由用户再手工常驻一个 `serve`。
+- 搜索候选批量发送，不做 N 次逐股票调用；Java 端最多允许 5 并发，相邻上游请求至少 100ms。相同代码默认缓存 5 秒，既降低快速重复读取，又保证填写观点较久后添加时可以重新拿较新的快照。
+- 本地目录仍决定 code/name/exchange/currency/listingStatus；Longbridge 只提供大于 0 的 last_done 和可解析 timestamp。供应商 UTC 时间转换为 `Asia/Shanghai` 的 `LocalDateTime` 写入现有模型，来源记为 `LONGBRIDGE_OPENAPI`，`simulated=false`。
+- 搜索失败降级为“目录存在但暂无报价”；添加失败继续触发 STOCK-009，研究表不产生半成品。不能自动切换 Mock，也不使用过期缓存冒充最新行情。
+- Java 网关只实现四个固定只读方法：`quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date` 与 `quote.intraday`，不接受来自 Controller/前端的方法名。CLI 的 `trade.*`、`api.get/post` 等能力在本阶段不可达。
+
+基础免费范围不能理解为无限制或所有市场实时。当前验证证明 A 股 `600519.SH` 可返回真实报价；账号仍受一个行情长连接、每秒 10 次、并发 5 次限制，实时报价一次最多传入 500 个代码，港股基础权限在特定请求规模或账号权限下可能返回延迟行情。项目保留供应商时间，页面不能仅凭来源标签宣称实时。历史 K 线另按自然月查询过的不同标的计额，当前基础开户档为 100 只、账户等级最高 3000 只，同一标的当月重复查询只计一次，并另受每 30 秒最多 60 次调用限制；因此 K 线只在详情页按需取得，不随搜索候选预取。定价、额度、权限和供应商条款变化时需重新核对。
+
+当前报价与当天分时的 5 秒缓存、K 线及历史日期批次的 1 分钟缓存只属于单实例低频拉取层。页面已用 30 秒 pull 完成单只可见分时的最小闭环；上游 WebSocket、Redis、SSE 仍按实际并发和部署容量分别设计。多实例或动态推送前必须先解决单账号单连接和共享限流，不能直接复制多个 sidecar。部署前置条件见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)。
+
+### 4.4 已加入股票的按需 K 线（2026-09-09）
+
+```text
+用户展开共享自选中的一只股票
+  → GET /api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks
+  → 重新验证空间成员并按 workspaceId + workspaceStockId 查标准股票
+  → MarketCandlestickProvider
+  → LongbridgeJsonRpcClient：quote.candlesticks
+  → 首次最多 1000 根不复权 OHLCV，左边界按 before 游标继续补历史
+  → Pinia 保存当前展开序列
+  → 按需加载的 ECharts K 线图
+```
+
+- Controller 接受 `1m/5m/15m/30m/1h/day/week/month/year` 和 20～1000 根；页面首次固定请求上限 1000 根，后续携带当前最早时间 `before` 继续向前读取。
+- K 线读取与搜索候选完全分离。只有 `workspace_stock` 已存在且当前用户仍是空间成员时才访问上游，避免一次模糊搜索把 30 个候选都计入月度不同标的额度。
+- Java 客户端白名单包含四个固定只读方法：基础报价、最近 K 线、按日期历史 K 线和当天分时。前端不能传 JSON-RPC 方法名，交易和任意 API 仍不可达。
+- 最近 K 线按 `symbol + period + count + latest`、更早批次按 `symbol + period + count + endDate` 默认缓存 1 分钟。缓存只减少重复调用和页面压力，不改变 Longbridge 按股票代码统计的月度不同标的口径；同一股票切换周期或当月重复查询仍是一个不同标的。
+- 上游 `301607` 在 K 线方法中映射为 `MARKET_KLINE_LIMIT_EXCEEDED`（HTTP 429），页面提示减少数据量或核对月度标的额度；其他上游失败映射为 `MARKET_KLINE_UNAVAILABLE`（HTTP 503）。官方 K 线文档只把该码定义为“请求数据数量超限／接口限制”，没有证明它只代表月额度耗尽；报价方法同码则明确是单次代码数量超限，不能跨接口共用一句错误含义。
+- 当前序列不写 MySQL，刷新页面后重新按需读取；MySQL 只保留研究开始时的价格快照。后续要做长期历史复盘时，再实现 `stock_daily_quote` 幂等落库；多实例、热点轮询或动态推送出现后再引入 Redis。
+
+### 4.5 分钟 K、长历史与分时实现
+
+分钟 K 继续使用 K 线数据结构和 ECharts 蜡烛图；分时使用独立的 `IntradayPoint(time, price, avgPrice, volume, turnover)` 与折线／成交量组合图，避免为了复用组件丢掉均价线。Longbridge [K 线接口](https://open.longbridge.com/zh-CN/docs/quote/pull/candlestick)支持 `1m/5m/15m/30m/1h`，所有周期首次请求接口允许的最近 1000 根，仍在现有 ECharts 图中通过 dataZoom 缩放。用户向左拖到已加载边界时，后端再用[历史 K 线接口](https://open.longbridge.com/zh-CN/docs/quote/pull/history-candlestick)的 date 或 offset 游标请求前一批最多 1000 根，按时间去重后插入同一数组；这里的“分页”只是上游分批取数，不是页面分页，也不要求更换图表或增加时间范围选择器。用户继续向左即可逐批到达供应商最早可用数据。
+
+“全部历史”按供应商可用范围解释。当前产品只接入 A 股与港股；官方范围为 A 股日线 1999-11、分钟线 2022-08 起，港股日线 2004-06、分钟线虽然更早但还受账户资产对应的近 3 年／8 年限制；因此页面显示“可用以来”，并在达到供应商最早点时停止继续加载，不写成无条件“上市以来”。
+
+当天分时的第一阶段数据流：
+
+```text
+成员打开已加入股票的分时面板
+  → Spring Boot 校验空间成员与 workspace_stock
+  → quote.intraday 拉取开盘至当前最新分钟的 price / avg_price / volume / turnover
+  → 响应同时返回该市场常规交易时段；Vue 先建立完整分钟槽位
+  → 仅在面板可见且市场处于相应交易时段时进行受控刷新
+  → 当天 `quote.intraday` 按 symbol 使用 5 秒进程内短缓存
+  → Vue 把已有点按 HH:mm 对齐，未来分钟留空，价格线、均价线和分钟量柱只画到当前位置
+```
+
+收盘后页面停止定时刷新，但用户重新打开当天分时仍走 `quote.intraday` 的 5 秒缓存，并未实现额外的盘后长缓存。过去交易日通过同一个 `longbridge serve` 的 `quote.history_candlesticks_by_date(period=1m, start=end=tradeDate)` 读取，使用分钟 close 绘制价格线，并由累计成交额／累计成交量计算当日均价线。官方 [CLI 分时说明](https://open.longbridge.com/docs/cli/market-data/intraday)与本机 CLI 0.28.5 的 `intraday --date YYYYMMDD` 都表明历史单日分时可用，但公开说明未写明该 CLI 包装命令自身如何计额；项目采用的历史 `1m` K 线方案明确遵守历史 K 线月度不同标的额度，同一股票当月回看任意多个日期仍只计一个标的。历史方法返回 `301607` 时可解释为当月历史 K 线标的数超限；最近 `quote.candlesticks` 的同码按单次数据量超限解释。
+
+响应现已按当前产品支持的市场返回常规交易时段：A 股 `09:30～11:30、13:00～15:00`，港股 `09:30～12:00、13:00～16:00`，时间含义由同一响应的市场时区限定；不在 V1 范围的美股不会进入分时时段映射。ECharts 使用完整交易分钟类目轴，不再把盘中已有点均匀拉伸到全宽；未来槽位使用 `null`，刷新时只填入新到分钟。午休分钟不进入类目轴，两个时段的交界合并显示为 `11:30/13:00` 或 `12:00/13:00`，折线允许跨空值连接，因此供应商缺少边界分钟时也不会在计划内午休处断开，但未来没有后续点时不会向收盘时间延伸。历史分时从 `1m` K 线重建均价时，A 股先把以“手”返回的成交量换算为每手 100 股，再用累计成交额除以累计股数，避免均价放大 100 倍把价格线压平；港股不套用 A 股手数规则。历史返回点还会按市场时区严格过滤为所选日期。当前 `updating` 仍只按市场时区、工作日和固定交易时段计算，还没有接入交易所节假日日历，因此非交易日边界仍不能宣称已经完成，CODE-206D 验收前需补齐并覆盖测试。
+
+分时百分比以所选交易日前最近一根日 K 的收盘价为 `referencePrice`，不能使用当前报价的昨收去解释任意历史日期。Provider 通过已有历史 K 线网关读取所选日期前最多 10 根日 K，按市场日期过滤后取最近一根；响应把该价格连同分钟点返回。前端同时计算价格线和均价线相对昨收的最大绝对偏离，增加 8% 视觉余量后向上取 `1/2/3/5/10/20/30/50/100%` 档位；左价格轴固定为 `昨收 × (1±档位)`，右百分比轴固定为 `±档位`，两边都分成四段，因此 `0%` 与昨收严格处在同一水平线。分档只在突破当前档位时扩展，避免每次 pull 都发生细小缩放抖动。Tooltip 使用第三个不绘制的百分比序列，在价格和均价下方显示当分钟价格相对昨收的“涨跌幅”；价格、均价和涨跌幅都在 ECharts `valueFormatter` 层保留两位小数，右轴 `axisPointer.label.formatter` 共用带正负号和 `%` 的格式化函数；序列内部仍保留原始精度。
+
+第一阶段不要求 WebSocket、SSE 或 Redis：单后端、单个可见图表可用受控 pull 完成正确性闭环。后续若需要更及时的盘中变化，WebSocket 是 Longbridge 与 Spring Boot 之间保持不断开的双向连接，由供应商主动推送；SSE 是 Spring Boot 到浏览器的单向持续连接，由后端把新价格推给当前页面。进入多用户同时观看、多个股票动态更新或多实例后，再由 `quote.subscribe` 的 quote/trades 推送聚合当前分钟，通过 SSE 发给浏览器，并定期用 `quote.intraday` 对账；Redis 届时承担跨实例最新分时缓存、订阅引用计数和请求合并，MySQL 只在产品确认需要脱离供应商长期复盘时持久化不可变分钟事实。
+
 ## 5. 首批 API
 
 | 方法   | 路径                                   | 作用                                     |
@@ -124,6 +203,8 @@ Vue/React ←→ Spring Boot
 | `GET`  | `/api/stocks/search?keyword=`          | 按模式搜索本地标准目录或模拟股票；无报价时价格与时间为空 |
 | `POST` | `/api/workspaces/{workspaceId}/stocks` | 添加共享股票、创建活动周期并发表初始观点 |
 | `GET`  | `/api/workspaces/{workspaceId}/stocks` | 查询当前空间共享自选列表                 |
+| `GET`  | `/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks?period=1m&count=1000&before={instant}` | 按需读取空间股票 K 线；`before` 为空取最新，存在时取更早；仅成员可读 |
+| `GET`  | `/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/intraday?date={YYYY-MM-DD}` | 按需读取当天或历史交易日分时；仅成员可读 |
 
 搜索接口需要登录但不依赖某个空间；添加和列表接口必须验证目标空间成员关系。搜索结果只作为候选展示，添加时后端再次通过 provider 获取和校验股票身份与行情，不能信任前端回传的名称、价格、作者、时间或来源。
 
@@ -157,14 +238,15 @@ Vue/React ←→ Spring Boot
 - 有报价的候选才展开初始观点表单；暂无报价时说明暂不能添加，后端仍独立拒绝无报价添加；提交成功后刷新列表；
 - 重复活动周期返回现有共享股票 ID 时，前端提示“该股票已在关注中”，并为后续详情页保留跳转入口；
 - OWNER 与 MEMBER 使用相同添加能力；归档空间只展示列表和只读说明，不显示提交入口。
+- 每条已加入股票提供一个按需行情面板；只有展开后才默认请求日 K，可切换九种 K 线周期或分时。K 线支持缩放、左边界补载和历史错误重试，分时支持日期选择、价格／均价／成交量组合图及盘中受控刷新；两个 ECharts 组件都按需加载，不增加共享自选首屏负担。
 
 前端按 `View → stock Store → stock API → 后端` 分层。View 只负责候选选择、表单交互和状态呈现；Store 统一管理搜索、列表与提交状态，并在提交成功后重新读取共享列表；API 层只描述 HTTP 契约。目标价和止损价在页面上是可选数字，运行时按空值或正数转换，不能假定 `type="number"` 的 `v-model` 永远仍是字符串。
 
 ## 8. 针对性验证
 
-- provider 单元测试：A 股/港股搜索、标准身份、模拟标识和不可用错误；
+- provider 单元测试：A 股/港股搜索、标准身份、模拟标识、K 线／历史分时转换、配额映射和不可用错误；
 - MySQL 集成测试：OWNER 添加、MEMBER 添加、非成员拒绝、归档拒绝、跨空间隔离、重复活动周期、事务回滚和唯一约束；
-- 前端单元测试：搜索状态、表单可信字段边界、添加成功刷新、业务失败与网络失败；
+- 前端单元测试：搜索状态、表单可信字段边界、添加成功刷新、按需 K 线、历史批次合并、分时请求、业务失败与网络失败；
 - 纵向闭环完成后做一次 OWNER/MEMBER 浏览器流程；环境和清理要求见 [测试规则](../../engineering/testing.md)。
 
-模拟业务闭环已完成相关测试和一次全量回归；目录扩展另有导入事务、数据库检索和桌面/手机浏览器验收。后续 PLAN-206 继续解决真实报价、状态、目录覆盖及 Redis 缓存设计，不重做已验证的导入和检索。
+模拟业务闭环、目录扩展、真实报价与基础 K 线均已有对应自动化和页面证据。分钟 K、同图历史补载和 pull 版分时代码已完成全量回归，真实 CLI／sidecar 已验证当天分时和历史 1 分钟上游数据；剩余的是浏览器页面复验，以及本节记录的交易所节假日、当天返回日期校验和明确交易时段元数据，不能把协议探测写成完整页面验收。

@@ -1,7 +1,7 @@
 # SPEC-002：股票与初始观点任务清单
 
-状态：首个“搜索股票 → 初始观点 → 共享列表”纵向闭环已完成  
-更新时间：2026-09-08
+状态：首个“搜索股票 → 初始观点 → 共享列表”纵向闭环已完成；CODE-206D 主体代码与真实协议验证完成，交易日／交易时段边界待补齐，页面待验收
+更新时间：2026-09-10
 
 ## 1. 当前闭环
 
@@ -20,8 +20,11 @@
 - [x] `CODE-203` 实现添加股票、创建研究周期和初始观点的事务、权限、重复保护与集成测试；
 - [x] `CODE-204` 实现共享自选列表和前端搜索/初始观点表单；
 - [x] `CODE-205` 完成当前纵向闭环的前后端检查、双角色浏览器验收、测试数据与进程清理；
-- [ ] `PLAN-206` 先设计真实行情接入闭环：验证 A 股/港股供应商，确定股票目录同步、Redis 必选缓存、行情状态、一致性与故障降级边界；完成后再拆实施任务。
+- [ ] `PLAN-206` 分层验证真实行情接入：账号、OAuth、A 股权限、官方 CLI、Spring Boot sidecar、报价和 K 线均已验证；分钟 K、同图历史和分时代码及上游协议已验证，剩余浏览器页面、交易日／交易时段边界、真实添加、目录同步与覆盖验收。WebSocket、Redis、SSE 在出现对应容量需求后分别设计。
 - [x] `CODE-206A` 按用户优先级先完成已验证目录批量转换、V4 迁移、实际导入和数据库搜索；保留无报价边界与显式模拟模式。
+- [x] `CODE-206B` 用 Spring Boot 管理官方 `longbridge serve`，完成 JSON-RPC 客户端、Longbridge provider、批量报价、限流、短缓存、超时／退出降级、关闭清理和真实后端集成验证。
+- [x] `CODE-206C` 为已加入空间的股票实现按需日／周／月／年 K 线、月度标的额度保护、`301607` 错误映射、1 分钟短缓存和 ECharts 页面，并完成真实页面验收。
+- [ ] `CODE-206D` 扩展分钟 K、同图长历史和分时：所有周期首次取最近 1000 根，向左到边界后每次再取前一批最多 1000 根并插入同一图；分时覆盖盘中受控更新、收盘后当天查看、历史交易日回看、市场时段停止条件与供应商范围提示。先完成 pull 正确性闭环，再按并发需求决定 Redis/SSE。
 - [ ] `PLAN-207` 根据真实页面和代码进入后续业务闭环：结束关注、重新开启研究周期或多人观点更新。
 
 ### PLAN-206 首次目录实测证据（2026-09-08，历史阶段）
@@ -46,6 +49,68 @@
 - 前端 15 项单元测试通过；最终静态检查、类型检查和生产构建通过。真实 Chrome 在 1440×1000、390×844 验证简体/繁体/英文、深市和北交所标准代码搜索、无报价提示及手机无横向溢出。测试账号、空间和 3 条目录样本按本轮标记清理，残留为 0。
 - 本轮测试后端 PID 62884、前端 PID 12524 均已关闭，18082/18083 已释放；用户的开发后端 67724 与前端 62064 保留。数据库导入立即可见，但已有 IntelliJ Java 进程需重启才能加载新搜索实现，不能把测试服务验收等同于旧开发进程已更新。
 - 未完成：北交所覆盖核验、每日自动同步、可靠交易状态、真实报价/K 线、Redis 缓存与降级设计。因此 PLAN-206 保持未完成。
+
+### PLAN-206 行情接口实施顺序（2026-09-08 确认）
+
+当前核心问题是形成“先取得什么凭据和权限 → Java 怎样调用 → 项目接口怎样承接 → 页面怎样显示”的可验证链路，不先扩展结束关注或多人观点。
+
+1. 核对 Longbridge 账户是否已开通 OpenAPI，以及 A 股、港股分别具备什么行情权限；不能把 App/Web 行情权限当成 OpenAPI 权限。
+2. 已用官方 CLI `v0.28.5` 的 Device Authorization Flow 完成浏览器授权，并分别通过 `longbridge quote` 与稳定的 `longbridge serve` JSON-RPC 拉取 `600519.SH`；Spring Boot 管理 sidecar 的 provider 已完成后端验证。Token 继续由 CLI 自己管理，不由项目读取、复制或输出。
+3. 探测通过后再新增真实 `MarketDataProvider` 实现，复用本地标准代码、统一快照和现有事务边界；不得在 Controller 旁另建一套供应商专用业务流程。
+4. 一次性／按需拉取的真实报价和基础 K 线已完成真实验收；当前 OS 账号 Token 已确认有效，分钟 K、同图历史补载和分时代码已完成，真实 sidecar 已验证当天分时和历史 1 分钟数据。下一步补浏览器页面流程，并修正／验证交易所节假日、当天返回日期、明确交易时段范围、来源和更新／不可用状态。
+5. 基础拉取链路验证后，才评估 WebSocket 上游订阅、Redis 最新行情缓存和 SSE 浏览器推送。港股基础 BMP 当前约延迟 15 分钟且不支持推送，零付费条件下不能提前承诺港股实时推送。
+6. 北交所覆盖核验、每日目录同步和可靠交易状态仍属于 PLAN-206，但不阻塞第 2 步的 A 股最小接口验证；后续分别拆任务和验收，避免一次引入 OAuth、SDK、WebSocket、Redis、SSE 与 ECharts。
+
+### CODE-206B Longbridge sidecar 实施证据（2026-09-09）
+
+- 新增 `LongbridgeJsonRpcClient`，由 Spring Boot 按需启动一个官方 `longbridge serve` 子进程，以 UTF-8 换行 JSON-RPC 通信。请求使用递增 ID，允许响应乱序；默认超时 5 秒，进程退出时失败当前 pending 请求，下一次请求才重启；Spring Context 关闭时只关闭自己拥有的子进程。
+- 新增 `LongbridgeMarketDataProvider`。搜索先从 MySQL 取最多 30 个可信目录身份，再用一次 `quote.quote` 批量请求补充价格和供应商时间；添加前按标准代码再确认本地身份并取可信快照。来源为 `LONGBRIDGE_OPENAPI`、`simulated=false`，供应商 UTC 时间转换为项目 `Asia/Shanghai` 时间。
+- 客户端硬编码只读 `quote.quote`，没有向项目 API 暴露 CLI 的 `trade.*` 或任意 `api.get/post`。Token 继续由 CLI 保存在 OS 账号目录，代码不读取、复制或输出。
+- 访问保护为最多 5 个并发、相邻请求至少 100ms、同代码默认 5 秒进程内缓存。批量搜索不是逐股票 30 次调用；CLI 或网络不可用时搜索保留目录但无报价，添加按 STOCK-009 失败，不回退 Mock。
+- 纯内存测试 8 项通过：覆盖批量请求、5 秒缓存、乱序 ID 对应、超时、可信目录合并、CLI 故障降级和 Mock 基线。第一次真实测试在受限执行环境中因 CLI 无权写用户日志目录而退出；提升到与实际服务账号相同的权限后，Java 管理器真实拉取 `600519.SH` 并关闭 sidecar，证明失败不是 OAuth 或行情权限问题。
+- Spring 集成测试实际连接 `stock_system_test`，Flyway V4 无待迁移项；临时 `600519.SH` 目录身份与真实报价成功合成为 `StockQuoteSnapshot`，测试事务回滚后 `TEST_DIRECTORY` 标记剩余 0。测试后无 `longbridge` 进程，未启动 8082/8083/18082/18083 服务。
+- 普通 Maven 全量回归 59 项通过、3 项显式真实探测跳过；`test` profile 保持 Mock，没有在全量回归中访问 Longbridge 账号。真实 CLI 与 provider 测试已按上文单独启用并通过。
+- Spring Boot 可执行 JAR 打包成功；构建产物和现有前端产物未发现本次 Client ID、旧错误 Client ID、CLI Token 路径或供应商密钥标记，生产 JAR 也没有打入 test-scope 的 Longbridge Java SDK。文档检查覆盖 41 个 Markdown、214 个本地链接与锚点并通过。
+- 真实页面搜索已由用户在日常开发环境验收：搜索“诺德股份”和“中际旭创”均返回目录候选，并显示 Longbridge 最新价格。该证据只确认搜索与报价展示，不代表真实模式下的“添加股票＋初始观点”事务已经验收。
+- CODE-206B 完成时尚未实现 K 线；其后续实现见下方 CODE-206C。真实页面添加验收、分时、Redis、SSE、北交所完整性、每日目录同步和可靠交易状态仍未完成，因此 PLAN-206 不勾选。
+
+### CODE-206C 按需 K 线实施证据（2026-09-09）
+
+- 后端新增独立 `MarketCandlestickProvider` 能力，不把历史序列塞进基础报价快照。成员只能按 `workspaceId + workspaceStockId` 读取已经加入空间的股票，非成员、其他空间股票、非法周期和当时 20～500 之外数量均明确拒绝；CODE-206D 后上限调整为 1000。
+- `LongbridgeJsonRpcClient` 白名单增加只读 `quote.candlesticks`，固定 `adjust=none`；CODE-206C 当时支持 `day/week/month/year`、默认页面读取最近 120 根，随后由 CODE-206D 扩展。相同 `symbol + period + count` 使用 1 分钟进程内缓存，继续复用同一个 Spring Boot 所有的 sidecar、5 并发和 100ms 间隔保护。
+- 搜索结果绝不预取 K 线。Vue 仅在用户点击已加入股票的“查看 K 线”后请求，切换周期才重新取当前股票；快速切换股票时用请求版本避免旧响应覆盖新面板。ECharts 组件按需下载，并展示加载、错误、来源、获取时间和不复权状态。
+- CODE-206C 当时只接入最近 K 线，Longbridge `301607` 映射为 `MARKET_KLINE_LIMIT_EXCEEDED`（429），其他上游故障为 `MARKET_KLINE_UNAVAILABLE`（503）。CODE-206D 加入历史方法后，页面继续给出“减少数据量或核对本月标的额度”的合并提示，但排查必须结合方法：实时报价是单次代码数、最近 K 线是单次数据量、历史 K 线可表示月度不同标的额度超限。
+- 官方 CLI 直接读取 `600519.SH` 最近两根日 K 成功；随后 Java `LongbridgeJsonRpcClient → longbridge serve` 真实探测也取得两根日 K并通过断言。测试创建的 sidecar 在结束时关闭；核对到系统仍有 PID 42056，但它由 19:01 已启动的用户开发 Java PID 32020 持有，不属于本轮测试，因此保留。
+- 后端协议 5 项、provider 2 项和股票接口 7 项通过；接口测试实际连接 `stock_system_test` 并由事务回滚。前端 Store 4 项、类型检查、静态检查和生产构建通过。未启动新的 Spring Boot、前端或浏览器服务，未写开发库。
+- 用户重启日常开发后端后，已在真实共享股票页面看到并操作 K 线，完成 CODE-206C 页面验收。分钟 K、可用历史分页、分时、Redis、SSE、北交所完整性、每日目录同步和可靠交易状态仍未完成，因此 PLAN-206 不勾选。
+
+### CODE-206D 分钟 K、同图长历史与 pull 分时实施证据（2026-09-10）
+
+- K 线周期扩展为 `1m/5m/15m/30m/1h/day/week/month/year`，Controller 与上游单批上限统一为 1000。最新批返回 `nextBefore/hasMore`；图表拖到左边界后才携带最早时间读取前一批，前端按时间去重、升序合并并平移 dataZoom 可见索引，历史插入后不会把用户弹回最新位置。
+- `LongbridgeJsonRpcClient` 新增 `quote.history_candlesticks_by_date` 和 `quote.intraday` 白名单。更早 K 线按股票市场时区把 before 转成日期，再严格过滤 `< before`，避免分钟 K 在同一交易日跳段或重复。相同历史边界仍使用 1 分钟进程内缓存。
+- 新增成员专用 `/intraday` 接口与价格线／均价线／分钟成交量组合图。当天使用官方 intraday 数据；历史交易日使用同 sidecar 的 1 分钟历史 K 线并按累计成交额／累计成交量还原均价。未来日期、空数据和上游失败明确报错，历史 `301607` 单独映射为历史分时额度提示。
+- 分时响应已增加市场常规交易时段，组件据此生成完整分钟横轴并按 `HH:mm` 对齐已有点，未来分钟使用空值；盘中曲线不再把开盘至当前的数据拉伸铺满全图。模拟 provider 同样按上午／下午时段生成数据，不再连续跨越午休。新增前端坐标数据测试覆盖 A 股 242 个含端点分钟槽、边界标签和未来空槽；后端 provider 测试覆盖 A 股交易时段元数据。
+- 当前产品分时时段只接受 A 股与港股，美股仍按 V1 排除项处理。真实只读探测确认 `600519.SH` 在 2026-09-09 返回 241 个历史 `1m` 点；历史图异常根因是 A 股 K 线成交量以“手”返回，而旧均价重建直接按股计算，导致均价放大约 100 倍、价格线被纵轴压平。现已按 A 股每手 100 股换算累计数量，港股保持原数量单位，并按市场时区丢弃不属于所选交易日的点；provider 测试使用真实量级验证历史均价 `10 → 15` 及跨日过滤，时段测试验证 A／港股并拒绝美股。
+- 分时午休交界现合并为 `上午收盘/下午开盘` 标签，价格线与均价线启用跨空值连接，解决真实返回缺少 11:30／13:00 等边界点时的视觉断线；未来时段仍因右侧没有后续有效点而保持空白。前端测试固定该连续性配置与边界标签。
+- 分时响应增加 `referencePrice`，由所选交易日前最近一根日 K 收盘价提供；前端增加与左侧价格严格对齐的右侧涨跌幅轴，围绕昨收 `0%` 按最大偏离动态选择对称分档。Tooltip 现按价格、均价、涨跌幅三行显示，价格与均价保留两位小数，涨跌幅和右轴指针浮标均完整显示正负号与 `%`；只限制显示精度，不截断计算数据。单元测试覆盖昨收 100、最大偏离 2.6% 时得到 `97～103` 与 `±3%`，以及价格、涨跌幅的小数与单位格式；真实 sidecar 探测确认 `600519.SH` 当天／历史分钟和前一交易日日 K 均可取得，测试创建的 sidecar 已关闭，探测前后只保留同一个用户开发进程。
+- 2026-09-10 使用页面已查询过的同一标的 `600089.SH` 做只读对照，上游对 2023-05-09 的 `1m` 历史 K 线明确返回分钟数据最早可查日期为 2023-09-01，与当前低资产账户近 3 年范围一致。此限制与日 K 可用到 1999-11、单次最多 1000 根及每月不同标的配额是三件不同的事。当前代码将这类范围错误统一转换为 `MARKET_INTRADAY_UNAVAILABLE`，页面只显示“当前无法取得”；收口时需增加稳定的范围错误映射和明确提示，不把这次人工排查写成已完成代码。
+- 盘中第一阶段保持 pull：仅当前展开的单只股票、分时视图、浏览器可见且市场处于交易时间时每 30 秒刷新；切换 K 线、折叠、离开组件或收盘后停止。搜索候选与共享列表没有 K 线／分时预取。Redis、WebSocket、SSE 和 MySQL 分钟事实库均未引入。
+- 提交前后端全量回归共 73 项，其中 68 项执行通过、5 项需显式开启的真实账号探测按设计跳过；首轮回归暴露旧集成测试仍预期 A 股分时为 240 个点，按当前上下午时段含端点的 242 个点修正断言后复验通过。数据库测试日志确认连接 `stock_system_test`，一般集成测试事务回滚，并发测试由 `AfterEach` 精确清理。前端 22 项单测、类型检查、lint 和生产构建通过；文档检查覆盖 41 个 Markdown 和 217 个链接／锚点并通过。源码、前端产物与 Spring Boot JAR 的凭据标记检查为 0。沙箱外 `longbridge auth status` 确认同一 OS 账号 Token 有效；直接 `intraday`、短连接 JSON-RPC 和 Java 真实 sidecar 探测均实际取得 `600519.SH` 当天分钟点，Java 探测还读取 2026-09-09 的 241 个 1 分钟历史点及前一交易日日 K。所有测试创建的假／真 sidecar 均已关闭，当前只保留用户开发后端持有的既有 `longbridge.exe`。当前响应已携带常规交易时段并用于固定横轴；剩余审计问题是分钟历史范围错误仍显示通用文案、`updating` 只判断工作日与固定交易时段、当天分时未校验返回点日期。CODE-206D 暂不勾选，补齐这些边界后，再验收浏览器中的真实分钟 K、左拖补历史、今天分时和一个历史交易日。
+
+2026-09-08 OAuth 探测记录：项目已使用 Java SDK `4.4.1` 建立隔离探测，并修正 SDK 授权 URL 中空 `scope` 为官方流程要求的 `scope=3`；URL 处理与错误 Client ID 提前拦截共 5 项单元测试通过。动态注册得到的 OAuth Client ID、`.com` 授权地址和 `localhost:60355/callback` 均已进入真实运行，但浏览器仍停在长桥登录入口，用户在此前多次尝试后明确停止重复登录。本轮未取得 Token、未调用 `600519.SH`，探测进程已终止且 60355 已释放；下一步须先由长桥侧确认账户 OpenAPI/OAuth 资格或正确授权入口，不能越过此外部阻塞实施 provider，也不能把旧版 API Key 自动改作 OAuth 凭据。
+
+补充核对官方文档：动态注册只返回 `client_id` 时属于 public client，授权链接必须带 `code_challenge` 与 `code_challenge_method=S256`，换取 Token 时还必须提交配对的 `code_verifier`。本地 Java SDK 4.4.1 的公开接口不能接收自行换取的 OAuth Token；官方仓库 4.5.0 的自带授权实现仍生成空 scope 且未构造 PKCE，因此不能只往 URL 后补参数，因为 SDK 换 token 时不会发送配对的 `code_verifier`。当前 OAuth 交互探测已禁用，防止再次进入无效登录；此前独立 PKCE 合规结论保留在本记录，待长桥确认兼容方式或 SDK 修复后再启用标准流程。官方开通条件还要求完成账户开户、开发者认证及单独的 OpenAPI 权限申请，行情权限也与 App/网页端权限独立；登录后没有进入权限确认页需要长桥侧核查账户状态，不能用本地代码绕过。
+
+2026-09-09 最小探测修正：无 Cookie 只读检查确认 `.com` 与 `.cn` 的 `/oauth2/authorize` 都把有效 client_id 请求重定向到 `/oauth2/authorize/confirm`；当前两域 session 网页程序没有通用 `confirm` 路由，通配路由把请求丢到裸登录页并清掉授权查询参数，所以登录成功后回到 `https://open.longbridge.com/` 首页是供应商授权页路由断点，不是本机 client_id 未识别。设备授权端点虽能返回挑战，但其确认页复用同一 session 程序，不能作为本轮绕过。代码改为只打开本机 `127.0.0.1:60355` 临时页，链接到官方 `/connect`，在本机接收 Agent Auth Code；官方 CLI 源码规定该代码携带其自身 client_id，换 Token 使用 `redirect_uri=https://open.longbridge.com/connect/done` 和数据中心路由头。本机通过 SDK 4.4.1 的官方 Token JSON 缓存格式短暂喂入 Token，文件使用仅所有者 ACL、拒绝覆盖既有缓存，报价完成或失败后精确删除。探测仍未取得真实 Token 或报价，PLAN-206 不勾选完成。
+PowerShell 运行入口为 `& "D:\Java\stockweb\stock-system\scripts\probe-longbridge.cmd"`；CMD 启动器用 `-ExecutionPolicy Bypass` 仅为本次 Windows PowerShell 子进程设置执行策略，不修改用户／系统保存的策略，也不覆盖组策略。脚本自身定位 POM 和 `.m2repo`，不把 client_id、授权码或 Token 放入 Maven `-D` 参数。2026-09-09 用户遇到的 `UnauthorizedAccess` 发生在 `.ps1` 加载前，此时 Maven 和 OAuth 均未启动。
+
+启动实测补充：Maven 3.9.11 在 Java 24 及以上自动给 `MAVEN_OPTS` 添加 `--enable-native-access=ALL-UNNAMED`；原先“一律拒绝 MAVEN_OPTS”的探测预检因此误报。现在仅允许这个确定不启用日志的参数，其他运行选项继续拒绝，相关 7 项单元测试通过。CMD 启动器已实际启动隔离探测，本机授权页返回 HTTP 200，并核对监听只绑定 127.0.0.1；尚需用户在官方网页提交授权。
+
+本机表单 403 修正：用户已在 `/connect` 成功生成代码，网页授权入口可用。此前本机页的 `Referrer-Policy: no-referrer` 使 Chrome 原生表单 POST 发送 `Origin: null`，与接收端的严格来源检查冲突，授权码在解析前即被拒绝。已改为 `same-origin`，保留来源、Host、CSRF 与一次性提交校验，官方外链继续 `noreferrer`。使用独立 Chrome 和合成输入、在浏览器内拦截 POST 实测旧策略产生 null、新策略保留本机 Origin；8 项相关测试通过。页面同时明确上方按钮复制授权码、下方按钮复制说明，拒绝页提供重新打开表单的链接。
+
+2026-09-09 网络层补充：首次真实代码提交已到达 `AUTH_CODE_EXCHANGE`，但 Java 17 默认 `ProxySelector=DIRECT` 时访问 `.com` Token 端点发生 TLS 握手失败。无凭据 GET 对照证明，JVM 启动参数 `-Djava.net.useSystemProxies=true` 后通过 Windows 系统代理可到达同一端点（返回无凭据请求应有的 HTTP 404），因此将该非敏感参数加入探测脚本的 Maven 测试 JVM。代码、Token 和响应均未写入日志；本次提交没有取得 Token，未调用 `600519.SH` 或 `NVDA.US`。下一次需要新的十分钟单次代码。
+
+2026-09-09 官方 CLI 控制实验：安装 Longbridge CLI `v0.28.5` 后，默认 Device Authorization Flow 成功完成 OAuth；Token 由 CLI 写入其专用 `~/.longbridge/openapi/tokens/<client_id>` 缓存，项目未读取内容。`longbridge check` 确认 CN 接入点可用，`longbridge quote 600519.SH` 返回真实最新价 `1290.88`、状态 `Normal`；向 `longbridge serve` 写入 `quote.quote` JSON-RPC 请求得到同一报价，关闭 stdin 后进程正常退出且没有遗留 `longbridge` 进程。控制实验已排除账户、浏览器、OAuth 服务和 A 股行情权限问题，旧 `/connect` 临时绕过不再重试。Java SDK 升级到 `4.5.0` 并通过隔离测试，但 `javap` 确认 Java API 仍只有 `Config.fromOAuth(OAuth)`，没有 `OAuth.fromToken` 或 `Config.fromAccessToken`，不能受支持地复用 CLI Token；PLAN-206 后续改为评估并实现 Spring Boot 到官方 `serve` JSON-RPC 的 sidecar 适配。
 
 ## 3. 执行规则
 

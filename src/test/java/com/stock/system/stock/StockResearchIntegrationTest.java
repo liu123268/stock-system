@@ -211,6 +211,111 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                 .andExpect(jsonPath("$.data.length()").value(2));
     }
 
+    @Test
+    void memberLoadsCandlesticksOnlyForAStockAlreadyInTheWorkspace() throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("period", "year")
+                        .param("count", "40"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value("600519.SH"))
+                .andExpect(jsonPath("$.data.period").value("year"))
+                .andExpect(jsonPath("$.data.adjustment").value("none"))
+                .andExpect(jsonPath("$.data.source").value("LOCAL_MOCK"))
+                .andExpect(jsonPath("$.data.simulated").value(true))
+                .andExpect(jsonPath("$.data.nextBefore").isNotEmpty())
+                .andExpect(jsonPath("$.data.hasMore").value(true))
+                .andExpect(jsonPath("$.data.candlesticks.length()").value(40))
+                .andExpect(jsonPath("$.data.candlesticks[0].open").isNumber())
+                .andExpect(jsonPath("$.data.candlesticks[0].close").isNumber());
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + strangerToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_NOT_FOUND"));
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks",
+                        workspaceId,
+                        workspaceStockId + 999)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_STOCK_NOT_FOUND"));
+    }
+
+    @Test
+    void rejectsUnsupportedCandlestickPeriodAndOversizedCount() throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        String path = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks";
+
+        mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("period", "2m"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("count", "1001"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void memberLoadsMinuteCandlesticksAndHistoricalIntradayForOneExpandedStock()
+            throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("period", "1m")
+                        .param("count", "1000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.period").value("1m"))
+                .andExpect(jsonPath("$.data.candlesticks.length()").value(240));
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/intraday",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("date", "2026-09-04"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tradeDate").value("2026-09-04"))
+                .andExpect(jsonPath("$.data.updating").value(false))
+                .andExpect(jsonPath("$.data.points.length()").value(242))
+                .andExpect(jsonPath("$.data.points[0].averagePrice").isNumber());
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/intraday",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("date", "2099-01-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
     private ResultActionsJson addStock(String token, Long targetWorkspaceId, String code)
             throws Exception {
         return new ResultActionsJson(

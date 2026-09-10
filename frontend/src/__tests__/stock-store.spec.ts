@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { AxiosHeaders, type AxiosResponse } from 'axios'
-import { addWorkspaceStock, listWorkspaceStocks, searchStocks } from '@/api/stock'
+import {
+  addWorkspaceStock,
+  getWorkspaceStockCandlesticks,
+  listWorkspaceStocks,
+  searchStocks,
+} from '@/api/stock'
 import type { ApiResult } from '@/api/auth'
 import type {
   AddWorkspaceStockResponseVO,
+  StockCandlestickSeriesVO,
   StockSearchResponseVO,
   WorkspaceStockListResponseVO,
 } from '@/api/stock'
@@ -60,6 +66,30 @@ const listItem: WorkspaceStockListResponseVO = {
   targetPrice: 1680,
   stopLossPrice: 1350,
   opinionCreatedAt: '2026-09-07T14:00:00',
+}
+
+const candlestickSeries: StockCandlestickSeriesVO = {
+  code: '600519.SH',
+  name: '贵州茅台',
+  currency: 'CNY',
+  period: 'day',
+  adjustment: 'none',
+  source: 'LOCAL_MOCK',
+  simulated: true,
+  retrievedAt: '2026-09-09T15:00:00',
+  nextBefore: '2026-09-04T07:00:00Z',
+  hasMore: true,
+  candlesticks: [
+    {
+      time: '2026-09-04T15:00:00',
+      open: 1480,
+      high: 1500,
+      low: 1470,
+      close: 1488.88,
+      volume: 123456,
+      turnover: 184000000,
+    },
+  ],
 }
 
 describe('stock store', () => {
@@ -134,5 +164,53 @@ describe('stock store', () => {
     expect(listWorkspaceStocks).toHaveBeenCalledWith(12)
     expect(result.alreadyActive).toBe(false)
     expect(store.items).toEqual([listItem])
+  })
+
+  it('loads candlesticks only after an explicit stock and period request', async () => {
+    vi.mocked(getWorkspaceStockCandlesticks).mockResolvedValue(
+      response<ApiResult<StockCandlestickSeriesVO>>({
+        code: 'SUCCESS',
+        message: '成功',
+        data: candlestickSeries,
+      }),
+    )
+
+    const store = useStockStore()
+    await store.loadCandlesticks(12, 21, 'day')
+
+    expect(getWorkspaceStockCandlesticks).toHaveBeenCalledWith(12, 21, 'day')
+    expect(store.candlestickSeries).toEqual(candlestickSeries)
+    expect(store.candlestickError).toBe('')
+  })
+
+  it('prepends older candlesticks without replacing the visible series', async () => {
+    const older = {
+      ...candlestickSeries,
+      nextBefore: '2026-09-03T07:00:00Z',
+      hasMore: false,
+      candlesticks: [
+        { ...candlestickSeries.candlesticks[0]!, time: '2026-09-03T15:00:00' },
+      ],
+    }
+    vi.mocked(getWorkspaceStockCandlesticks)
+      .mockResolvedValueOnce(response({ code: 'SUCCESS', message: '成功', data: candlestickSeries }))
+      .mockResolvedValueOnce(response({ code: 'SUCCESS', message: '成功', data: older }))
+
+    const store = useStockStore()
+    await store.loadCandlesticks(12, 21, 'day')
+    await store.loadOlderCandlesticks(12, 21)
+
+    expect(getWorkspaceStockCandlesticks).toHaveBeenLastCalledWith(
+      12,
+      21,
+      'day',
+      1000,
+      candlestickSeries.nextBefore,
+    )
+    expect(store.candlestickSeries?.candlesticks.map((item) => item.time)).toEqual([
+      '2026-09-03T15:00:00',
+      '2026-09-04T15:00:00',
+    ])
+    expect(store.candlestickSeries?.hasMore).toBe(false)
   })
 })

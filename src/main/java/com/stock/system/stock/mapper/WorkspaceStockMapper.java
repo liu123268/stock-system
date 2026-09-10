@@ -2,6 +2,7 @@ package com.stock.system.stock.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.stock.system.stock.entity.WorkspaceStock;
+import com.stock.system.stock.entity.Stock;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 
@@ -9,6 +10,15 @@ import java.util.List;
 
 @Mapper
 public interface WorkspaceStockMapper extends BaseMapper<WorkspaceStock> {
+
+    @Select("""
+            SELECT s.*
+            FROM workspace_stock ws
+            JOIN stock s ON s.id = ws.stock_id
+            WHERE ws.workspace_id = #{workspaceId}
+              AND ws.id = #{workspaceStockId}
+            """)
+    Stock selectStockIdentity(Long workspaceId, Long workspaceStockId);
 
     @Select("""
             SELECT
