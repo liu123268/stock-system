@@ -1,6 +1,6 @@
 # 测试与验收规则
 
-更新时间：2026-09-10
+更新时间：2026-09-11
 
 ## 1. 测试目标与选择
 
@@ -31,6 +31,12 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - `LongbridgeCandlestickRealProbeTest` 由 `STOCK_LONGBRIDGE_KLINE_PROBE=true` 显式启用，只读取已批准的 `600519.SH` 两根日 K；`LongbridgeIntradayRealProbeTest` 由 `STOCK_LONGBRIDGE_INTRADAY_PROBE=true` 启用，读取同一股票当天分时和指定交易日 1 分钟 K。两者都不启动 Spring、不写数据库；历史 K 线会占月度不同标的额度，新增探测代码前必须先说明并优先选择已经计入过的标的。
 - 启用真实测试前后都要精确核对 `longbridge` 进程。只关闭本轮 Java 客户端创建的进程，不能批量结束用户已有 CLI；失败、超时和测试结束都必须确认无残留。
 - 受限执行环境还必须允许 CLI 读取服务账号授权缓存并写其正常日志目录。若只开放项目目录，sidecar 可能启动后立即退出；这不等于 OAuth 或行情权限失效，应与同账号直接执行 `longbridge quote` 做对照。
+
+### 2.2 单元测试怎样运行与阅读
+
+单元测试把一个类或一小段协作逻辑与外部系统隔离，用固定输入检查输出、异常或交互；它通常快、定位清楚，但不能代替真实 MySQL、Redis、Longbridge 或浏览器验收。这个项目的 `*Test.java` 中，使用假进程、替身或内存对象的测试主要属于单元测试；带 `@SpringBootTest`、真实 JDBC 或显式 Redis 的测试属于集成测试，分类以测试实际连接的资源为准。
+
+在项目根目录运行 `mvn "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" test` 会执行普通后端回归。测试报告在 `target/surefire-reports/`：先看 `tests`、`failures`、`errors`、`skipped`，再按失败测试名回到源码中的 `@Test` 方法。Redis 真实连接、Longbridge 账号和浏览器流程都不是普通单元测试会自动启用的能力，必须按本文件相应开关和环境前置单独运行；“测试通过”要同时说明测试层次和未执行的外部探测。
 
 ## 3. 前端测试
 

@@ -26,7 +26,8 @@ class LongbridgeMarketCandlestickProvider implements MarketCandlestickProvider {
             int count
     ) {
         try {
-            var items = gateway.getCandlesticks(code, period, count).stream()
+            List<LongbridgeCandlestick> raw = gateway.getCandlesticks(code, period, count);
+            var items = raw.stream()
                     .map(item -> new MarketCandlestick(
                             item.timestamp(), item.open(), item.high(), item.low(), item.close(),
                             item.volume(), item.turnover()))
@@ -35,7 +36,7 @@ class LongbridgeMarketCandlestickProvider implements MarketCandlestickProvider {
                 throw new MarketCandlestickUnavailableException("Longbridge returned no candlesticks");
             }
             return new MarketCandlestickSeries(
-                    items, SOURCE, false, Instant.now(), items.size() == count);
+                    items, SOURCE, false, retrievedAt(raw), items.size() == count);
         } catch (LongbridgeCliException exception) {
             throw translate(exception);
         }
@@ -60,13 +61,21 @@ class LongbridgeMarketCandlestickProvider implements MarketCandlestickProvider {
                     .toList();
             if (items.isEmpty()) {
                 return new MarketCandlestickSeries(
-                        List.of(), SOURCE, false, Instant.now(), false);
+                        List.of(), SOURCE, false, retrievedAt(raw), false);
             }
             return new MarketCandlestickSeries(
-                    items, SOURCE, false, Instant.now(), raw.size() == count);
+                    items, SOURCE, false, retrievedAt(raw), raw.size() == count);
         } catch (LongbridgeCliException exception) {
             throw translate(exception);
         }
+    }
+
+    private Instant retrievedAt(List<LongbridgeCandlestick> items) {
+        return items.stream()
+                .map(LongbridgeCandlestick::retrievedAt)
+                .filter(java.util.Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElseGet(Instant::now);
     }
 
     private RuntimeException translate(LongbridgeCliException exception) {

@@ -41,6 +41,12 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- Spring Data Redis：行情共享缓存；默认使用 Lettuce 客户端连接 Redis -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus：操作数据库 -->
         <dependency>
             <groupId>com.baomidou</groupId>

@@ -162,21 +162,6 @@
         letter-spacing: -0.04em;
       }
 
-      .progress-track {
-        height: 8px;
-        overflow: hidden;
-        border-radius: 999px;
-        background: var(--gray-soft);
-      }
-
-      .progress-track span {
-        display: block;
-        width: 48%;
-        height: 100%;
-        border-radius: inherit;
-        background: var(--green);
-      }
-
       .progress-note {
         margin: 12px 0 0;
         color: var(--muted);
@@ -537,7 +522,7 @@
     <header class="topbar">
       <div class="shell topbar-inner">
         <div class="brand"><span class="brand-mark">同研</span> 同研自选</div>
-        <div class="topbar-meta">系统功能地图 · 2026-09-10</div>
+        <div class="topbar-meta">系统功能地图 · 2026-09-11</div>
       </div>
     </header>
 
@@ -552,10 +537,10 @@
         </div>
         <aside class="progress-block" aria-label="当前进度">
           <p class="progress-label">当前主线</p>
-          <div class="progress-value">股票首个闭环已完成</div>
-          <div class="progress-track" aria-hidden="true"><span></span></div>
+          <div class="progress-value">Redis 行情缓存接入中</div>
           <p class="progress-note">
-            下一步：补齐交易日／交易时段元数据边界，复验分钟 K、左拖历史、当天／历史分时与真实添加（PLAN-206）
+            pull 行情与交易日边界已验收；当前完成缓存代码和分层测试，仍需补齐边界与真实页面整链验收。最新进度见
+            <a href="project/status.md">项目状态</a>。
           </p>
         </aside>
       </section>
@@ -698,7 +683,7 @@
             <div>
               <h3>搜索 A 股、港股真实目录</h3>
               <p>
-                登录用户可通过后端按标准代码、中文名称、繁体或英文别名搜索 MySQL 中的 8318 条真实目录记录；开发后端通过 Longbridge sidecar 批量补充真实价格和行情时间，真实搜索页面已经验收。
+                登录用户可通过后端按标准代码、中文名称、繁体或英文别名搜索 MySQL 真实股票目录；开发后端通过 Longbridge sidecar 批量补充真实价格和行情时间，真实搜索页面已经验收。导入规模与覆盖边界见阶段实施证据。
               </p>
               <ul class="operations">
                 <li>覆盖沪、深、北和港股候选，保留交易所后缀</li>
@@ -736,7 +721,7 @@
               <ul class="operations">
                 <li>支持 1/5/15/30 分钟、1 小时、日／周／月／年，首次最多 1000 根并可左拖补历史</li>
                 <li>支持当天和历史日期分时；当前可见盘中图每 30 秒受控刷新</li>
-                <li>显示不复权、来源、获取时间和明确 429；浏览器复验及交易日／交易时段元数据边界仍待完成</li>
+                <li>显示不复权、来源、获取时间和受控错误；固定 A 股／港股分时时段，显示动态涨跌幅及账户历史范围提示，已完成隔离浏览器验收</li>
               </ul>
             </div>
             <span class="status status-ui">页面可操作</span>
@@ -840,7 +825,8 @@
     <footer>
       <div class="shell footer-inner">
         <span
-          >依据当前代码、Flyway V3、阶段任务和 2026-09-07 验证结果整理。</span
+          >2026-09-11 文档核对快照；历史验收日期和范围见
+          <a href="specs/002-stock-research/tasks.md">阶段实施证据</a>，不代表本次重新运行全部测试。</span
         >
         <a class="jump-link" href="#page-title">返回顶部</a>
       </div>

@@ -7,6 +7,11 @@ record LongbridgeQuote(
         String symbol,
         BigDecimal lastDone,
         Instant timestamp,
-        String tradeStatus
+        String tradeStatus,
+        Instant retrievedAt
 ) {
+
+    LongbridgeQuote(String symbol, BigDecimal lastDone, Instant timestamp, String tradeStatus) {
+        this(symbol, lastDone, timestamp, tradeStatus, Instant.now());
+    }
 }

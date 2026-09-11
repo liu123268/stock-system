@@ -1,6 +1,6 @@
 # 本地开发与启动说明
 
-更新时间：2026-09-10
+更新时间：2026-09-11
 
 ## 1. “前端”到底是什么
 
@@ -27,6 +27,7 @@ Vue源代码（磁盘文件）
 Vue/Vite：8083
 Spring Boot：8082
 MySQL：3306
+Redis（WSL2）：6379
 ```
 
 开发阶段Vue和Spring Boot是两个独立程序，因此需要各自运行。
@@ -67,7 +68,7 @@ MySQL：3306
 3. 只启动尚未运行的程序。
 4. 为前端和后端各打开一个终端，方便查看日志并使用 `Ctrl+C` 停止。
 
-需要运行真实浏览器自动化时，改为双击 `scripts/start-test.cmd`。它明确激活 `test` profile，并使用独立的 18082/18083 端口，避免误复用正在连接开发库的 8082 后端。IntelliJ 中也提供 `StockSystemApplication`（dev）和 `StockSystemApplicationTest`（test）两套共享运行配置。
+需要运行真实浏览器自动化时，改为双击 `scripts/start-test.cmd`。它明确激活 `test` profile，并使用独立的 18082/18083 端口，避免误复用正在连接开发库的 8082 后端。当前本机 `.run` 中也有 `StockSystemApplication`（dev）和 `StockSystemApplicationTest`（test）两套 IntelliJ 运行配置，但该目录被 Git 忽略，新检出项目应使用上述脚本或自行建立运行配置。
 
 配置职责如下：`application.properties` 保存两边共用的配置，各 profile 文件保存数据库地址和该环境的行情模式。默认 profile 是 dev，所以普通启动仍进入开发库；自动化测试必须显式进入 test。开发默认 `stock-system.market.mode=longbridge`，测试固定 `mock`；开发可通过 `MARKET_MODE=directory` 暂停外部报价，或用 `MARKET_MODE=mock` 明确进入模拟模式。
 
@@ -107,7 +108,7 @@ PowerShell 使用 npm.cmd，Maven 使用系统 mvn。本机 Maven 缓存位于�
 
 Java 源文件启动入口 `scripts/ImportStockDirectory.java` 调用正式 `StockDirectoryImporter`。在项目根目录、编译完成且 classpath 包含 target/classes 和项目依赖时执行：`java --class-path <classpath> scripts/ImportStockDirectory.java test verify <目录JSON>`，会核对实际测试库、迁移、导入、重复导入和回滚；`dev inspect` 只读核对开发库，`dev apply <目录JSON>` 才执行真实开发数据导入。凭据从现有配置/环境读取，不放入命令参数。它不启动应用或端口；迁移前检查 catalog，数据批次异常整体回滚。apply 在 target 保存原股票信息备份、核对已有 ID 不变及全部导入字段后提交，不删除目录缺失记录。
 
-本轮生成的 `target/directory-classpath.txt` 来自实际 Maven 测试报告的 java.class.path，仅为本机运行辅助文件。它会随依赖与工作区变化，不能作为永久部署配置。已经运行的 IntelliJ 后端需要重启才能加载新的 Java 搜索逻辑；导入本身立即对数据库可见。
+`target/directory-classpath.txt` 是目录导入阶段从 Maven 测试报告的 java.class.path 提取的本机运行辅助文件。它会随依赖与工作区变化，不能作为永久部署配置。已经运行的 IntelliJ 后端需要重启才能加载新的 Java 搜索逻辑；导入本身立即对数据库可见。
 
 ## 9. Longbridge 真实报价
 
@@ -116,15 +117,14 @@ Java 源文件启动入口 `scripts/ImportStockDirectory.java` 调用正式 `Sto
 本地数据流是：
 
 ```text
-搜索：Vue → Spring Boot → MySQL 标准目录 → 一次批量 quote.quote → 返回候选和真实价格
-添加：Vue → Spring Boot → 再取可信报价 → 研究事务保存不可变开始快照
-K 线：Vue 展开已加入股票 → Spring Boot → quote.candlesticks／history_candlesticks_by_date → 当前图表
-分时：Vue 切换分时／日期 → Spring Boot → quote.intraday 或历史 1 分钟 K 线 → 当前图表
-                                                       ↑
-                                          一个长期运行的 longbridge serve
+Vue → Spring Boot（权限、目录与参数校验）→ 行情网关
+                                          ├─ Redis 命中 → 返回缓存行情
+                                          └─ 未命中／关闭／故障
+                                               → 进程内短缓存
+                                               → 必要时由 longbridge serve 受控回源
 ```
 
-Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。第一次需要报价时，它启动一个官方 `longbridge serve` 子进程；后续请求通过 stdin/stdout JSON-RPC 复用该进程，应用关闭时一并关闭。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。相同代码 5 秒内重复读取会命中本进程缓存；Java 端还限制最多 5 并发且相邻上游请求至少 100ms。
+搜索先查 MySQL 标准目录，再批量补报价；添加仍由服务端取可信报价后写不可变开始快照；K 线和分时只在用户展开股票时按需读取。Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。第一次真正需要回源时，它启动一个官方 `longbridge serve` 子进程；后续请求通过 stdin/stdout JSON-RPC 复用该进程，应用关闭时一并关闭。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。缓存分层及失败边界见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
 
 当前[官方定价说明](https://open.longbridge.com/zh-CN/pricing)写明 OpenAPI 不收激活或接口使用费，因此一次报价不是“消耗一张 OAuth 授权码”或按次扣费；需要控制的是调用速率、长连接数量和各市场行情权限。授权码只用于建立/刷新授权，Token 会复用。[实时报价接口](https://open.longbridge.com/zh-CN/docs/quote/pull/quote)当前没有公开的每日或每月不同标的总量硬上限；单次最多接收 500 个代码，所以理论上查询 5000 只需要拆成至少 10 个请求并遵守每秒 10 次、并发 5 次，不能一次请求或同时订阅 5000 只。项目搜索只取最多 30 个候选并合并成一次请求。
 
@@ -155,9 +155,37 @@ LONGBRIDGE_CLI_PATH=C:\实际安装位置\longbridge.exe
 | `MARKET_MODE` | `longbridge` | `longbridge` 取真实报价；`directory` 只搜目录；`mock` 只用于明确模拟 |
 | `LONGBRIDGE_CLI_PATH` | `longbridge` | CLI 可执行文件；服务/IDE 找不到 PATH 时设绝对路径 |
 | `LONGBRIDGE_REQUEST_TIMEOUT` | `5s` | 单个 JSON-RPC 请求等待上限 |
-| `LONGBRIDGE_CACHE_TTL` | `5s` | 相同报价批次或当天分时股票的进程内短缓存；不是历史数据缓存 |
+| `LONGBRIDGE_CACHE_TTL` | `5s` | 报价按股票、当天分时按股票与市场日期复用的进程内短缓存；不是历史数据缓存 |
 | `LONGBRIDGE_CANDLESTICK_CACHE_TTL` | `1m` | 相同股票、周期、数量和最新／历史日期边界的 K 线进程内短缓存；重启即失效 |
+| `MARKET_REDIS_ENABLED` | `true` | 是否启用共享行情缓存；测试 profile 固定关闭，不能用它绕过业务权限校验 |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Spring Boot 连接的 Redis 地址 |
+
+Redis 的 TTL、锁、冷却和抖动参数及含义集中见 [缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)，完整环境变量映射见 [开发配置](../../src/main/resources/application-dev.properties)。修改后要重启 Spring Boot 才会重新加载；尤其不能把当前历史接口的长 TTL 当成已经验证了“所有数据均已闭市”。
 
 CLI 未安装、当前 OS 账号未授权、日志或 Token 目录无权限、网络超时、上游报错或 sidecar 退出时，搜索仍返回 MySQL 可信目录，但价格和行情时间为空；添加研究按 `MARKET_QUOTE_UNAVAILABLE` 失败且不写业务记录。系统不会静默改用 Mock，也不会把缓存过期数据标成实时行情。异常退出后的当前请求失败，下一次报价请求才尝试重新启动 sidecar。
 
 `longbridge serve` 本身包含交易方法，但项目 Java 客户端只允许 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date`、`quote.intraday` 和 `quote.trading_days` 五个固定只读方法，没有向 Controller 或前端开放任意方法。K 线 `301607` 会作为 HTTP 429 和 `MARKET_KLINE_LIMIT_EXCEEDED` 返回；历史分时遇到该码返回 `MARKET_INTRADAY_HISTORY_LIMIT_EXCEEDED`，遇到分钟历史起始日期限制则返回 HTTP 422、稳定错误码及最早可查日期。近一年 A 股／港股日期通过官方交易日日历判断，休市日返回 400；当天点还按市场时区过滤为请求日期。这些错误可在页面错误区、开发者工具 Network 响应或后端 API 调用结果中看到。部署到服务器还需要固定服务账号、持久化授权、实例数和回滚设计，不能把本机登录成功等同于部署完成；完整清单见 [部署说明](deployment.md#3-longbridge-sidecar-部署前置条件)。
+
+## 10. Redis 本地学习环境
+
+Windows 端的 Spring Boot 通过 `localhost:6379` 访问 Ubuntu WSL2 中的 Redis。本机学习环境已在 Ubuntu 安装 Redis Server 与真正的 `redis-cli`；新机器需要另行安装。以下命令在 Windows PowerShell 运行，`wsl.exe -d Ubuntu --` 表示交给 Ubuntu 执行。先用 `redis-cli ping` 检查：返回 `PONG` 表示服务已经运行，无需再启动；确认尚未运行时才执行 `redis-server --daemonize yes`，再检查一次。安装、启动服务和检查连通是三件不同的事，启动脚本也不会自动代你启动 Redis。
+
+```powershell
+wsl.exe -d Ubuntu -- redis-cli ping
+```
+
+只有 `ping` 不是 `PONG`、且确认没有其他任务正在使用 Redis 时，才执行启动命令，再次检查连通性：
+
+```powershell
+wsl.exe -d Ubuntu -- redis-server --daemonize yes
+wsl.exe -d Ubuntu -- redis-cli ping
+```
+
+开发结束后，如 Redis 是本次启动且没有其他任务在复用，可关闭它并用第二条命令确认连接已拒绝。`shutdown nosave` 会停止服务且不生成此次关闭时的持久化快照，只适用于这里可重建的本地学习缓存；它不是生产数据备份或清理方案。
+
+```powershell
+wsl.exe -d Ubuntu -- redis-cli shutdown nosave
+wsl.exe -d Ubuntu -- redis-cli ping
+```
+
+当前测试类已经把数据库集成测试显式绑定到 `test` profile，普通回归不依赖真实 Redis；这不是 Maven 自动选择了 test profile。单元测试和显式 Redis 集成测试怎样运行、分别能证明什么见 [测试说明](testing.md#22-单元测试怎样运行与阅读)。关闭 Redis 后应用的降级机制及尚未完成的验证仍以缓存设计和对应 tasks 为准。

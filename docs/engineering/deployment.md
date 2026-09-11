@@ -2,7 +2,7 @@
 
 状态：生产部署尚未实施；本文记录上线前必须完成的工作，不把计划写成已部署事实。
 
-更新时间：2026-09-10
+更新时间：2026-09-11
 
 ## 1. 文档职责
 
@@ -15,6 +15,7 @@ Browser
   → Nginx（静态前端与 /api 反向代理）
   → Spring Boot
       → MySQL
+      → Redis（可重建行情共享缓存）
       → 自己管理的 longbridge serve 子进程
           → Longbridge OpenAPI
 ```
@@ -39,15 +40,15 @@ Nginx、容器、Actuator、生产告警和自动发布当前均未实施。上�
 
 ### 3.3 进程和容量
 
-- 当前简写变量 `MARKET_MODE`、`LONGBRIDGE_CLI_PATH` 等只由 `application-dev.properties` 映射，不能直接当成尚未建立的生产 profile 配置。生产实施时必须新增并验收生产配置，或使用 Spring Boot 标准环境变量 `STOCK_SYSTEM_MARKET_MODE=longbridge`、`STOCK_SYSTEM_MARKET_LONGBRIDGE_EXECUTABLE=<绝对路径>` 等直接绑定完整属性；不得以 `dev` profile 冒充生产配置。CLI 路径使用绝对值，避免 systemd、Windows Service 或容器的 PATH 与交互式终端不同。
+- 当前简写变量 `MARKET_MODE`、`LONGBRIDGE_CLI_PATH`、`REDIS_HOST` 等只由 `application-dev.properties` 映射，不能直接当成尚未建立的 production profile 配置。生产实施时必须新增并验收生产配置，或使用 Spring Boot 标准环境变量绑定完整属性（如 Redis 主机 `SPRING_DATA_REDIS_HOST`、端口 `SPRING_DATA_REDIS_PORT`）；不得以 `dev` profile 冒充生产配置。CLI 路径使用绝对值，避免 systemd、Windows Service 或容器的 PATH 与交互式终端不同。
 - Windows 官方脚本当前默认安装到 `%LOCALAPPDATA%\Programs\longbridge\longbridge.exe`；开发配置会以该位置作为 PATH 缺失时的默认值，生产仍必须显式设置绝对路径。部署验收先执行 `longbridge auth status`；网页显示授权成功但这里仍为 `Token not found` 时，说明 Token 没有写入运行 Spring Boot 的同一 OS 账号，不能把网页状态当作 sidecar 已授权。
 - Spring Boot 第一次报价时按需启动一个 `longbridge serve`，应用停止时负责关闭它。进程管理器只监督 Spring Boot，不要再独立常驻第二个 `serve`，否则会与应用争用账号长连接。
-- Longbridge 当前规则为一个账号一个行情长连接。没有完成集中式行情网关设计前，同一账号只部署一个启用 `longbridge` 模式的应用副本；不能通过简单增加副本实现扩容。
-- 行情通用限制按不超过每秒 10 次、并发 5 次执行，历史 K 线另有每 30 秒最多 60 次的接口限制；当前 Java 端另有批量请求、报价／当天分时 5 秒缓存、K 线及历史日期批次 1 分钟缓存。官方 CLI/SDK 仍负责服务端规则下的主动节流，项目也要监控 301606/429，不能只依赖 100ms 通用间隔宣称覆盖所有方法限制。多副本或热点行情需要共享缓存时再引入 Redis，不能把每个副本各自缓存误当作全局限流。
+- Longbridge 当前规则为一个账号一个行情长连接。Redis 只共享可重建行情和同 Key 锁，不能解除账号连接与供应商限流；没有完成集中式行情网关设计前，同一账号只部署一个启用 `longbridge` 模式的应用副本，不能通过简单增加副本实现扩容。
+- 行情通用限制按不超过每秒 10 次、并发 5 次执行，历史 K 线另有每 30 秒最多 60 次的接口限制；这些是此前核对的供应商规则，上线时须按第 4 节重新核对。当前 Java 端已有批量请求、进程内缓存及 Redis 共享缓存，但没有跨副本全局限流。官方 CLI/SDK 的节流也不能代替项目对 301606/429 的监控，不能只依赖 100ms 通用间隔宣称覆盖所有方法限制。共享缓存的具体能力及未完成项见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
 - 当前只开放 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date`、`quote.intraday` 与 `quote.trading_days` 五个固定只读方法，不配置交易权限。未来任何交易接入都必须另立需求、权限、确认和风控设计，不能因为 CLI 本身具备交易命令就直接暴露。
 - 实时报价 pull 的单次代码上限为 500；需要全市场批量读取时分批并纳入调度，不能把 5000 个代码塞进一次请求。订阅仍受账号单连接和同时最多 500 个符号限制，不能把 pull 无月度总量硬上限误解为可同时订阅 5000 只。
 - K 线按自然月不同股票代码计额，上线配置前在 [Longbridge Account Center](https://open.longbridge.com/account) 的“我的行情权限”核对实际档位。官方当前没有公开 CLI 用量查询命令，也未承诺账号页提供实时已用计数；若项目以后记录自身不同标的数，必须标为估算且不能代替供应商全局余量。告警必须结合方法解释 `301607`：实时报价表示单次代码数量超限，最近 K 线表示单次请求数据量超限，历史 K 线可表示当月不同股票代码额度超限；不能跨接口套用同一个原因。应用返回 `MARKET_KLINE_LIMIT_EXCEEDED`，应纳入 429 指标和告警。
-- 当天分时走 `quote.intraday`；历史交易日分时由 `1m` 历史 K 线还原，因此历史分时也占用同一自然月“不同股票代码”额度。当前实现只在成员打开单只股票分时页、页面可见且后端返回 `updating=true` 时每 30 秒拉取，切换 K 线、收起面板、页面隐藏或返回非更新状态后不继续访问上游；搜索候选和共享列表不预取分时或 K 线。近一年日期使用 `quote.trading_days` 判断 CN/HK 交易日并缓存不可变日期结果，当天点按市场时区过滤；响应明确携带 A 股／港股常规交易时段。更早日期超过官方交易日日历范围时不伪造本地结果，而由分钟 K 数据或范围错误决定。
+- 当天分时走 `quote.intraday`；历史交易日分时由 `1m` 历史 K 线还原，因此历史分时也占用同一自然月“不同股票代码”额度。页面按需请求和停止刷新条件见 [前端数据流](frontend.md#十二按需-k-线与分时图的数据流)。近一年日期使用 `quote.trading_days` 判断 CN/HK 交易日并缓存日期结果，当天点按市场时区过滤；响应明确携带 A 股／港股常规交易时段。更早日期超过官方交易日日历范围时不伪造本地结果，而由分钟 K 数据或范围错误决定。
 
 ## 4. 上线验收
 
@@ -61,6 +62,7 @@ Nginx、容器、Actuator、生产告警和自动发布当前均未实施。上�
 6. 检查浏览器网络响应、前端生产构建、后端 JAR、日志和 Git 历史均不含 Token 或授权缓存；
 7. 重新核对上线时的实时报价限流、单次标的数、历史 K 线月度不同标的配额和市场权限；记录实际 CLI 版本、服务账号、Token 持久化方式、网络/代理、实例数、回滚命令和告警负责人。
 8. 用一个已经加入测试空间且本月已查询过的股票读取分钟／日／年 K、左拖补历史、当天分时和一个历史交易日，确认同一个 sidecar、来源时间、不复权标记、停止刷新条件和页面错误状态；再用非交易日验证不会把上一交易日数据错标为所选日期。不得用批量搜索候选做 K 线或分时验收。
+9. Redis 开启与关闭两条路径均通过上述 API 验证；部署环境的连接、访问权限、缓存过期、故障恢复与环境 Key 隔离通过验收后，才能把本机隔离测试提升为该环境的上线证据。当前尚无可直接套用的 Redis 生产部署配置。
 
 Actuator readiness 与生产告警尚未实现，不能在缺少这些证据时把“进程能启动”写成生产可运维完成。
 

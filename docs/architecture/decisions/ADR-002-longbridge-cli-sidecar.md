@@ -1,8 +1,8 @@
 # ADR-002：用官方 Longbridge CLI sidecar 接入只读行情
 
-状态：已确认；报价、九种周期 K 线、历史补载、分时及交易日边界均已完成真实协议与页面验收
+状态：已确认；原只读行情链路的验证见 SPEC-002 tasks。Redis 外层已实现，CODE-206E 尚未完成闭环验收。
 
-日期：2026-09-10
+日期：2026-09-10；最后核对：2026-09-11
 
 ## 背景
 
@@ -18,6 +18,7 @@ CLI 的 `serve` 命令是稳定的换行分隔 JSON-RPC 2.0 接口：进程启�
 Vue
   → 本项目 Spring Boot API
   → MarketDataProvider / MarketCandlestickProvider / MarketIntradayProvider
+  → CachingLongbridgeMarketGateway（Redis 命中直接返回；未命中／故障再向下）
   → LongbridgeJsonRpcClient
   → 一个由 Spring Boot 拥有的 `longbridge serve` 子进程
   → Longbridge OpenAPI
@@ -25,11 +26,11 @@ Vue
 
 - 开发环境默认 `longbridge` 模式；测试环境继续固定 `mock`，需要无外部报价时可显式切回 `directory`。
 - sidecar 按需启动，一个 Spring Boot 实例只拥有一个 CLI 子进程；应用关闭时先关闭 stdin，等待退出，必要时只终止自己创建的那个进程。
-- Java 端只公开固定行情网关，并把方法硬编码为 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date` 与 `quote.intraday`。CLI 虽具备交易和任意 API 方法，本项目当前代码不提供这些调用入口，前端也不能透传 JSON-RPC 方法名。
+- Java 端只公开固定行情网关，并把方法硬编码为 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date`、`quote.intraday` 与 `quote.trading_days`。CLI 虽具备交易和任意 API 方法，本项目当前代码不提供这些调用入口，前端也不能透传 JSON-RPC 方法名。
 - 搜索仍以 MySQL 标准股票目录为身份来源；一次搜索得到的候选合并为一次批量报价，再由 provider 合成统一 `StockQuoteSnapshot`。添加研究时仍在数据库事务外重新取得可信快照。
 - 请求使用递增 ID 和并发 Map 对应乱序响应；单次超时默认 5 秒。sidecar 异常退出或请求超时时，未完成请求明确失败并终止该 sidecar，下一次报价请求才尝试干净重启，不把旧数据伪装成新行情，也不让超时请求在后台继续占用并发。
 - 项目上限固定不超过 5 个并发请求、相邻上游请求至少间隔 100ms，以守住账号当前的每秒 10 次、并发 5 次通用限制。历史 K 线另受每 30 秒 60 次限制，由官方 CLI/SDK 的节流与项目调用方式共同保护；项目仍需监控限流错误，不能把 100ms 间隔误写成覆盖所有方法限制。一次批量请求不是逐股票调用。
-- 报价与当天分时默认使用 5 秒进程内缓存，最近／历史 K 线按代码、周期、数量和日期边界默认缓存 1 分钟。它们不是长期行情库，也不替代后续 MySQL 历史事实或多实例、动态行情场景中的 Redis。
+- 保留原有进程内短缓存作为本进程复用和 Redis 故障时的退路，外层通过网关装饰器共享可重建行情。选择 Redis 不要求同时引入动态推送，也不把缓存升级成长期行情库；具体机制与当前差距见 [SPEC-002 缓存设计](../../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
 - OAuth Token 继续由官方 CLI 管理。项目不读取、复制、解析或记录 `~/.longbridge/openapi/tokens/<client_id>`，浏览器响应、Git 和构建产物都不能包含供应商凭据。
 
 ## 备选方案
@@ -57,7 +58,7 @@ Vue
 - CLI 日志目录和 Token 目录必须对服务账号可读写；只给项目目录权限不足。本次受限测试环境正是因为不能写用户日志目录而导致 sidecar 启动后退出。
 - 一个账号只能保持一个行情长连接。当前不能拿同一账号直接水平启动多个 Spring Boot 副本；扩容前必须设计唯一行情网关或其他符合供应商条款的账号与连接方案。
 - sidecar 不监听 HTTP 端口，但仍是独立 OS 进程，需要纳入启动、关闭、健康检查和故障监控。当前具备进程退出感知和按需重启，Actuator readiness 与生产告警尚未实现。
-- 进程内短缓存只在单个 Java 进程内有效。多副本、热点轮询、WebSocket 订阅或跨请求复用明显增长时，再按已定义的一致性与降级边界引入 Redis。
+- 进程内短缓存只在单个 Java 进程内有效。Redis 已实现跨网关实例共享，但当前同 Key 锁等待超时仍可能重复回源，并不提供全局限流；实现与验证边界见上述缓存设计和 [CODE-206E 证据](../../specs/002-stock-research/tasks.md)。这不代表当前已经达到多实例容量，也不解除单账号单连接约束。WebSocket/SSE 等动态推送仍在出现相应需求后另行评估。
 
 具体本地操作见 [开发说明](../../engineering/development.md#9-longbridge-真实报价)，上线前检查见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)，验证规则见 [测试说明](../../engineering/testing.md#21-longbridge-sidecar-测试)。
 
@@ -65,5 +66,5 @@ Vue
 
 - Longbridge Java SDK 提供受支持、可测试的 OAuth/Token 接入方式；
 - 需要多实例独立扩缩容，单账号单连接成为真实瓶颈；
-- 基础轮询升级为大规模订阅、Redis 缓存或独立行情服务；
+- 基础轮询升级为大规模订阅，或共享缓存仍不足以支撑访问而需要独立行情服务；
 - CLI JSON-RPC 契约、权限或部署支持发生不兼容变化。

@@ -232,13 +232,15 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         String symbol = normalizeCandlestickRequest(rawSymbol, count);
         LocalDate endDate = before.atZone(marketZone(symbol)).toLocalDate();
         CandlestickCacheKey key = new CandlestickCacheKey(
-                symbol, period, count, "before:" + endDate);
+                symbol, period, count, "before:" + before.toEpochMilli());
         return loadCandlesticks(key, () -> {
             ObjectNode params = historyParams(symbol, period);
             params.put("end", endDate.toString());
             List<LongbridgeCandlestick> loaded = parseCandlesticks(
                     executeRequest(HISTORY_CANDLESTICK_BY_DATE_METHOD, params));
-            return keepMostRecent(loaded, count);
+            return keepMostRecent(loaded.stream()
+                    .filter(item -> item.timestamp().isBefore(before))
+                    .toList(), count);
         });
     }
 
@@ -310,8 +312,10 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     public List<LongbridgeIntradayPoint> getIntraday(String rawSymbol) {
         String symbol = normalizeCandlestickRequest(rawSymbol, 1);
         Instant now = Instant.now();
+        LocalDate marketDate = now.atZone(marketZone(symbol)).toLocalDate();
         CachedIntraday cached = intradayCache.get(symbol);
-        if (cached != null && cached.expiresAt().isAfter(now)) {
+        if (cached != null && cached.marketDate().equals(marketDate)
+                && cached.expiresAt().isAfter(now)) {
             return cached.items();
         }
         if (cached != null) {
@@ -321,7 +325,8 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         params.put("symbol", symbol);
         List<LongbridgeIntradayPoint> loaded = parseIntraday(
                 executeRequest(INTRADAY_METHOD, params));
-        intradayCache.put(symbol, new CachedIntraday(loaded, Instant.now().plus(cacheTtl)));
+        intradayCache.put(symbol, new CachedIntraday(
+                loaded, marketDate, Instant.now().plus(cacheTtl)));
         return loaded;
     }
 
@@ -535,6 +540,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             throw new LongbridgeCliException("Longbridge quote result has an unexpected shape");
         }
         Map<String, LongbridgeQuote> quotes = new LinkedHashMap<>();
+        Instant retrievedAt = Instant.now();
         for (JsonNode item : quoteArray) {
             String symbol = item.path("symbol").asText("").trim().toUpperCase();
             String lastDone = item.path("last_done").asText("");
@@ -547,7 +553,8 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
                         symbol,
                         new BigDecimal(lastDone),
                         Instant.parse(timestamp),
-                        item.path("trade_status").asText("")
+                        item.path("trade_status").asText(""),
+                        retrievedAt
                 );
                 quotes.put(symbol, quote);
             } catch (RuntimeException ignored) {
@@ -563,6 +570,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             throw new LongbridgeCliException("Longbridge candlestick result has an unexpected shape");
         }
         java.util.ArrayList<LongbridgeCandlestick> candlesticks = new java.util.ArrayList<>();
+        Instant retrievedAt = Instant.now();
         for (JsonNode item : items) {
             try {
                 Instant timestamp = parseTimestamp(item.hasNonNull("timestamp")
@@ -577,7 +585,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
                         && low.compareTo(open.min(close)) <= 0 && low.signum() > 0
                         && volume >= 0 && turnover.signum() >= 0) {
                     candlesticks.add(new LongbridgeCandlestick(
-                            timestamp, open, high, low, close, volume, turnover));
+                            timestamp, open, high, low, close, volume, turnover, retrievedAt));
                 }
             } catch (RuntimeException ignored) {
                 // Invalid rows are excluded; a wholly invalid response becomes unavailable upstream.
@@ -595,6 +603,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             throw new LongbridgeCliException("Longbridge intraday result has an unexpected shape");
         }
         java.util.ArrayList<LongbridgeIntradayPoint> points = new java.util.ArrayList<>();
+        Instant retrievedAt = Instant.now();
         for (JsonNode item : items) {
             try {
                 Instant timestamp = parseTimestamp(item.hasNonNull("timestamp")
@@ -609,7 +618,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
                 if (timestamp != null && price.signum() > 0 && average.signum() > 0
                         && volume >= 0 && turnover.signum() >= 0) {
                     points.add(new LongbridgeIntradayPoint(
-                            timestamp, price, average, volume, turnover));
+                            timestamp, price, average, volume, turnover, retrievedAt));
                 }
             } catch (RuntimeException ignored) {
                 // Invalid rows are excluded; a wholly invalid response becomes unavailable upstream.
@@ -768,7 +777,11 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     ) {
     }
 
-    private record CachedIntraday(List<LongbridgeIntradayPoint> items, Instant expiresAt) {
+    private record CachedIntraday(
+            List<LongbridgeIntradayPoint> items,
+            LocalDate marketDate,
+            Instant expiresAt
+    ) {
     }
 
     private record TradingDayCacheKey(String market, LocalDate date) {

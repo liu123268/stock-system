@@ -153,14 +153,18 @@ class LongbridgeJsonRpcClientTest {
             assertThat(request.path("params").path("end").asText()).isEqualTo("2026-09-08");
             assertThat(request.path("params").path("adjust").asText()).isEqualTo("none");
             server.respond(request.path("id").asLong(), List.of(
-                    candlestickJson("2026-09-08T19:58:00Z", "100", "101", "99", "100.5")
+                    candlestickJson("2026-09-08T19:58:00Z", "100", "101", "99", "100.5"),
+                    candlestickJson("2026-09-08T20:01:00Z", "101", "102", "100", "101.5")
             ));
         });
 
         try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
             assertThat(client.getCandlesticksBefore(
                     "NVDA.US", CandlestickPeriod.MINUTE_1, 1000,
-                    Instant.parse("2026-09-08T20:00:00Z"))).hasSize(1);
+                    Instant.parse("2026-09-08T20:00:00Z")))
+                    .singleElement()
+                    .extracting(LongbridgeCandlestick::timestamp)
+                    .isEqualTo(Instant.parse("2026-09-08T19:58:00Z"));
         }
     }
 

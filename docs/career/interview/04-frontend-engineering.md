@@ -57,7 +57,7 @@
 
 ### 完整回答
 
-> 失败原因代表不同状态。HTTP 401 说明账号会话失效，需要清除 JWT、当前用户和全部空间缓存并返回登录页；`WORKSPACE_MEMBERSHIP_INACTIVE` 或 `WORKSPACE_NOT_FOUND` 只说明当前空间不可访问，应保留账号会话，清除当前空间并返回选择页；普通网络失败不能证明权限变化，所以保留页面和会话并允许重试。项目用 `ApiError.code/status` 分流，而不是写一个遇错就清空一切的通用 catch。
+> 失败原因代表不同状态。工作台页面处理空间 API 失败时，HTTP 401 会清除 JWT、当前用户和全部空间缓存并返回登录页；`WORKSPACE_MEMBERSHIP_INACTIVE` 或 `WORKSPACE_NOT_FOUND` 只说明当前空间不可访问，应保留账号会话，清除当前空间并返回选择页；普通网络失败不能证明权限变化，所以保留页面和会话并允许重试。这部分用 `ApiError.code/status` 分流，不能扩大成所有认证入口都已经采用相同处理；路由守卫的 `/api/auth/me` 失败处理边界见 [认证设计](../../architecture/authentication.md)。
 
 ### 项目证据
 

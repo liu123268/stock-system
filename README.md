@@ -2,11 +2,11 @@
 
 同研自选是一个面向家庭成员和小型研究组的共享自选股与观点协作平台，也是一个用于学习和展示 Java 全栈开发能力的模块化单体项目。
 
-当前已完成用户注册登录、空间与成员访问边界、“搜索股票 → 初始观点 → 共享列表”纵向闭环、8318 条真实股票目录，以及由 Spring Boot 管理 Longbridge CLI sidecar 的真实报价。K 线现已支持 1/5/15/30 分钟、1 小时、日／周／月／年，首次最多 1000 根并可左拖分批补历史；同面板已实现盘中受控刷新、盘后当天和历史日期分时。基础 K 线已完成真实页面验收，新增分时也已通过 CLI 与 sidecar 真实协议验证；分钟 K／分时浏览器复验和交易日、交易时段元数据边界仍未完成。
+已完成认证、研究空间、“搜索股票 → 初始观点 → 共享列表”及真实报价、K 线和分时；Redis 共享行情缓存正在验收，具体完成范围与待办见 [当前状态](docs/project/status.md)。
 
 ## 技术栈
 
-- 后端：Java 17、Spring Boot、Spring Security、MyBatis-Plus、MySQL、Flyway、Longbridge OpenAPI CLI
+- 后端：Java 17、Spring Boot、Spring Security、MyBatis-Plus、MySQL、Redis/Lettuce、Flyway、Longbridge OpenAPI CLI
 - 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia、Axios、Element Plus、ECharts
 - 测试：JUnit 5、MockMvc、Vitest、浏览器冒烟测试
 

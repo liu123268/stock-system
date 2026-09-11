@@ -71,7 +71,7 @@
 - `application-dev.properties`、`application-test.properties` 与两套启动脚本；
 - `TestDatabaseSafetyGuard` 的启动期 JDBC catalog 检查；
 - `TestEnvironmentController` 与浏览器脚本写入前检查；
-- `BUG-003` 的残留识别、精确清理和 37 项后端测试证据。
+- [BUG-003](../../engineering/bugs/BUG-003-browser-test-database-boundary.md#5-数据处理与验证) 的残留识别、精确清理和当次测试证据。
 
 ### 可能追问
 

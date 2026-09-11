@@ -33,7 +33,7 @@
 
 ### 完整回答
 
-> Spring Security 会话策略设置为 `STATELESS`，后端不创建或读取登录 Session。每个受保护请求携带 JWT 并独立验证，服务实例不需要共享 Session。代价是 Token 签发后不能像 Session 一样直接从服务端删除，主动吊销需要短期 Access Token、Refresh Token、黑名单或版本号等额外机制。当前项目规模选择简单的短期访问 Token，并明确记录未实现边界。
+> Spring Security 会话策略设置为 `STATELESS`，后端不创建或读取登录 Session。每个受保护请求携带 JWT 并独立验证，服务实例不需要共享 Session。代价是 Token 签发后不能像 Session 一样直接从服务端删除，主动吊销需要短期 Access Token、Refresh Token、黑名单或版本号等额外机制。项目使用带有效期的访问 Token；这只解决认证凭据的传递，不代表密钥管理和会话治理已经达到生产要求，具体边界见 [认证设计](../../architecture/authentication.md)。
 
 ## SEC-04：为什么统一401不能只用全局异常处理器？
 

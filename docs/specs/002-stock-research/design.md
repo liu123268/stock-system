@@ -1,11 +1,11 @@
 # SPEC-002：股票与初始观点技术设计
 
-状态：首个股票与初始观点纵向闭环已实现；真实报价、九种周期 K 线、同图长历史和 pull 分时已完成页面验收
-更新时间：2026-09-10
+状态：股票与初始观点基础闭环、真实行情 pull 已实现；Redis 共享缓存已编码，未完成验收，差距见 tasks
+更新时间：2026-09-11
 
 ## 1. 文档职责
 
-本文档只设计首个纵向闭环需要的数据关系、接口、事务、行情边界和测试。业务规则见 [需求](requirements.md)，实施顺序见 [任务清单](tasks.md)。尚未进入的多人观点、历史行情和重新关注不在这里提前展开。
+本文档保存股票与初始观点闭环及后续已进入实施范围的目录、报价、K 线、分时和 Redis 方案。业务规则见 [需求](requirements.md)，实施顺序与验证证据见 [任务清单](tasks.md)。尚未进入的多人观点、永久行情库和重新关注不在这里提前展开。
 
 ## 2. 四个核心对象
 
@@ -61,15 +61,19 @@ MarketDataProvider
 
 ### 4.0 外部行情调用与密钥边界
 
-真实行情供应商只允许作为 Spring Boot 服务端的上游。Vue/React 前端只能调用本项目的 Spring Boot API，不得直接调用供应商，也不得接收、保存或暴露 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等凭据。当前服务端通过官方 CLI sidecar 调用 Longbridge，校验返回的股票身份、价格、行情时间、来源和状态，再结合 MySQL 标准身份与进程内短缓存向前端提供受项目权限和数据规则约束的结果；Redis 与 WebSocket/SSE 仍是达到对应容量条件后才实施的动态层。
+真实行情供应商只允许作为 Spring Boot 服务端的上游。Vue/React 前端只能调用本项目的 Spring Boot API，不得直接调用供应商，也不得接收、保存或暴露 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等凭据。当前服务端通过官方 CLI sidecar 调用 Longbridge，校验返回的股票身份、价格、行情时间、来源和状态，再结合 MySQL 标准身份与缓存向前端提供受项目权限和数据规则约束的结果；Redis 装饰层已经编码，实际缓存行为和未完成边界见 4.6。WebSocket/SSE 仍是达到动态推送条件后才实施的传输层。
 
 ```text
-Longbridge
-          ↑ 官方 CLI `serve` / JSON-RPC
-          │
-Vue/React ←→ Spring Boot
-              ↑
-      进程内短缓存 / MySQL
+Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
+                    │
+                    ↓
+            Redis 共享行情缓存（启用时）
+                    │ 未命中／故障降级
+                    ↓
+            进程内短缓存 / Longbridge 网关
+                    │ 官方 CLI `serve` / JSON-RPC
+                    ↓
+                Longbridge
 ```
 
 凭据只能通过服务端环境变量、受保护的本机配置或部署平台密钥管理提供，不能进入前端源码、浏览器响应、日志、Git 或构建产物。供应商凭据泄漏可能影响关联账户，因此真实接入的验收必须包含“浏览器和构建产物中不存在供应商密钥”的检查。该边界是全局行情接入规则，不因某个页面需要行情而放宽。
@@ -148,7 +152,7 @@ Vue/React ←→ Spring Boot
 
 基础免费范围不能理解为无限制或所有市场实时。当前验证证明 A 股 `600519.SH` 可返回真实报价；账号仍受一个行情长连接、每秒 10 次、并发 5 次限制，实时报价一次最多传入 500 个代码，港股基础权限在特定请求规模或账号权限下可能返回延迟行情。项目保留供应商时间，页面不能仅凭来源标签宣称实时。历史 K 线另按自然月查询过的不同标的计额，当前基础开户档为 100 只、账户等级最高 3000 只，同一标的当月重复查询只计一次，并另受每 30 秒最多 60 次调用限制；因此 K 线只在详情页按需取得，不随搜索候选预取。定价、额度、权限和供应商条款变化时需重新核对。
 
-当前报价与当天分时的 5 秒缓存、K 线及历史日期批次的 1 分钟缓存只属于单实例低频拉取层。页面已用 30 秒 pull 完成单只可见分时的最小闭环；上游 WebSocket、Redis、SSE 仍按实际并发和部署容量分别设计。多实例或动态推送前必须先解决单账号单连接和共享限流，不能直接复制多个 sidecar。部署前置条件见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)。
+原 `LongbridgeJsonRpcClient` 的报价与当天分时 5 秒缓存、K 线及历史日期批次 1 分钟缓存仍属于单 JVM 层；新增共享层见 4.6，不替换这些兜底路径。页面继续以 30 秒 pull 刷新单只可见分时。上游 WebSocket/SSE 仍按动态推送需求另行设计。多实例前仍必须解决单账号单连接和共享限流，不能因为有 Redis 就直接复制多个 sidecar。部署前置条件见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)。
 
 ### 4.4 已加入股票的按需 K 线（2026-09-09）
 
@@ -157,7 +161,7 @@ Vue/React ←→ Spring Boot
   → GET /api/workspaces/{workspaceId}/stocks/{workspaceStockId}/candlesticks
   → 重新验证空间成员并按 workspaceId + workspaceStockId 查标准股票
   → MarketCandlestickProvider
-  → LongbridgeJsonRpcClient：quote.candlesticks
+  → LongbridgeCandlestickGateway：先经共享缓存装饰层，再进入 LongbridgeJsonRpcClient
   → 首次最多 1000 根不复权 OHLCV，左边界按 before 游标继续补历史
   → Pinia 保存当前展开序列
   → 按需加载的 ECharts K 线图
@@ -166,9 +170,9 @@ Vue/React ←→ Spring Boot
 - Controller 接受 `1m/5m/15m/30m/1h/day/week/month/year` 和 20～1000 根；页面首次固定请求上限 1000 根，后续携带当前最早时间 `before` 继续向前读取。
 - K 线读取与搜索候选完全分离。只有 `workspace_stock` 已存在且当前用户仍是空间成员时才访问上游，避免一次模糊搜索把 30 个候选都计入月度不同标的额度。
 - Java 客户端白名单包含五个固定只读方法：基础报价、最近 K 线、按日期历史 K 线、当天分时和交易日历。前端不能传 JSON-RPC 方法名，交易和任意 API 仍不可达。
-- 最近 K 线按 `symbol + period + count + latest`、更早批次按 `symbol + period + count + endDate` 默认缓存 1 分钟。缓存只减少重复调用和页面压力，不改变 Longbridge 按股票代码统计的月度不同标的口径；同一股票切换周期或当月重复查询仍是一个不同标的。
+- 原客户端最近 K 线按 `symbol + period + count + latest`、更早批次按完整 `before` 时间边界默认缓存 1 分钟；共享层参数见 4.6。历史接口虽然按日期请求，但必须先过滤 `< before` 再截取所需根数，不能用日期代替缓存 Key 中的精确时间。缓存不改变 Longbridge 按股票代码统计的月度不同标的口径。
 - 上游 `301607` 在 K 线方法中映射为 `MARKET_KLINE_LIMIT_EXCEEDED`（HTTP 429），页面提示减少数据量或核对月度标的额度；其他上游失败映射为 `MARKET_KLINE_UNAVAILABLE`（HTTP 503）。官方 K 线文档只把该码定义为“请求数据数量超限／接口限制”，没有证明它只代表月额度耗尽；报价方法同码则明确是单次代码数量超限，不能跨接口共用一句错误含义。
-- 当前序列不写 MySQL，刷新页面后重新按需读取；MySQL 只保留研究开始时的价格快照。后续要做长期历史复盘时，再实现 `stock_daily_quote` 幂等落库；多实例、热点轮询或动态推送出现后再引入 Redis。
+- 当前序列不写 MySQL，刷新页面后重新按需读取；MySQL 只保留研究开始时的价格快照。CODE-206E 用 Redis 复用可重建的短期行情结果，但不把它当成永久行情库；后续要做跨供应商长期历史复盘时，再实现 `stock_daily_quote` 幂等落库。
 
 ### 4.5 分钟 K、长历史与分时实现
 
@@ -196,7 +200,42 @@ Vue/React ←→ Spring Boot
 
 分时百分比以所选交易日前最近一根日 K 的收盘价为 `referencePrice`，不能使用当前报价的昨收去解释任意历史日期。Provider 通过已有历史 K 线网关读取所选日期前最多 10 根日 K，按市场日期过滤后取最近一根；响应把该价格连同分钟点返回。前端同时计算价格线和均价线相对昨收的最大绝对偏离，增加 8% 视觉余量后向上取 `1/2/3/5/10/20/30/50/100%` 档位；左价格轴固定为 `昨收 × (1±档位)`，右百分比轴固定为 `±档位`，两边都分成四段，因此 `0%` 与昨收严格处在同一水平线。分档只在突破当前档位时扩展，避免每次 pull 都发生细小缩放抖动。Tooltip 使用第三个不绘制的百分比序列，在价格和均价下方显示当分钟价格相对昨收的“涨跌幅”；价格、均价和涨跌幅都在 ECharts `valueFormatter` 层保留两位小数，右轴 `axisPointer.label.formatter` 共用带正负号和 `%` 的格式化函数；序列内部仍保留原始精度。
 
-第一阶段不要求 WebSocket、SSE 或 Redis：单后端、单个可见图表可用受控 pull 完成正确性闭环。后续若需要更及时的盘中变化，WebSocket 是 Longbridge 与 Spring Boot 之间保持不断开的双向连接，由供应商主动推送；SSE 是 Spring Boot 到浏览器的单向持续连接，由后端把新价格推给当前页面。进入多用户同时观看、多个股票动态更新或多实例后，再由 `quote.subscribe` 的 quote/trades 推送聚合当前分钟，通过 SSE 发给浏览器，并定期用 `quote.intraday` 对账；Redis 届时承担跨实例最新分时缓存、订阅引用计数和请求合并，MySQL 只在产品确认需要脱离供应商长期复盘时持久化不可变分钟事实。
+在 CODE-206D 阶段没有把 WebSocket、SSE 或 Redis 与 pull 正确性闭环捆绑：单后端、单个可见图表先用受控 pull 完成。当前 Redis 已独立接入，具体机制见 4.6；它不与上游订阅和浏览器推送捆成一次改造。后续若需要更及时的盘中变化，WebSocket 是 Longbridge 与 Spring Boot 之间保持不断开的双向连接，由供应商主动推送；SSE 是 Spring Boot 到浏览器的单向持续连接，由后端把新价格推给当前页面。进入多用户同时观看或多个股票动态更新后，可再由 `quote.subscribe` 的 quote/trades 推送聚合当前分钟，通过 SSE 发给浏览器，并定期用 `quote.intraday` 对账；届时复用 Redis 保存最新分时和订阅引用状态。MySQL 只在产品确认需要脱离供应商长期复盘时持久化不可变分钟事实。
+
+### 4.6 Redis 共享行情缓存与访问保护
+
+CODE-206E 实施中，尚未整体验收。原来 provider 直接依赖 `LongbridgeJsonRpcClient` 的网关接口：缓存只存在一个 Java 进程内，另一实例无法复用。现在 `CachingLongbridgeMarketGateway` 通过 `@Primary` 成为四类网关接口的首选实现，把可重建的行情缓存放在 provider 与旧客户端之间；Controller、Vue 和研究事务不直接操作 Redis。新增依赖为 Spring Data Redis，连接客户端使用 Lettuce。关闭 Redis 时使用 `NoOpMarketSharedCache`，仍走原行情链路，不切换 Mock。
+
+```text
+业务 Service 按接口校验身份与访问范围
+  （搜索查本地标准身份；空间图表另外校验成员和 workspace_stock）
+  → provider → CachingLongbridgeMarketGateway 生成 Key
+      ├─ Redis 命中：JSON 还原为原始行情对象 → provider 映射项目响应
+      └─ 未命中：合并同 JVM 请求 → 尝试 Redis 锁
+          ├─ 取得锁：再次查缓存；仍未命中才调用旧客户端
+          ├─ 锁被占用：短时等待共享结果；超时走旧客户端
+          └─ Redis 不可用：直接走旧客户端
+              → 进程内短缓存或受限 sidecar pull → 写 Redis（可用时）
+```
+
+`Key` 是结果的查询身份，`TTL` 是 Redis 允许复用该结果的有效时长，不是股票历史总长度。实现由 [MarketCacheKeys](../../../src/main/java/com/stock/system/stock/market/MarketCacheKeys.java) 和 [MarketRedisProperties](../../../src/main/java/com/stock/system/stock/market/MarketRedisProperties.java) 定义；以下为共享层当前默认值，原客户端短缓存不因此消失。
+
+| 数据 | Key 的结果区分条件（均带可配置版本前缀） | 当前基础 TTL |
+| --- | --- | --- |
+| 批量报价 | 规范化、去重、排序后的整批代码集合的 SHA-256 | 5 秒 |
+| 最近 K 线 | 标准代码、周期、`latest`、数量 | 1 分钟 |
+| before 历史批次 | 标准代码、周期、`before` 的 epoch 毫秒、数量 | 12 小时 |
+| 指定日期 K 线（供历史分时使用） | 标准代码、周期、日期 | 12 小时 |
+| 当天分时 | 标准代码、股票市场时区下的当天日期 | 5 秒 |
+| 交易日历 | CN/HK 市场、日期 | 24 小时 |
+
+默认前缀为 `stock-system:market:v1`，写入 TTL 加 ±10% 随机抖动。报价按整批集合缓存，不是逐股票共享缓存：`[A,B]` 与 `[B,A]` 可命中同一 Key，但 `[A]` 与 `[A,B]` 不能共享这层结果，仍可能命中旧客户端的逐股票缓存。缓存值直接序列化原始 `Map/List/Boolean`，报价、K 线和分时点保留供应商时间与首次取得数据的 `retrievedAt`，缓存命中不刷新该时间；目前没有统一含 `source` 的缓存信封，`LONGBRIDGE_OPENAPI` 由 provider 补回，日历只存布尔值。与需求中“缓存值保留来源”的差距不能写成已经完成。
+
+同 JVM 的 `CompletableFuture` 让正在加载同一 Key 的请求等待同一个结果；跨实例锁用 Redis `SET NX` 加随机 owner，默认租期 8 秒，释放用 Lua 原子比较 owner 后删除，防止误删别人续接的锁。锁竞争者每 40ms 查共享结果，默认最多等待 800ms；超时后不持锁调用旧客户端，因此它是限时等待加可用性降级，不保证所有并发场景只回源一次，也不是全局限流器。跨实例等待尚须补可靠的竞争与超时验收。
+
+`RedisMarketSharedCache` 在连接／命令异常后默认冷却 30 秒，期间跳过 Redis，回到原有进程内缓存与受限 pull；日志只记录异常类型，不记录可能含凭据的原始异常信息。无法反序列化的 JSON 会删除后重取，但尚未校验反序列化成功后的字段语义。空 List/Map 和抛出的上游异常不写入共享缓存，日历 `false` 是合法休市结果，可以缓存。这些保护不替代已有参数、目录、成员和空间股票校验，也不能解除单账号单行情连接与供应商额度。
+
+本实现仍有两项关键正确性缺口：历史方法统一使用长 TTL，尚未判断所取 K 线是否已经收盘（当前周／月／年等聚合可能继续变化）；缓存来源字段尚未按需求显式保留。不能为了对齐代码而删掉这些需求。命中、未命中、合并和加载目前主要靠 DEBUG 日志，且“loaded from upstream”可能只是调用到旧客户端缓存，不能据此冒充真实外部请求次数或性能结论。未完成验收和测试证据集中见 [CODE-206E](tasks.md#code-206e-redis-共享行情缓存实施中证据2026-09-11)，运行与配置方式见 [开发环境](../../engineering/development.md#10-redis-本地学习环境)。
 
 ## 5. 首批 API
 

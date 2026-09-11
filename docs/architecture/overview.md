@@ -1,6 +1,6 @@
 # 系统架构总览
 
-更新时间：2026-09-10
+更新时间：2026-09-11
 
 ## 1. 架构目标
 
@@ -20,7 +20,9 @@ Spring Boot REST API
   ├─ Spring Security + JWT
   ├─ Controller / Service / Mapper
   └─ 行情适配（目录、Mock、Longbridge 报价、K 线与分时）
-       └─ Spring Boot 管理的 `longbridge serve` 子进程
+       ├─ Redis 共享缓存（启用且命中时直接返回）
+       └─ 未命中／关闭／故障 → 进程内短缓存 → 受控回源
+            └─ Spring Boot 管理的 `longbridge serve` 子进程
   │
   ▼
 MySQL 8
@@ -57,7 +59,9 @@ MySQL 8
 
 业务 Service 分别依赖项目自己的 `MarketDataProvider`、`MarketCandlestickProvider` 和 `MarketIntradayProvider`，供应商 DTO 不进入研究事务或 Controller。开发默认由 MySQL 搜索标准股票身份，再通过 Spring Boot 管理的官方 `longbridge serve` 子进程批量补充真实价格，并为已加入空间的单只股票按需读取 K 线或分时；测试继续使用明确的 Mock。当前接口和调用位置见 [SPEC-002 设计](../specs/002-stock-research/design.md)。
 
-当前低频基础报价使用批量请求、并发/速率上限和 5 秒进程内缓存保护外部供应商；当天分时也按股票缓存 5 秒，K 线及历史日期批次缓存 1 分钟。K 线和分时都不随搜索候选或共享列表预取，只有当前展开面板按需读取；盘中分时仅在页面可见、面板展开且后端返回 `updating=true` 时每 30 秒刷新。进入多实例、多个热点股票同时动态更新或 WebSocket/SSE 推送层时再使用 Redis 共享最新行情和访问保护，并定义一致性、TTL、穿透/击穿/雪崩以及 Redis 或供应商不可用时不得把过期数据冒充实时行情的降级边界。Redis 不是业务事实源；股票标准身份、需要长期保留的行情事实和研究周期开始时的不可变报价快照仍由 MySQL 持久化。
+当前行情网关在进程内短缓存外增加了可关闭的 Redis 共享缓存，并保留批量请求、并发与速率上限；缓存实现已经存在，但 CODE-206E 的闭环验收仍未完成。具体请求合并、TTL、故障降级和已知差距见 [缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)，不能据此宣称已解决所有跨实例并发或容量问题。K 线和分时不随搜索候选或共享列表预取，只有当前展开面板按需读取，分时刷新生命周期见 [前端数据流](../engineering/frontend.md#十二按需-k-线与分时图的数据流)。
+
+Redis 不是业务事实源。MySQL 当前保存股票标准身份和研究周期开始时的不可变报价快照；独立日行情历史表尚未创建。将来需要长期保留的行情事实仍应由相应持久化设计承载，不能把 Redis 缓存当作已经落库的历史行情。
 
 ## 7. 元数据策略：V1 采用轻量元数据
 

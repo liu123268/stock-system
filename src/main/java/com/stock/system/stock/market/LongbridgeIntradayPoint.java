@@ -8,6 +8,17 @@ record LongbridgeIntradayPoint(
         BigDecimal price,
         BigDecimal averagePrice,
         long volume,
-        BigDecimal turnover
+        BigDecimal turnover,
+        Instant retrievedAt
 ) {
+
+    LongbridgeIntradayPoint(
+            Instant timestamp,
+            BigDecimal price,
+            BigDecimal averagePrice,
+            long volume,
+            BigDecimal turnover
+    ) {
+        this(timestamp, price, averagePrice, volume, turnover, Instant.now());
+    }
 }

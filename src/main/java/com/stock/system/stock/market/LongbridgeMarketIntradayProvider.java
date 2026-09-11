@@ -55,9 +55,10 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
         }
         try {
             boolean tradingDay = validateTradingDay(code, tradeDate, marketToday);
-            List<MarketIntradayPoint> points = tradeDate.equals(marketToday)
+            LoadedIntraday loaded = tradeDate.equals(marketToday)
                     ? currentPoints(code, tradeDate, zone)
                     : historicalPoints(code, tradeDate);
+            List<MarketIntradayPoint> points = loaded.points();
             if (points.isEmpty()) {
                 throw new MarketIntradayUnavailableException("Longbridge returned no intraday data");
             }
@@ -70,7 +71,7 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
                     points,
                     SOURCE,
                     false,
-                    clock.instant()
+                    loaded.retrievedAt()
             );
         } catch (LongbridgeCliException exception) {
             var earliestDate = exception.minuteHistoryBeginDate();
@@ -96,21 +97,27 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
         return true;
     }
 
-    private List<MarketIntradayPoint> currentPoints(
+    private LoadedIntraday currentPoints(
             String code,
             LocalDate tradeDate,
             ZoneId zone
     ) {
-        return intradayGateway.getIntraday(code).stream()
+        List<LongbridgeIntradayPoint> raw = intradayGateway.getIntraday(code);
+        List<MarketIntradayPoint> points = raw.stream()
                 .filter(item -> item.timestamp().atZone(zone).toLocalDate().equals(tradeDate))
                 .sorted(Comparator.comparing(LongbridgeIntradayPoint::timestamp))
                 .map(item -> new MarketIntradayPoint(
                         item.timestamp(), item.price(), item.averagePrice(), item.volume(),
                         item.turnover()))
                 .toList();
+        return new LoadedIntraday(points, raw.stream()
+                .map(LongbridgeIntradayPoint::retrievedAt)
+                .filter(java.util.Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElseGet(clock::instant));
     }
 
-    private List<MarketIntradayPoint> historicalPoints(String code, LocalDate tradeDate) {
+    private LoadedIntraday historicalPoints(String code, LocalDate tradeDate) {
         ZoneId marketZone = MarketTradingSessions.zoneFor(code);
         List<LongbridgeCandlestick> bars = candlestickGateway.getCandlesticksOnDate(
                 code, CandlestickPeriod.MINUTE_1, tradeDate).stream()
@@ -132,7 +139,12 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
             points.add(new MarketIntradayPoint(
                     bar.timestamp(), bar.close(), averagePrice, bar.volume(), bar.turnover()));
         }
-        return List.copyOf(points);
+        Instant retrievedAt = bars.stream()
+                .map(LongbridgeCandlestick::retrievedAt)
+                .filter(java.util.Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElseGet(clock::instant);
+        return new LoadedIntraday(List.copyOf(points), retrievedAt);
     }
 
     private BigDecimal chinaALotSize(String symbol) {
@@ -171,5 +183,8 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
         }
         return (!time.isBefore(LocalTime.of(9, 30)) && time.isBefore(LocalTime.of(11, 30)))
                 || (!time.isBefore(LocalTime.of(13, 0)) && time.isBefore(LocalTime.of(15, 5)));
+    }
+
+    private record LoadedIntraday(List<MarketIntradayPoint> points, Instant retrievedAt) {
     }
 }

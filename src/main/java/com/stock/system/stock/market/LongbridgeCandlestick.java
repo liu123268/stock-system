@@ -10,6 +10,19 @@ record LongbridgeCandlestick(
         BigDecimal low,
         BigDecimal close,
         long volume,
-        BigDecimal turnover
+        BigDecimal turnover,
+        Instant retrievedAt
 ) {
+
+    LongbridgeCandlestick(
+            Instant timestamp,
+            BigDecimal open,
+            BigDecimal high,
+            BigDecimal low,
+            BigDecimal close,
+            long volume,
+            BigDecimal turnover
+    ) {
+        this(timestamp, open, high, low, close, volume, turnover, Instant.now());
+    }
 }
