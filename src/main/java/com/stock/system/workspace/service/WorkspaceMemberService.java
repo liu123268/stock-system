@@ -1,6 +1,5 @@
 package com.stock.system.workspace.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.stock.system.admin.service.SuperAdminService;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
@@ -24,6 +23,7 @@ public class WorkspaceMemberService {
     private final WorkspaceMapper workspaceMapper;
     private final WorkspaceMemberMapper memberMapper;
     private final WorkspaceService workspaceService;
+    private final WorkspaceAccessService accessService;
     private final UserService userService;
     private final SuperAdminService superAdminService;
 
@@ -31,24 +31,26 @@ public class WorkspaceMemberService {
             WorkspaceMapper workspaceMapper,
             WorkspaceMemberMapper memberMapper,
             WorkspaceService workspaceService,
+            WorkspaceAccessService accessService,
             UserService userService,
             SuperAdminService superAdminService
     ) {
         this.workspaceMapper = workspaceMapper;
         this.memberMapper = memberMapper;
         this.workspaceService = workspaceService;
+        this.accessService = accessService;
         this.userService = userService;
         this.superAdminService = superAdminService;
     }
 
     public List<WorkspaceMemberResponseVO> list(Long userId, Long workspaceId) {
-        workspaceService.detail(userId, workspaceId);
+        accessService.requireMember(userId, workspaceId);
         return memberMapper.selectActiveMembers(workspaceId, userId);
     }
 
     @Transactional
     public void leave(Long userId, Long workspaceId) {
-        workspaceService.requireActiveRegularUser(userId);
+        accessService.requireActiveRegularUser(userId);
         Workspace workspace = requireWorkspaceForUpdate(workspaceId);
         WorkspaceMember member = memberMapper.selectForUpdate(workspaceId, userId);
         if (member == null) {
@@ -70,9 +72,7 @@ public class WorkspaceMemberService {
 
     @Transactional
     public void remove(Long userId, Long workspaceId, Long targetUserId) {
-        workspaceService.requireActiveRegularUser(userId);
-        Workspace workspace = requireOwnerForUpdate(userId, workspaceId);
-        requireActiveWorkspace(workspace);
+        Workspace workspace = accessService.requireActiveOwnerForUpdate(userId, workspaceId);
         if (workspace.getOwnerUserId().equals(targetUserId)) {
             throw new BusinessException(ErrorCode.WORKSPACE_ACCESS_DENIED);
         }
@@ -98,9 +98,7 @@ public class WorkspaceMemberService {
             Long workspaceId,
             Long targetUserId
     ) {
-        workspaceService.requireActiveRegularUser(userId);
-        Workspace workspace = requireOwnerForUpdate(userId, workspaceId);
-        requireActiveWorkspace(workspace);
+        Workspace workspace = accessService.requireActiveOwnerForUpdate(userId, workspaceId);
         if (workspace.getOwnerUserId().equals(targetUserId)) {
             throw new BusinessException(ErrorCode.TRANSFER_TARGET_NOT_ACTIVE_MEMBER);
         }
@@ -128,28 +126,4 @@ public class WorkspaceMemberService {
         return workspace;
     }
 
-    private Workspace requireOwnerForUpdate(Long userId, Long workspaceId) {
-        Workspace workspace = requireWorkspaceForUpdate(workspaceId);
-        WorkspaceMember operator = memberMapper.selectOne(
-                new LambdaQueryWrapper<WorkspaceMember>()
-                        .eq(WorkspaceMember::getWorkspaceId, workspaceId)
-                        .eq(WorkspaceMember::getUserId, userId)
-        );
-        if (operator == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        if (!"ACTIVE".equals(operator.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MEMBERSHIP_INACTIVE);
-        }
-        if (!workspace.getOwnerUserId().equals(userId)) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ACCESS_DENIED);
-        }
-        return workspace;
-    }
-
-    private void requireActiveWorkspace(Workspace workspace) {
-        if (!"ACTIVE".equals(workspace.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ARCHIVED);
-        }
-    }
 }

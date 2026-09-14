@@ -35,28 +35,31 @@ public class WorkspaceInvitationService {
     private final WorkspaceMemberMapper memberMapper;
     private final WorkspaceInvitationMapper invitationMapper;
     private final WorkspaceService workspaceService;
+    private final WorkspaceAccessService accessService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public WorkspaceInvitationService(
             WorkspaceMapper workspaceMapper,
             WorkspaceMemberMapper memberMapper,
             WorkspaceInvitationMapper invitationMapper,
-            WorkspaceService workspaceService
+            WorkspaceService workspaceService,
+            WorkspaceAccessService accessService
     ) {
         this.workspaceMapper = workspaceMapper;
         this.memberMapper = memberMapper;
         this.invitationMapper = invitationMapper;
         this.workspaceService = workspaceService;
+        this.accessService = accessService;
     }
 
     public CurrentInvitationResponseVO current(Long userId, Long workspaceId) {
-        requireOwner(userId, workspaceId, false);
+        accessService.requireOwner(userId, workspaceId);
         WorkspaceInvitation invitation = findCurrent(workspaceId);
         return invitation == null ? null : toCurrent(invitation);
     }
 
     public List<InvitationHistoryResponseVO> history(Long userId, Long workspaceId) {
-        requireOwner(userId, workspaceId, false);
+        accessService.requireOwner(userId, workspaceId);
         return invitationMapper.selectList(
                         new LambdaQueryWrapper<WorkspaceInvitation>()
                                 .eq(WorkspaceInvitation::getWorkspaceId, workspaceId)
@@ -73,7 +76,7 @@ public class WorkspaceInvitationService {
             Long workspaceId,
             Long currentInvitationId
     ) {
-        requireOwnerForUpdate(userId, workspaceId);
+        accessService.requireActiveOwnerForUpdate(userId, workspaceId);
         WorkspaceInvitation current = invitationMapper.selectCurrentForUpdate(workspaceId);
         Long actualCurrentId = current == null ? null : current.getId();
         if (!Objects.equals(currentInvitationId, actualCurrentId)) {
@@ -99,9 +102,7 @@ public class WorkspaceInvitationService {
                 invitationMapper.insert(invitation);
                 return toCurrent(invitation);
             } catch (DuplicateKeyException exception) {
-                if (attempt == CODE_GENERATION_ATTEMPTS - 1) {
-                    throw exception;
-                }
+                // 短码碰撞时继续生成；全部尝试用尽后统一返回可重试的业务冲突。
             }
         }
         throw new BusinessException(ErrorCode.CONCURRENT_OPERATION_CONFLICT);
@@ -109,7 +110,7 @@ public class WorkspaceInvitationService {
 
     @Transactional
     public void revoke(Long userId, Long workspaceId, Long invitationId) {
-        requireOwnerForUpdate(userId, workspaceId);
+        accessService.requireActiveOwnerForUpdate(userId, workspaceId);
         WorkspaceInvitation current = invitationMapper.selectCurrentForUpdate(workspaceId);
         if (current == null || !current.getId().equals(invitationId)) {
             throw new BusinessException(ErrorCode.INVITATION_CHANGED);
@@ -120,7 +121,7 @@ public class WorkspaceInvitationService {
 
     @Transactional
     public JoinWorkspaceResponseVO join(Long userId, String inviteCode) {
-        workspaceService.requireActiveRegularUser(userId);
+        accessService.requireActiveRegularUser(userId);
         WorkspaceInvitation candidate = invitationMapper.selectOne(
                 new LambdaQueryWrapper<WorkspaceInvitation>()
                         .eq(WorkspaceInvitation::getInviteCode, inviteCode)
@@ -168,47 +169,6 @@ public class WorkspaceInvitationService {
         invitation.setUsedCount(invitation.getUsedCount() + 1);
         invitationMapper.updateById(invitation);
         return new JoinWorkspaceResponseVO(toSummary(userId, workspace.getId()), true);
-    }
-
-    private Workspace requireOwnerForUpdate(Long userId, Long workspaceId) {
-        workspaceService.requireActiveRegularUser(userId);
-        Workspace workspace = workspaceMapper.selectByIdForUpdate(workspaceId);
-        return requireOwner(userId, workspaceId, workspace, true);
-    }
-
-    private Workspace requireOwner(Long userId, Long workspaceId, boolean requireActive) {
-        workspaceService.requireActiveRegularUser(userId);
-        Workspace workspace = workspaceMapper.selectById(workspaceId);
-        return requireOwner(userId, workspaceId, workspace, requireActive);
-    }
-
-    private Workspace requireOwner(
-            Long userId,
-            Long workspaceId,
-            Workspace workspace,
-            boolean requireActive
-    ) {
-        if (workspace == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        WorkspaceMember membership = memberMapper.selectOne(
-                new LambdaQueryWrapper<WorkspaceMember>()
-                        .eq(WorkspaceMember::getWorkspaceId, workspaceId)
-                        .eq(WorkspaceMember::getUserId, userId)
-        );
-        if (membership == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        if (!"ACTIVE".equals(membership.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MEMBERSHIP_INACTIVE);
-        }
-        if (!workspace.getOwnerUserId().equals(userId)) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ACCESS_DENIED);
-        }
-        if (requireActive && !"ACTIVE".equals(workspace.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ARCHIVED);
-        }
-        return workspace;
     }
 
     private WorkspaceInvitation findCurrent(Long workspaceId) {

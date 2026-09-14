@@ -142,7 +142,8 @@ src/main/resources/mapper/workspace/WorkspaceMapper.xml
 ```text
 frontend
 ├─ e2e
-│  └─ auth-smoke.mjs
+│  ├─ auth-smoke.mjs
+│  └─ directory-smoke.mjs
 └─ src
    ├─ views
    ├─ components
@@ -156,13 +157,13 @@ frontend
 | 目录 | 放什么 | 当前例子 |
 | --- | --- | --- |
 | `views` | 一个完整页面 | `LoginView.vue`、`WorkspaceStocksView.vue` |
-| `components` | 可以被页面复用的局部界面 | `AuthLayout.vue`、`StockCandlestickChart.vue`、`StockIntradayChart.vue` |
+| `components` | 可以被页面复用的局部界面或路由布局 | `AuthLayout.vue`、`WorkspaceLayout.vue`、`StockCandlestickChart.vue`、`StockIntradayChart.vue` |
 | `api` | Axios客户端和后端接口函数 | `http.ts`、`auth.ts`、`stock.ts` |
 | `stores` | 多个页面共享的Pinia状态 | `auth.ts`、`workspace.ts`、`stock.ts` |
 | `router` | URL对应哪个页面、访问权限 | `index.ts` |
 | `styles` | 全局基础样式和共享样式 | `main.css` |
 | `__tests__` | 前端单元测试 | `auth-store.spec.ts` |
-| `e2e` | 使用真实浏览器验证完整操作流程 | `auth-smoke.mjs` |
+| `e2e` | 使用真实浏览器验证完整操作流程或专项边界 | `auth-smoke.mjs`、`directory-smoke.mjs` |
 
 前端继续保持一个 Vue 工程，并按 `views`、`components`、`api`、`stores` 等职责分类；文件增长时只在这些目录下增加浅层业务子目录，例如 `views/workspace`、`components/workspace`，不复制第二套 `frontend/src`。文件使用业务辨识度明确的名称，例如 `WorkspaceListView.vue`、`workspace.ts`、`workspace-store.spec.ts`。
 

@@ -148,7 +148,7 @@ components:
 
 ### Preview Orbit
 
-预览轨道由 DesignOrbit.vue 的 SVG、柔和色彩和低频CSS形变组成。组件不注册 `pointermove`，也不读取鼠标坐标。动画必须响应 `prefers-reduced-motion`，此时保留静态构图。LiquidBackdrop.vue 仍保留在项目中作为旧参考素材，但当前正式首页、登录、注册和工作台均不渲染它。
+预览轨道由 DesignOrbit.vue 的 SVG、柔和色彩和低频CSS形变组成。组件不注册 `pointermove`，也不读取鼠标坐标。动画必须响应 `prefers-reduced-motion`，此时保留静态构图。旧版 `LiquidBackdrop.vue` 与 `liquid-glass.mp4` 已随视觉改版删除，当前正式首页、登录、注册和工作台不依赖视频素材。
 
 ## Do's and Don'ts
 

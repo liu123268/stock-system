@@ -21,28 +21,32 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/workspaces/:workspaceId/overview',
-      name: 'workspace-overview',
-      component: () => import('@/views/workspace/WorkspaceOverviewView.vue'),
+      path: '/workspaces/:workspaceId',
+      component: () => import('@/components/workspace/WorkspaceLayout.vue'),
       meta: { requiresAuth: true },
-    },
-    {
-      path: '/workspaces/:workspaceId/stocks',
-      name: 'workspace-stocks',
-      component: () => import('@/views/workspace/WorkspaceStocksView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/workspaces/:workspaceId/members',
-      name: 'workspace-members',
-      component: () => import('@/views/workspace/WorkspaceMembersView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/workspaces/:workspaceId/settings',
-      name: 'workspace-settings',
-      component: () => import('@/views/workspace/WorkspaceSettingsView.vue'),
-      meta: { requiresAuth: true },
+      children: [
+        { path: '', redirect: { name: 'workspace-overview' } },
+        {
+          path: 'overview',
+          name: 'workspace-overview',
+          component: () => import('@/views/workspace/WorkspaceOverviewView.vue'),
+        },
+        {
+          path: 'stocks',
+          name: 'workspace-stocks',
+          component: () => import('@/views/workspace/WorkspaceStocksView.vue'),
+        },
+        {
+          path: 'members',
+          name: 'workspace-members',
+          component: () => import('@/views/workspace/WorkspaceMembersView.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'workspace-settings',
+          component: () => import('@/views/workspace/WorkspaceSettingsView.vue'),
+        },
+      ],
     },
     {
       path: '/login',

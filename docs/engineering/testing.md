@@ -46,6 +46,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - 生产构建：`npm.cmd run build-only` 或完整 `npm.cmd run build`。
 - `lint:check` 依次运行不带 `--fix` 的 Oxlint 和 ESLint，自动验收优先使用该命令，避免静态检查顺带改写任务外文件。
 - 关键全链路使用 `frontend/e2e/auth-smoke.mjs` 和本机真实 Chrome；脚本使用两个隔离浏览器上下文模拟 OWNER 与 MEMBER。
+- 修改股票目录导入、搜索别名、北交所识别或“目录存在但报价不可用”降级后，使用 `frontend` 目录的 `npm.cmd run test:e2e:directory` 手动运行 `frontend/e2e/directory-smoke.mjs`；它专门验证简体、繁体、英文、标准代码、BSE 和无报价页面边界，不替代覆盖完整成员与研究流程的 `test:e2e`。
 - 当前空间 Store 单元测试覆盖列表、创建、加入、邀请读取、重新生成、成员加载、移除、转让、归档恢复和退出状态清理；访问错误测试分别验证 401 清除账号会话、成员关系失效清除当前空间。后续继续补齐快速切换竞态和更多页面组件测试。
 - 浏览器闭环连接真实后端和 `stock_system_test`，已覆盖完整成员生命周期、所有权转让、归档、只读重入、恢复和退出登录本地状态清理。
 - `application-dev.properties` 与 `application-test.properties` 都位于主运行时资源目录，不再依赖 `src/test/resources` 是否进入 `spring-boot:run` 类路径。日常开发和浏览器测试分别使用 `scripts/start-dev.cmd`、`scripts/start-test.cmd`，不用来回修改配置文件。

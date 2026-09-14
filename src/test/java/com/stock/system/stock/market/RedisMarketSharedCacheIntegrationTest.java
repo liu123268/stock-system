@@ -25,7 +25,7 @@ class RedisMarketSharedCacheIntegrationTest {
     @EnabledIfEnvironmentVariable(named = "REDIS_INTEGRATION_TEST", matches = "true")
     void writesReadsExpiresAndCleansAnIsolatedRealRedisKey() throws InterruptedException {
         String host = System.getenv().getOrDefault("REDIS_HOST", "localhost");
-        int port = Integer.parseInt(System.getenv().getOrDefault("REDIS_PORT", "6379"));
+        int port = Integer.parseInt(System.getenv().getOrDefault("REDIS_PORT", "6380"));
         LettuceConnectionFactory connectionFactory = new LettuceConnectionFactory(host, port);
         connectionFactory.afterPropertiesSet();
         connectionFactory.start();

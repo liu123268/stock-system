@@ -4,6 +4,15 @@ setlocal
 set "PROJECT_ROOT=%~dp0.."
 set "MAVEN_CACHE=%PROJECT_ROOT%\..\.m2repo"
 
+if not defined DB_PASSWORD (
+    echo DB_PASSWORD is not set. Set the local database password before starting.
+    exit /b 1
+)
+if not defined JWT_SECRET (
+    echo JWT_SECRET is not set. Set a local secret with at least 32 UTF-8 bytes before starting.
+    exit /b 1
+)
+
 netstat -ano | findstr ":8082" | findstr "LISTENING" >nul
 if errorlevel 1 (
     echo Starting Spring Boot backend on http://localhost:8082 ...

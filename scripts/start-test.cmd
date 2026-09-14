@@ -4,6 +4,15 @@ setlocal
 set "PROJECT_ROOT=%~dp0.."
 set "MAVEN_CACHE=%PROJECT_ROOT%\..\.m2repo"
 
+if not defined DB_PASSWORD (
+    echo DB_PASSWORD is not set. Set the test database password before starting.
+    exit /b 1
+)
+if not defined JWT_SECRET (
+    echo JWT_SECRET is not set. Set a test secret with at least 32 UTF-8 bytes before starting.
+    exit /b 1
+)
+
 netstat -ano | findstr ":18082" | findstr "LISTENING" >nul
 if errorlevel 1 (
     echo Starting isolated TEST backend on http://localhost:18082 ...

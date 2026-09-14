@@ -113,6 +113,8 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 所有涉及既有空间的写操作统一按 `workspace -> workspace_invitation -> workspace_member` 的顺序取得需要的行锁，减少不同请求反向持锁造成的死锁。数据库仍可能主动中止极端并发事务；此时整项操作回滚并返回 HTTP 409 `CONCURRENT_OPERATION_CONFLICT`，前端刷新最新数据后让用户重试，不盲目自动重放会产生新业务结果的请求。
 
+`WorkspaceAccessService` 集中执行有效普通账号、空间存在、有效成员、OWNER 与活动空间校验，并用不同方法名明确“普通读取”“锁定空间”“锁定且要求活动空间”，避免三个业务 Service 复制校验时悄悄改变错误顺序或 `FOR UPDATE`。邀请码随机短码发生唯一键碰撞时最多重试 10 次，全部用尽后返回 HTTP 409 `CONCURRENT_OPERATION_CONFLICT`，不把数据库异常泄露成 500。空间列表由 Mapper 一次联结当前成员关系并聚合有效成员数，不再逐空间执行成员计数。
+
 ### 7.1 创建空间
 
 同一事务内完成：

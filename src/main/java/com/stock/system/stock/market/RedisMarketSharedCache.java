@@ -130,7 +130,7 @@ class RedisMarketSharedCache implements MarketSharedCache {
         unavailableUntil = clock.instant().plus(failureCooldown);
         if (!previous.isAfter(clock.instant())) {
             LOGGER.warn(
-                    "Redis market cache is unavailable; using in-process cache and controlled upstream fallback for {} (failure type: {})",
+                    "Redis market cache is unavailable; using fallback and retrying Redis after {} (failure type: {})",
                     failureCooldown,
                     exception.getClass().getSimpleName()
             );

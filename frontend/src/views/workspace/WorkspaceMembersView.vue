@@ -95,228 +95,100 @@ async function confirmAction() {
   }
 }
 
-function switchWorkspace() {
-  store.clearCurrent()
-  return router.push('/workspaces')
-}
-
-function logout() {
-  authStore.logout()
-  store.clearAll()
-  router.push('/')
-}
-
 onMounted(load)
 </script>
 
 <template>
-  <div class="workspace-shell">
-    <aside class="workspace-nav">
-      <button class="brand logout-btn" type="button" @click="logout">退出登录</button>
-      <button class="switcher" type="button" @click="switchWorkspace">
-        <span>{{ store.currentWorkspace?.name ?? '研究空间' }}</span
-        ><small>切换空间</small>
+  <section v-if="store.loading || store.membersLoading" class="content-state" aria-live="polite">
+    <div class="loading-line"></div>
+    <div class="loading-line short"></div>
+    <p>正在读取成员关系</p>
+  </section>
+
+  <section v-else-if="store.errorMessage || store.membersError" class="content-state" role="alert">
+    <h1>成员列表暂时没有加载出来</h1>
+    <p>{{ store.errorMessage || store.membersError }}</p>
+    <button class="primary" type="button" @click="load">重新加载</button>
+  </section>
+
+  <template v-else-if="store.currentWorkspace">
+    <section v-if="isArchived" class="archive-notice" aria-live="polite">
+      <strong>已归档空间只保留读取和普通成员主动退出。</strong>
+      <span>移除成员与转让所有权需先由有权限的人恢复空间。</span>
+    </section>
+
+    <section class="members-heading">
+      <div>
+        <p class="section-label">空间成员</p>
+        <h1>{{ store.currentWorkspace.name }}</h1>
+        <p>当前共有 {{ store.members.length }} 名有效成员。</p>
+      </div>
+      <button
+        v-if="!isOwner"
+        class="danger-action"
+        type="button"
+        @click="requestAction({ type: 'leave' })"
+      >
+        退出这个空间
       </button>
-      <nav aria-label="空间主导航">
-        <RouterLink :to="`/workspaces/${workspaceId}/overview`">概览</RouterLink>
-        <RouterLink :to="`/workspaces/${workspaceId}/stocks`">共享自选</RouterLink>
-        <RouterLink class="active" :to="`/workspaces/${workspaceId}/members`">成员</RouterLink>
-        <RouterLink :to="`/workspaces/${workspaceId}/settings`">设置</RouterLink>
-      </nav>
-    </aside>
+    </section>
 
-    <main class="workspace-main">
-      <header>
-        <span>{{ authStore.currentUser?.nickname }}</span>
-        <button type="button" @click="switchWorkspace">返回空间选择</button>
-      </header>
+    <section v-if="pendingAction" class="confirmation" aria-live="polite">
+      <p>{{ confirmationText() }}</p>
+      <div>
+        <button type="button" :disabled="actionLoading" @click="cancelAction">取消</button>
+        <button
+          class="danger-action"
+          type="button"
+          :disabled="actionLoading"
+          @click="confirmAction"
+        >
+          {{ actionLoading ? '正在处理…' : confirmationLabel() }}
+        </button>
+      </div>
+    </section>
 
-      <section
-        v-if="store.loading || store.membersLoading"
-        class="content-state"
-        aria-live="polite"
-      >
-        <div class="loading-line"></div>
-        <div class="loading-line short"></div>
-        <p>正在读取成员关系</p>
-      </section>
+    <p v-if="actionError" class="feedback error" role="alert">{{ actionError }}</p>
+    <p v-if="actionMessage" class="feedback" aria-live="polite">{{ actionMessage }}</p>
 
-      <section
-        v-else-if="store.errorMessage || store.membersError"
-        class="content-state"
-        role="alert"
-      >
-        <h1>成员列表暂时没有加载出来</h1>
-        <p>{{ store.errorMessage || store.membersError }}</p>
-        <button class="primary" type="button" @click="load">重新加载</button>
-      </section>
-
-      <template v-else-if="store.currentWorkspace">
-        <section v-if="isArchived" class="archive-notice" aria-live="polite">
-          <strong>已归档空间只保留读取和普通成员主动退出。</strong>
-          <span>移除成员与转让所有权需先由有权限的人恢复空间。</span>
-        </section>
-
-        <section class="members-heading">
+    <section class="member-list" aria-label="有效成员列表">
+      <article v-for="member in store.members" :key="member.userId" class="member-row">
+        <div class="member-identity">
+          <span class="avatar" aria-hidden="true">{{ member.nickname.slice(0, 1) }}</span>
           <div>
-            <p class="section-label">空间成员</p>
-            <h1>{{ store.currentWorkspace.name }}</h1>
-            <p>当前共有 {{ store.members.length }} 名有效成员。</p>
+            <h2>
+              {{ member.nickname }}
+              <small v-if="isCurrentUser(member)">你</small>
+            </h2>
+            <p>@{{ member.username }} · {{ member.role }}</p>
           </div>
-          <button
-            v-if="!isOwner"
-            class="danger-action"
-            type="button"
-            @click="requestAction({ type: 'leave' })"
-          >
-            退出这个空间
+        </div>
+        <time :datetime="member.lastJoinedAt"
+          >最近加入 {{ new Date(member.lastJoinedAt).toLocaleDateString('zh-CN') }}</time
+        >
+        <div v-if="isOwner && !isArchived && member.role === 'MEMBER'" class="member-actions">
+          <button type="button" @click="requestAction({ type: 'transfer', member })">
+            转让所有权
           </button>
-        </section>
-
-        <section v-if="pendingAction" class="confirmation" aria-live="polite">
-          <p>{{ confirmationText() }}</p>
-          <div>
-            <button type="button" :disabled="actionLoading" @click="cancelAction">取消</button>
-            <button
-              class="danger-action"
-              type="button"
-              :disabled="actionLoading"
-              @click="confirmAction"
-            >
-              {{ actionLoading ? '正在处理…' : confirmationLabel() }}
-            </button>
-          </div>
-        </section>
-
-        <p v-if="actionError" class="feedback error" role="alert">{{ actionError }}</p>
-        <p v-if="actionMessage" class="feedback" aria-live="polite">{{ actionMessage }}</p>
-
-        <section class="member-list" aria-label="有效成员列表">
-          <article v-for="member in store.members" :key="member.userId" class="member-row">
-            <div class="member-identity">
-              <span class="avatar" aria-hidden="true">{{ member.nickname.slice(0, 1) }}</span>
-              <div>
-                <h2>
-                  {{ member.nickname }}
-                  <small v-if="isCurrentUser(member)">你</small>
-                </h2>
-                <p>@{{ member.username }} · {{ member.role }}</p>
-              </div>
-            </div>
-            <time :datetime="member.lastJoinedAt"
-              >最近加入 {{ new Date(member.lastJoinedAt).toLocaleDateString('zh-CN') }}</time
-            >
-            <div v-if="isOwner && !isArchived && member.role === 'MEMBER'" class="member-actions">
-              <button type="button" @click="requestAction({ type: 'transfer', member })">
-                转让所有权
-              </button>
-              <button
-                class="danger-link"
-                type="button"
-                @click="requestAction({ type: 'remove', member })"
-              >
-                移除成员
-              </button>
-            </div>
-            <span v-else class="member-status">有效成员</span>
-          </article>
-        </section>
-      </template>
-    </main>
-  </div>
+          <button
+            class="danger-link"
+            type="button"
+            @click="requestAction({ type: 'remove', member })"
+          >
+            移除成员
+          </button>
+        </div>
+        <span v-else class="member-status">有效成员</span>
+      </article>
+    </section>
+  </template>
 </template>
 
 <style scoped>
-.workspace-shell {
-  display: grid;
-  min-height: 100svh;
-  grid-template-columns: 224px minmax(0, 1fr);
-  color: var(--color-ink);
-}
-.workspace-nav {
-  display: flex;
-  min-height: 100svh;
-  flex-direction: column;
-  padding: 32px 22px;
-  border-right: 1px solid var(--color-border);
-}
-.brand {
-  padding: 8px 10px 28px;
-  font-size: 14px;
-  font-weight: 700;
-}
-.logout-btn {
-  border: 0;
-  background: transparent;
-  color: var(--color-danger);
-  cursor: pointer;
-  text-align: left;
-}
-.logout-btn:hover {
-  text-decoration: underline;
-}
-.switcher {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 14px 10px;
-  border: 0;
-  border-block: 1px solid var(--color-border);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.switcher span {
-  max-width: 130px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.switcher small,
 .member-row time,
 .member-status {
   color: var(--color-muted);
   font-size: 12px;
-}
-.workspace-nav nav {
-  display: grid;
-  gap: 5px;
-  margin-top: 26px;
-}
-.workspace-nav nav a,
-.workspace-nav nav span {
-  padding: 11px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-.workspace-nav nav .active {
-  background: color-mix(in oklab, var(--color-focus) 9%, transparent);
-  font-weight: 700;
-}
-.workspace-nav nav span {
-  color: var(--color-faint);
-}
-.workspace-main {
-  min-width: 0;
-  padding: 0 clamp(24px, 6vw, 86px) 70px;
-}
-.workspace-main > header {
-  display: flex;
-  min-height: 74px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 22px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.workspace-main > header button {
-  border: 0;
-  border-bottom: 1px solid var(--color-ink);
-  background: transparent;
-  color: var(--color-ink);
-  cursor: pointer;
 }
 .members-heading {
   display: flex;
@@ -484,38 +356,6 @@ button:disabled {
   }
 }
 @media (max-width: 820px) {
-  .workspace-shell {
-    display: block;
-  }
-  .workspace-nav {
-    min-height: auto;
-    flex-wrap: wrap;
-    flex-direction: row;
-    align-items: center;
-    padding: 14px 18px;
-    border-right: 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .brand {
-    padding: 8px;
-  }
-  .switcher {
-    margin-left: auto;
-    border: 0;
-  }
-  .workspace-main > header {
-    display: none;
-  }
-  .workspace-nav nav {
-    display: grid;
-    width: 100%;
-    grid-template-columns: repeat(4, 1fr);
-    margin-top: 10px;
-    text-align: center;
-  }
-  .workspace-main {
-    padding-inline: 20px;
-  }
   .members-heading {
     align-items: flex-start;
     flex-direction: column;

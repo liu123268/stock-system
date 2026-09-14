@@ -1,11 +1,8 @@
 package com.stock.system.workspace.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.stock.system.admin.service.SuperAdminService;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
-import com.stock.system.user.entity.AppUser;
-import com.stock.system.user.service.UserService;
 import com.stock.system.workspace.entity.Workspace;
 import com.stock.system.workspace.entity.WorkspaceMember;
 import com.stock.system.workspace.mapper.WorkspaceMapper;
@@ -26,49 +23,28 @@ public class WorkspaceService {
     private final WorkspaceMapper workspaceMapper;
     private final WorkspaceMemberMapper memberMapper;
     private final WorkspaceInvitationMapper invitationMapper;
-    private final UserService userService;
-    private final SuperAdminService superAdminService;
+    private final WorkspaceAccessService accessService;
 
     public WorkspaceService(
             WorkspaceMapper workspaceMapper,
             WorkspaceMemberMapper memberMapper,
             WorkspaceInvitationMapper invitationMapper,
-            UserService userService,
-            SuperAdminService superAdminService
+            WorkspaceAccessService accessService
     ) {
         this.workspaceMapper = workspaceMapper;
         this.memberMapper = memberMapper;
         this.invitationMapper = invitationMapper;
-        this.userService = userService;
-        this.superAdminService = superAdminService;
+        this.accessService = accessService;
     }
 
     public List<WorkspaceSummaryResponseVO> list(Long userId) {
-        requireActiveRegularUser(userId);
-        List<Long> workspaceIds = memberMapper.selectList(
-                        new LambdaQueryWrapper<WorkspaceMember>()
-                                .eq(WorkspaceMember::getUserId, userId)
-                                .eq(WorkspaceMember::getStatus, "ACTIVE")
-                ).stream()
-                .map(WorkspaceMember::getWorkspaceId)
-                .toList();
-        if (workspaceIds.isEmpty()) {
-            return List.of();
-        }
-
-        return workspaceMapper.selectList(
-                        new LambdaQueryWrapper<Workspace>()
-                                .in(Workspace::getId, workspaceIds)
-                                .orderByDesc(Workspace::getCreatedAt)
-                                .orderByDesc(Workspace::getId)
-                ).stream()
-                .map(workspace -> toSummary(workspace, userId))
-                .toList();
+        accessService.requireActiveRegularUser(userId);
+        return workspaceMapper.selectSummariesForUser(userId);
     }
 
     @Transactional
     public WorkspaceDetailResponseVO create(Long userId, String rawName) {
-        requireActiveRegularUser(userId);
+        accessService.requireActiveRegularUser(userId);
         String name = normalizeName(rawName);
         if (workspaceMapper.selectCount(
                 new LambdaQueryWrapper<Workspace>().eq(Workspace::getName, name)
@@ -98,46 +74,11 @@ public class WorkspaceService {
     }
 
     public WorkspaceDetailResponseVO detail(Long userId, Long workspaceId) {
-        requireActiveRegularUser(userId);
-        WorkspaceMember membership = memberMapper.selectOne(
-                new LambdaQueryWrapper<WorkspaceMember>()
-                        .eq(WorkspaceMember::getWorkspaceId, workspaceId)
-                        .eq(WorkspaceMember::getUserId, userId)
-        );
-        if (membership == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        if (!"ACTIVE".equals(membership.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MEMBERSHIP_INACTIVE);
-        }
-
-        Workspace workspace = workspaceMapper.selectById(workspaceId);
-        if (workspace == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        return toDetail(workspace, userId);
+        return toDetail(accessService.requireMember(userId, workspaceId), userId);
     }
 
     public void requireActiveMemberForUpdate(Long userId, Long workspaceId) {
-        requireActiveRegularUser(userId);
-        Workspace workspace = workspaceMapper.selectByIdForUpdate(workspaceId);
-        if (workspace == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        WorkspaceMember membership = memberMapper.selectOne(
-                new LambdaQueryWrapper<WorkspaceMember>()
-                        .eq(WorkspaceMember::getWorkspaceId, workspaceId)
-                        .eq(WorkspaceMember::getUserId, userId)
-        );
-        if (membership == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        if (!"ACTIVE".equals(membership.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MEMBERSHIP_INACTIVE);
-        }
-        if (!"ACTIVE".equals(workspace.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ARCHIVED);
-        }
+        accessService.requireActiveMemberForUpdate(userId, workspaceId);
     }
 
     @Transactional
@@ -183,39 +124,7 @@ public class WorkspaceService {
     }
 
     private Workspace requireOwnerForUpdate(Long userId, Long workspaceId) {
-        requireActiveRegularUser(userId);
-        Workspace workspace = workspaceMapper.selectByIdForUpdate(workspaceId);
-        if (workspace == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        WorkspaceMember membership = memberMapper.selectOne(
-                new LambdaQueryWrapper<WorkspaceMember>()
-                        .eq(WorkspaceMember::getWorkspaceId, workspaceId)
-                        .eq(WorkspaceMember::getUserId, userId)
-        );
-        if (membership == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
-        }
-        if (!"ACTIVE".equals(membership.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MEMBERSHIP_INACTIVE);
-        }
-        if (!workspace.getOwnerUserId().equals(userId)) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ACCESS_DENIED);
-        }
-        return workspace;
-    }
-
-    void requireActiveRegularUser(Long userId) {
-        AppUser user = userService.findById(userId);
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
-        }
-        if (!"ACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
-        }
-        if (superAdminService.isSuperAdmin(userId)) {
-            throw new BusinessException(ErrorCode.SUPER_ADMIN_CANNOT_USE_WORKSPACE);
-        }
+        return accessService.requireOwnerForUpdate(userId, workspaceId);
     }
 
     private String normalizeName(String rawName) {
@@ -228,17 +137,6 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         return normalized.toString();
-    }
-
-    private WorkspaceSummaryResponseVO toSummary(Workspace workspace, Long userId) {
-        return new WorkspaceSummaryResponseVO(
-                workspace.getId(),
-                workspace.getName(),
-                roleOf(workspace, userId),
-                workspace.getStatus(),
-                activeMemberCount(workspace.getId()),
-                workspace.getCreatedAt()
-        );
     }
 
     private WorkspaceDetailResponseVO toDetail(Workspace workspace, Long userId) {

@@ -27,7 +27,7 @@ Vue源代码（磁盘文件）
 Vue/Vite：8083
 Spring Boot：8082
 MySQL：3306
-Redis（WSL2）：6379
+Redis（WSL2）：6380
 ```
 
 开发阶段Vue和Spring Boot是两个独立程序，因此需要各自运行。
@@ -61,16 +61,28 @@ Redis（WSL2）：6379
 | 自己开发、手工体验 | `scripts/start-dev.cmd` | `8082` / `8083` | `stock_system` | 需要保留的开发数据 |
 | 自动浏览器验收 | `scripts/start-test.cmd` | `18082` / `18083` | `stock_system_test` | 可回滚、可精确清理的测试数据 |
 
-双击项目中的 `scripts/start-dev.cmd`，它会明确激活 `dev` profile，并：
+在已经设置上述环境变量的同一个 PowerShell 窗口运行 `.\scripts\start-dev.cmd`，它会明确激活 `dev` profile，并：
 
 1. 检查8082是否已有后端。
 2. 检查8083是否已有前端。
 3. 只启动尚未运行的程序。
 4. 为前端和后端各打开一个终端，方便查看日志并使用 `Ctrl+C` 停止。
 
-需要运行真实浏览器自动化时，改为双击 `scripts/start-test.cmd`。它明确激活 `test` profile，并使用独立的 18082/18083 端口，避免误复用正在连接开发库的 8082 后端。当前本机 `.run` 中也有 `StockSystemApplication`（dev）和 `StockSystemApplicationTest`（test）两套 IntelliJ 运行配置，但该目录被 Git 忽略，新检出项目应使用上述脚本或自行建立运行配置。
+需要运行真实浏览器自动化时，在同一个已设置环境变量的窗口运行 `.\scripts\start-test.cmd`。它明确激活 `test` profile，并使用独立的 18082/18083 端口，避免误复用正在连接开发库的 8082 后端。当前本机 `.run` 中也有 `StockSystemApplication`（dev）和 `StockSystemApplicationTest`（test）两套 IntelliJ 运行配置，但该目录被 Git 忽略；从 IntelliJ 启动时也必须在运行配置中提供这三个环境变量。
 
-配置职责如下：`application.properties` 保存两边共用的配置，各 profile 文件保存数据库地址和该环境的行情模式。默认 profile 是 dev，所以普通启动仍进入开发库；自动化测试必须显式进入 test。开发默认 `stock-system.market.mode=longbridge`，测试固定 `mock`；开发可通过 `MARKET_MODE=directory` 暂停外部报价，或用 `MARKET_MODE=mock` 明确进入模拟模式。
+配置职责如下：`application.properties` 保存两边共用的非敏感配置，各 profile 文件保存数据库地址和该环境的行情模式；本机数据库用户名固定为原有的 `root`，它不是秘密，生产可用 Spring Boot 标准属性 `SPRING_DATASOURCE_USERNAME` 覆盖为最小权限账号。数据库密码和 JWT 签名密钥只从 `DB_PASSWORD`、`JWT_SECRET` 环境变量读取，不能写回 properties 或启动参数。默认 profile 是 dev，所以普通启动仍进入开发库；自动化测试必须显式进入 test。开发默认 `stock-system.market.mode=longbridge`，测试固定 `mock`；开发可通过 `MARKET_MODE=directory` 暂停外部报价，或用 `MARKET_MODE=mock` 明确进入模拟模式。
+
+启动前在同一个 PowerShell 窗口提供数据库密码和至少 32 个 UTF-8 字节的开发密钥；尖括号内容需要替换为你自己的值，不能把示例原样复制：
+
+```powershell
+$env:DB_PASSWORD = '<本机数据库密码>'
+$env:JWT_SECRET = '<仅本机使用、至少32字节的随机密钥>'
+.\scripts\start-dev.cmd
+```
+
+测试也使用同一组密码和密钥环境变量，但启动 `scripts\start-test.cmd` 后会连接 `stock_system_test`。启动脚本会先检查两个变量是否存在，避免因为遗漏配置而误以为数据库或认证代码故障；关闭当前 PowerShell 窗口后，这些变量不会自动写入系统环境。
+
+环境变量不是加密保险箱：当前 PowerShell 会话中的 `$env:DB_PASSWORD` 主要是避免把密码写进 Git 和启动参数，拥有本机权限的程序仍可能读取进程环境；如果把它设置成 Windows 用户／系统永久环境变量，也可能以明文形式保存在系统配置中。因此本地学习环境只能把它视为“降低误提交风险”的做法，生产环境必须由部署平台的 Secret 或密钥管理服务注入，不能把 `.env` 或普通环境变量文件当作长期密码库。
 
 ## 5. 为什么正式上线后不用手工运行 `npm run dev`
 
@@ -158,7 +170,7 @@ LONGBRIDGE_CLI_PATH=C:\实际安装位置\longbridge.exe
 | `LONGBRIDGE_CACHE_TTL` | `5s` | 报价按股票、当天分时按股票与市场日期复用的进程内短缓存；不是历史数据缓存 |
 | `LONGBRIDGE_CANDLESTICK_CACHE_TTL` | `1m` | 相同股票、周期、数量和最新／历史日期边界的 K 线进程内短缓存；重启即失效 |
 | `MARKET_REDIS_ENABLED` | `true` | 是否启用共享行情缓存；测试 profile 固定关闭，不能用它绕过业务权限校验 |
-| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Spring Boot 连接的 Redis 地址 |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6380` | Spring Boot 连接的 Redis 地址；Windows 若依使用 6379 时，stock-system 使用 WSL 的 6380 |
 
 Redis 的 TTL、锁、冷却和抖动参数及含义集中见 [缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)，完整环境变量映射见 [开发配置](../../src/main/resources/application-dev.properties)。修改后要重启 Spring Boot 才会重新加载；尤其不能把当前历史接口的长 TTL 当成已经验证了“所有数据均已闭市”。
 
@@ -168,24 +180,59 @@ CLI 未安装、当前 OS 账号未授权、日志或 Token 目录无权限、�
 
 ## 10. Redis 本地学习环境
 
-Windows 端的 Spring Boot 通过 `localhost:6379` 访问 Ubuntu WSL2 中的 Redis。本机学习环境已在 Ubuntu 安装 Redis Server 与真正的 `redis-cli`；新机器需要另行安装。以下命令在 Windows PowerShell 运行，`wsl.exe -d Ubuntu --` 表示交给 Ubuntu 执行。先用 `redis-cli ping` 检查：返回 `PONG` 表示服务已经运行，无需再启动；确认尚未运行时才执行 `redis-server --daemonize yes`，再检查一次。安装、启动服务和检查连通是三件不同的事，启动脚本也不会自动代你启动 Redis。
+Windows 端的 Spring Boot 通过 `localhost:6380` 访问 Ubuntu WSL2 中的 Redis；Windows 若依项目保留使用 `localhost:6379`，两者互不干扰。本机学习环境已在 Ubuntu 安装 Redis Server 与真正的 `redis-cli`；新机器需要另行安装。以下命令在 Windows PowerShell 运行，`wsl.exe -d Ubuntu --` 表示交给 Ubuntu 执行。先用 `redis-cli -p 6380 ping` 检查：返回 `PONG` 表示服务已经运行，无需再启动；确认尚未运行时才执行带有端口、临时目录和缓存持久化设置的直接启动命令，再检查一次。安装、启动服务和检查连通是三件不同的事。
 
 ```powershell
-wsl.exe -d Ubuntu -- redis-cli ping
+wsl.exe -d Ubuntu -- redis-cli -p 6380 ping
 ```
+
+本机已配置当前 Windows 用户登录时直接启动 stock-system 的 WSL Redis。登录启动项直接调用 `wsl.exe`，使用端口 `6380`、`/tmp` 临时目录并关闭 RDB/AOF；它不会触碰 Windows 若依使用的 `6379`。如果要撤销当前用户的自动启动项，在 PowerShell 执行：
+
+```powershell
+Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'StockSystemWSLRedis6380'
+```
+
+这是登录时启动，不是每次请求启动。若 Windows 或 WSL 被完全关闭，下一次登录时会再次直接启动 Redis；如果手动停止 Redis，当前登录会话不会自动反复拉起它。
 
 只有 `ping` 不是 `PONG`、且确认没有其他任务正在使用 Redis 时，才执行启动命令，再次检查连通性：
 
 ```powershell
-wsl.exe -d Ubuntu -- redis-server --daemonize yes
-wsl.exe -d Ubuntu -- redis-cli ping
+wsl.exe -d Ubuntu -- redis-server --port 6380 --bind 127.0.0.1 --dir /tmp --save "" --appendonly no --daemonize yes
+wsl.exe -d Ubuntu -- redis-cli -p 6380 ping
 ```
 
 开发结束后，如 Redis 是本次启动且没有其他任务在复用，可关闭它并用第二条命令确认连接已拒绝。`shutdown nosave` 会停止服务且不生成此次关闭时的持久化快照，只适用于这里可重建的本地学习缓存；它不是生产数据备份或清理方案。
 
 ```powershell
-wsl.exe -d Ubuntu -- redis-cli shutdown nosave
-wsl.exe -d Ubuntu -- redis-cli ping
+wsl.exe -d Ubuntu -- redis-cli -p 6380 shutdown nosave
+wsl.exe -d Ubuntu -- redis-cli -p 6380 ping
 ```
+
+### 10.1 用图形界面观察这一个 Redis
+
+桌面 Redis 图形工具连接的是“Redis 服务”，不是连接 Windows 或 WSL 的文件夹。新建连接时填写：地址 `127.0.0.1`、端口 `6380`、密码留空、用户名留空；连接名称可以写“WSL Redis（stock-system）”。`6379` 是 Windows 若依的另一实例，不要在这个连接里填写。连接成功后，左侧看到的 Key 就是 WSL Redis 当前数据库的内容。
+
+PowerShell 也可以用下面几组只读命令观察同一实例。它们都带 `-p 6380`，否则 `redis-cli` 会默认找 `6379`，容易误查到若依 Redis：
+
+```powershell
+# 服务版本、进程和运行状态
+wsl.exe -d Ubuntu -- redis-cli -p 6380 info server
+
+# 当前 Redis 使用了多少内存；DBSIZE 是 Key 的数量，不是字节数
+wsl.exe -d Ubuntu -- redis-cli -p 6380 info memory
+wsl.exe -d Ubuntu -- redis-cli -p 6380 dbsize
+
+# 只按项目前缀渐进扫描 Key；不要在共享或生产 Redis 上使用 KEYS *
+wsl.exe -d Ubuntu -- redis-cli -p 6380 scan 0 match "stock-system:market:*" count 100
+
+# 把 <key> 替换成上一步看到的完整 Key
+wsl.exe -d Ubuntu -- redis-cli -p 6380 ttl "<key>"
+wsl.exe -d Ubuntu -- redis-cli -p 6380 memory usage "<key>"
+wsl.exe -d Ubuntu -- redis-cli -p 6380 get "<key>"
+```
+
+`TTL` 的单位是秒：正数表示还剩多久，`-1` 表示该 Key 没有过期时间，`-2` 表示 Key 不存在。行情 Key 会因为 TTL 到期自动删除；因此通常不需要每天手工清理。确实只想删除一个确定的测试 Key 时使用 `del "<key>"`，不要凭感觉删除。`flushdb` 会清空当前数据库的全部 Key，本机也只有在确认没有其他任务使用它时才允许执行；Windows 若依的 `6379` 不会被这个命令清理。
+
+`INFO memory` 中的 `used_memory_human` 是当前占用，`maxmemory_human:0B` 表示没有设置 Redis 的内存上限，不表示 Redis 占用了 0 字节；是否需要容量策略要结合部署环境另行决定。本机 `/tmp`、关闭 RDB/AOF 的设置意味着 Redis 重启后 Key 为空，这是缓存重建而非数据丢失；股票身份、研究周期和观点仍以 MySQL 为准。
 
 当前测试类已经把数据库集成测试显式绑定到 `test` profile，普通回归不依赖真实 Redis；这不是 Maven 自动选择了 test profile。单元测试和显式 Redis 集成测试怎样运行、分别能证明什么见 [测试说明](testing.md#22-单元测试怎样运行与阅读)。关闭 Redis 后应用的降级机制及尚未完成的验证仍以缓存设计和对应 tasks 为准。

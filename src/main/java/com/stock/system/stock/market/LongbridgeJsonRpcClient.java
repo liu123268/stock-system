@@ -54,6 +54,11 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             "quote.history_candlesticks_by_date";
     private static final String INTRADAY_METHOD = "quote.intraday";
     private static final String TRADING_DAYS_METHOD = "quote.trading_days";
+    private static final Duration TRADING_DAY_CACHE_TTL = Duration.ofHours(24);
+    private static final int QUOTE_CACHE_MAXIMUM_SIZE = 4096;
+    private static final int CANDLESTICK_CACHE_MAXIMUM_SIZE = 256;
+    private static final int INTRADAY_CACHE_MAXIMUM_SIZE = 512;
+    private static final int TRADING_DAY_CACHE_MAXIMUM_SIZE = 2048;
 
     private final ObjectMapper objectMapper;
     private final ProcessStarter processStarter;
@@ -64,11 +69,14 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     private final Semaphore concurrentRequests;
     private final AtomicLong nextRequestId = new AtomicLong();
     private final Map<Long, CompletableFuture<JsonNode>> pendingRequests = new ConcurrentHashMap<>();
-    private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
-    private final Map<CandlestickCacheKey, CachedCandlesticks> candlestickCache =
-            new ConcurrentHashMap<>();
-    private final Map<String, CachedIntraday> intradayCache = new ConcurrentHashMap<>();
-    private final Map<TradingDayCacheKey, Boolean> tradingDayCache = new ConcurrentHashMap<>();
+    private final BoundedExpiringCache<String, LongbridgeQuote> quoteCache =
+            new BoundedExpiringCache<>(QUOTE_CACHE_MAXIMUM_SIZE);
+    private final BoundedExpiringCache<CandlestickCacheKey, List<LongbridgeCandlestick>>
+            candlestickCache = new BoundedExpiringCache<>(CANDLESTICK_CACHE_MAXIMUM_SIZE);
+    private final BoundedExpiringCache<String, CachedIntraday> intradayCache =
+            new BoundedExpiringCache<>(INTRADAY_CACHE_MAXIMUM_SIZE);
+    private final BoundedExpiringCache<TradingDayCacheKey, Boolean> tradingDayCache =
+            new BoundedExpiringCache<>(TRADING_DAY_CACHE_MAXIMUM_SIZE);
     private final Object lifecycleLock = new Object();
     private final Object writeLock = new Object();
     private final Object rateLock = new Object();
@@ -161,15 +169,11 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         Instant now = Instant.now();
         Map<String, LongbridgeQuote> result = new LinkedHashMap<>();
         List<String> missing = symbols.stream().filter(symbol -> {
-            CachedQuote cached = quoteCache.get(symbol);
+            LongbridgeQuote cached = quoteCache.getIfFresh(symbol, now);
             if (cached == null) {
                 return true;
             }
-            if (!cached.expiresAt().isAfter(now)) {
-                quoteCache.remove(symbol, cached);
-                return true;
-            }
-            result.put(symbol, cached.quote());
+            result.put(symbol, cached);
             return false;
         }).toList();
 
@@ -177,7 +181,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             Map<String, LongbridgeQuote> loaded = requestQuotes(missing);
             Instant expiresAt = Instant.now().plus(cacheTtl);
             loaded.forEach((symbol, quote) -> {
-                quoteCache.put(symbol, new CachedQuote(quote, expiresAt));
+                quoteCache.put(symbol, quote, expiresAt);
                 result.put(symbol, quote);
             });
         }
@@ -202,12 +206,9 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         }
         CandlestickCacheKey key = new CandlestickCacheKey(symbol, period, count, "latest");
         Instant now = Instant.now();
-        CachedCandlesticks cached = candlestickCache.get(key);
-        if (cached != null && cached.expiresAt().isAfter(now)) {
-            return cached.items();
-        }
+        List<LongbridgeCandlestick> cached = candlestickCache.getIfFresh(key, now);
         if (cached != null) {
-            candlestickCache.remove(key, cached);
+            return cached;
         }
 
         ObjectNode params = objectMapper.createObjectNode();
@@ -217,8 +218,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         params.put("adjust", "none");
         List<LongbridgeCandlestick> loaded = parseCandlesticks(
                 executeRequest(CANDLESTICK_METHOD, params));
-        candlestickCache.put(key, new CachedCandlesticks(
-                loaded, Instant.now().plus(candlestickCacheTtl)));
+        candlestickCache.put(key, loaded, Instant.now().plus(candlestickCacheTtl));
         return loaded;
     }
 
@@ -295,16 +295,12 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             CandlestickLoader loader
     ) {
         Instant now = Instant.now();
-        CachedCandlesticks cached = candlestickCache.get(key);
-        if (cached != null && cached.expiresAt().isAfter(now)) {
-            return cached.items();
-        }
+        List<LongbridgeCandlestick> cached = candlestickCache.getIfFresh(key, now);
         if (cached != null) {
-            candlestickCache.remove(key, cached);
+            return cached;
         }
         List<LongbridgeCandlestick> loaded = loader.load();
-        candlestickCache.put(key, new CachedCandlesticks(
-                loaded, Instant.now().plus(candlestickCacheTtl)));
+        candlestickCache.put(key, loaded, Instant.now().plus(candlestickCacheTtl));
         return loaded;
     }
 
@@ -313,20 +309,19 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         String symbol = normalizeCandlestickRequest(rawSymbol, 1);
         Instant now = Instant.now();
         LocalDate marketDate = now.atZone(marketZone(symbol)).toLocalDate();
-        CachedIntraday cached = intradayCache.get(symbol);
-        if (cached != null && cached.marketDate().equals(marketDate)
-                && cached.expiresAt().isAfter(now)) {
+        CachedIntraday cached = intradayCache.getIfFresh(symbol, now);
+        if (cached != null && cached.marketDate().equals(marketDate)) {
             return cached.items();
-        }
-        if (cached != null) {
-            intradayCache.remove(symbol, cached);
         }
         ObjectNode params = objectMapper.createObjectNode();
         params.put("symbol", symbol);
         List<LongbridgeIntradayPoint> loaded = parseIntraday(
                 executeRequest(INTRADAY_METHOD, params));
-        intradayCache.put(symbol, new CachedIntraday(
-                loaded, marketDate, Instant.now().plus(cacheTtl)));
+        intradayCache.put(
+                symbol,
+                new CachedIntraday(loaded, marketDate),
+                Instant.now().plus(cacheTtl)
+        );
         return loaded;
     }
 
@@ -335,7 +330,14 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         String symbol = normalizeCandlestickRequest(rawSymbol, 1);
         String market = marketCode(symbol);
         TradingDayCacheKey key = new TradingDayCacheKey(market, date);
-        return tradingDayCache.computeIfAbsent(key, ignored -> requestTradingDay(market, date));
+        Instant now = Instant.now();
+        Boolean cached = tradingDayCache.getIfFresh(key, now);
+        if (cached != null) {
+            return cached;
+        }
+        boolean tradingDay = requestTradingDay(market, date);
+        tradingDayCache.put(key, tradingDay, now.plus(TRADING_DAY_CACHE_TTL));
+        return tradingDay;
     }
 
     private boolean requestTradingDay(String market, LocalDate date) {
@@ -760,9 +762,6 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         Process start() throws IOException;
     }
 
-    private record CachedQuote(LongbridgeQuote quote, Instant expiresAt) {
-    }
-
     private record CandlestickCacheKey(
             String symbol,
             CandlestickPeriod period,
@@ -771,16 +770,9 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     ) {
     }
 
-    private record CachedCandlesticks(
-            List<LongbridgeCandlestick> items,
-            Instant expiresAt
-    ) {
-    }
-
     private record CachedIntraday(
             List<LongbridgeIntradayPoint> items,
-            LocalDate marketDate,
-            Instant expiresAt
+            LocalDate marketDate
     ) {
     }
 

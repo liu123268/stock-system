@@ -24,9 +24,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final JwtUtil jwtUtil;
 
-    public JwtAuthenticationFilter(RestAuthenticationEntryPoint authenticationEntryPoint) {
+    public JwtAuthenticationFilter(RestAuthenticationEntryPoint authenticationEntryPoint, JwtUtil jwtUtil) {
         this.authenticationEntryPoint = authenticationEntryPoint;
+        this.jwtUtil = jwtUtil;
     }
 
     @Override
@@ -60,7 +62,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throw new IllegalArgumentException("Bearer Token 不能为空");
         }
 
-        Claims claims = JwtUtil.parseToken(token);
+        Claims claims = jwtUtil.parseToken(token);
         Number userIdClaim = claims.get("userId", Number.class);
         String username = claims.get("username", String.class);
         if (userIdClaim == null || username == null || username.isBlank()) {

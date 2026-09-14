@@ -24,10 +24,12 @@ public class AuthService {
 
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
-    public AuthService(UserService userService, PasswordEncoder passwordEncoder) {
+    public AuthService(UserService userService, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
     }
 
     @Transactional
@@ -69,12 +71,12 @@ public class AuthService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", user.getId());
         claims.put("username", user.getUsername());
-        String accessToken = JwtUtil.createToken(claims);
+        String accessToken = jwtUtil.createToken(claims);
 
         return new LoginResponseVO(
                 accessToken,
                 "Bearer",
-                JwtUtil.getExpireSeconds(),
+                jwtUtil.getExpireSeconds(),
                 user.getId(),
                 user.getUsername(),
                 user.getNickname()

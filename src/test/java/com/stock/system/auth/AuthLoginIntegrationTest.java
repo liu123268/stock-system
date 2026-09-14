@@ -40,6 +40,9 @@ class AuthLoginIntegrationTest extends MySqlIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @Test
     void shouldLoginAndIssueValidJwt() throws Exception {
         RegisterResponseVO registeredUser = authService.register(
@@ -65,12 +68,11 @@ class AuthLoginIntegrationTest extends MySqlIntegrationTest {
 
         JsonNode responseJson = objectMapper.readTree(result.getResponse().getContentAsString());
         String accessToken = responseJson.path("data").path("accessToken").asText();
-        Claims claims = JwtUtil.parseToken(accessToken);
+        Claims claims = jwtUtil.parseToken(accessToken);
 
         assertThat(accessToken).isNotBlank();
         assertThat(claims.get("userId", Long.class)).isEqualTo(registeredUser.userId());
         assertThat(claims.get("username", String.class)).isEqualTo("login_user");
-        assertThat(JwtUtil.isExpired(accessToken)).isFalse();
     }
 
     @Test

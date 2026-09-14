@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
 
 const route = useRoute()
 const router = useRouter()
-const authStore = useAuthStore()
 const store = useWorkspaceStore()
 const workspaceId = computed(() => Number(route.params.workspaceId))
 const isArchived = computed(() => store.currentWorkspace?.status !== 'ACTIVE')
@@ -87,257 +85,135 @@ function formatTime(value: string) {
   }).format(new Date(value))
 }
 
-function switchWorkspace() {
-  store.clearCurrent()
-  return router.push('/workspaces')
-}
-
-function logout() {
-  authStore.logout()
-  store.clearAll()
-  router.push('/')
-}
-
 onMounted(load)
 </script>
 
 <template>
-  <div class="workspace-shell">
-    <aside class="workspace-nav">
-      <button class="brand logout-btn" type="button" @click="logout">退出登录</button>
-      <button class="switcher" type="button" @click="switchWorkspace">
-        <span>{{ store.currentWorkspace?.name ?? '研究空间' }}</span
-        ><small>切换空间</small>
-      </button>
-      <nav aria-label="空间主导航">
-        <a class="active" href="#overview">概览</a>
-        <RouterLink :to="`/workspaces/${workspaceId}/stocks`">共享自选</RouterLink>
-        <RouterLink :to="`/workspaces/${workspaceId}/members`">成员</RouterLink>
-        <RouterLink :to="`/workspaces/${workspaceId}/settings`">设置</RouterLink>
-      </nav>
-    </aside>
+  <section v-if="store.loading" class="content-state" aria-live="polite">
+    <div class="loading-line"></div>
+    <div class="loading-line short"></div>
+    <p>正在确认空间和成员关系</p>
+  </section>
 
-    <main class="workspace-main">
-      <header>
-        <span>{{ authStore.currentUser?.nickname }}</span>
-        <button type="button" @click="switchWorkspace">返回空间选择</button>
-      </header>
+  <section v-else-if="store.errorMessage" class="content-state" role="alert">
+    <p class="section-label">加载失败</p>
+    <h1>暂时无法进入这个空间。</h1>
+    <p>{{ store.errorMessage }}</p>
+    <div class="state-actions">
+      <button class="primary" type="button" @click="load">重新加载</button>
+      <button type="button" @click="router.push('/workspaces')">选择其他空间</button>
+    </div>
+  </section>
 
-      <section v-if="store.loading" class="content-state" aria-live="polite">
-        <div class="loading-line"></div>
-        <div class="loading-line short"></div>
-        <p>正在确认空间和成员关系</p>
-      </section>
+  <template v-else-if="store.currentWorkspace">
+    <section v-if="isArchived" class="archive-notice" aria-live="polite">
+      <strong>这个空间已归档，当前为只读状态。</strong>
+      <span>历史和成员仍可查看；恢复权限取决于归档来源。</span>
+    </section>
 
-      <section v-else-if="store.errorMessage" class="content-state" role="alert">
-        <p class="section-label">加载失败</p>
-        <h1>暂时无法进入这个空间。</h1>
-        <p>{{ store.errorMessage }}</p>
-        <div class="state-actions">
-          <button class="primary" type="button" @click="load">重新加载</button>
-          <button type="button" @click="switchWorkspace">选择其他空间</button>
+    <section id="overview" class="overview-heading">
+      <div>
+        <p class="section-label">空间概览</p>
+        <h1>{{ store.currentWorkspace.name }}</h1>
+      </div>
+      <dl>
+        <div>
+          <dt>你的身份</dt>
+          <dd>{{ store.currentWorkspace.role }}</dd>
         </div>
-      </section>
+        <div>
+          <dt>有效成员</dt>
+          <dd>{{ store.currentWorkspace.memberCount }} 人</dd>
+        </div>
+        <div>
+          <dt>空间状态</dt>
+          <dd>{{ store.currentWorkspace.status === 'ACTIVE' ? '正常使用' : '已归档' }}</dd>
+        </div>
+      </dl>
+    </section>
 
-      <template v-else-if="store.currentWorkspace">
-        <section v-if="isArchived" class="archive-notice" aria-live="polite">
-          <strong>这个空间已归档，当前为只读状态。</strong>
-          <span>历史和成员仍可查看；恢复权限取决于归档来源。</span>
-        </section>
-
-        <section id="overview" class="overview-heading">
-          <div>
-            <p class="section-label">空间概览</p>
-            <h1>{{ store.currentWorkspace.name }}</h1>
-          </div>
-          <dl>
-            <div>
-              <dt>你的身份</dt>
-              <dd>{{ store.currentWorkspace.role }}</dd>
-            </div>
-            <div>
-              <dt>有效成员</dt>
-              <dd>{{ store.currentWorkspace.memberCount }} 人</dd>
-            </div>
-            <div>
-              <dt>空间状态</dt>
-              <dd>{{ store.currentWorkspace.status === 'ACTIVE' ? '正常使用' : '已归档' }}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section
-          v-if="store.currentWorkspace.role === 'OWNER' && !isArchived"
-          class="invitation-section"
+    <section
+      v-if="store.currentWorkspace.role === 'OWNER' && !isArchived"
+      class="invitation-section"
+    >
+      <div class="invitation-heading">
+        <div>
+          <p class="section-label">成员邀请</p>
+          <h2>邀请成员进入这个空间。</h2>
+        </div>
+        <button
+          class="primary"
+          type="button"
+          :disabled="invitationActionLoading || store.invitationLoading"
+          @click="generateInvitation"
         >
-          <div class="invitation-heading">
-            <div>
-              <p class="section-label">成员邀请</p>
-              <h2>邀请成员进入这个空间。</h2>
-            </div>
-            <button
-              class="primary"
-              type="button"
-              :disabled="invitationActionLoading || store.invitationLoading"
-              @click="generateInvitation"
-            >
-              {{ store.currentInvitation ? '重新生成邀请码' : '生成邀请码' }}
-            </button>
+          {{ store.currentInvitation ? '重新生成邀请码' : '生成邀请码' }}
+        </button>
+      </div>
+
+      <p v-if="store.invitationLoading" class="invitation-state" aria-live="polite">
+        正在读取邀请码
+      </p>
+      <div v-else-if="store.currentInvitation" class="current-invitation">
+        <div>
+          <span>当前邀请码</span>
+          <strong>{{ store.currentInvitation.inviteCode }}</strong>
+        </div>
+        <dl>
+          <div>
+            <dt>状态</dt>
+            <dd>{{ invitationStatus(store.currentInvitation.status) }}</dd>
           </div>
-
-          <p v-if="store.invitationLoading" class="invitation-state" aria-live="polite">
-            正在读取邀请码
-          </p>
-          <div v-else-if="store.currentInvitation" class="current-invitation">
-            <div>
-              <span>当前邀请码</span>
-              <strong>{{ store.currentInvitation.inviteCode }}</strong>
-            </div>
-            <dl>
-              <div>
-                <dt>状态</dt>
-                <dd>{{ invitationStatus(store.currentInvitation.status) }}</dd>
-              </div>
-              <div>
-                <dt>剩余次数</dt>
-                <dd>{{ store.currentInvitation.remainingUses }} / 5</dd>
-              </div>
-              <div>
-                <dt>有效期至</dt>
-                <dd>{{ formatTime(store.currentInvitation.expiresAt) }}</dd>
-              </div>
-            </dl>
-            <div class="invitation-actions">
-              <button type="button" @click="copyInvitation">复制邀请码</button>
-              <button type="button" :disabled="invitationActionLoading" @click="stopInvitation">
-                停用当前邀请码
-              </button>
-            </div>
+          <div>
+            <dt>剩余次数</dt>
+            <dd>{{ store.currentInvitation.remainingUses }} / 5</dd>
           </div>
-          <p v-else class="invitation-state">当前没有邀请码。生成后可供最多 5 名成员加入。</p>
-
-          <p v-if="store.invitationError" class="invitation-error" role="alert">
-            {{ store.invitationError }}
-          </p>
-          <p v-if="invitationMessage" class="invitation-message" aria-live="polite">
-            {{ invitationMessage }}
-          </p>
-
-          <div v-if="store.invitationHistory.length" class="invitation-history">
-            <h3>生成历史</h3>
-            <div v-for="item in store.invitationHistory" :key="item.invitationId">
-              <span>{{ formatTime(item.createdAt) }}</span>
-              <span>{{ invitationStatus(item.status) }}</span>
-              <span>已使用 {{ item.usedCount }} 次</span>
-            </div>
+          <div>
+            <dt>有效期至</dt>
+            <dd>{{ formatTime(store.currentInvitation.expiresAt) }}</dd>
           </div>
-        </section>
+        </dl>
+        <div class="invitation-actions">
+          <button type="button" @click="copyInvitation">复制邀请码</button>
+          <button type="button" :disabled="invitationActionLoading" @click="stopInvitation">
+            停用当前邀请码
+          </button>
+        </div>
+      </div>
+      <p v-else class="invitation-state">当前没有邀请码。生成后可供最多 5 名成员加入。</p>
 
-        <section v-else-if="isArchived" class="next-capability">
-          <p class="section-label">归档边界</p>
-          <h2>邀请和研究写入已经暂停。</h2>
-          <p>前往设置查看归档来源。普通成员仍可在成员页主动退出这个空间。</p>
-        </section>
+      <p v-if="store.invitationError" class="invitation-error" role="alert">
+        {{ store.invitationError }}
+      </p>
+      <p v-if="invitationMessage" class="invitation-message" aria-live="polite">
+        {{ invitationMessage }}
+      </p>
 
-        <section v-else class="next-capability">
-          <p class="section-label">成员权限</p>
-          <h2>邀请码由空间 OWNER 管理。</h2>
-          <p>你可以参与空间研究，但不能生成、查看或停用完整邀请码。</p>
-        </section>
-      </template>
-    </main>
-  </div>
+      <div v-if="store.invitationHistory.length" class="invitation-history">
+        <h3>生成历史</h3>
+        <div v-for="item in store.invitationHistory" :key="item.invitationId">
+          <span>{{ formatTime(item.createdAt) }}</span>
+          <span>{{ invitationStatus(item.status) }}</span>
+          <span>已使用 {{ item.usedCount }} 次</span>
+        </div>
+      </div>
+    </section>
+
+    <section v-else-if="isArchived" class="next-capability">
+      <p class="section-label">归档边界</p>
+      <h2>邀请和研究写入已经暂停。</h2>
+      <p>前往设置查看归档来源。普通成员仍可在成员页主动退出这个空间。</p>
+    </section>
+
+    <section v-else class="next-capability">
+      <p class="section-label">成员权限</p>
+      <h2>邀请码由空间 OWNER 管理。</h2>
+      <p>你可以参与空间研究，但不能生成、查看或停用完整邀请码。</p>
+    </section>
+  </template>
 </template>
 
 <style scoped>
-.workspace-shell {
-  display: grid;
-  min-height: 100svh;
-  grid-template-columns: 224px minmax(0, 1fr);
-  color: var(--color-ink);
-}
-.workspace-nav {
-  display: flex;
-  min-height: 100svh;
-  flex-direction: column;
-  padding: 32px 22px;
-  border-right: 1px solid var(--color-border);
-}
-.brand {
-  padding: 8px 10px 28px;
-  font-size: 14px;
-  font-weight: 700;
-}
-.logout-btn {
-  border: 0;
-  background: transparent;
-  color: var(--color-danger);
-  cursor: pointer;
-  text-align: left;
-}
-.logout-btn:hover {
-  text-decoration: underline;
-}
-.switcher {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 14px 10px;
-  border: 0;
-  border-block: 1px solid var(--color-border);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.switcher span {
-  max-width: 130px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.switcher small {
-  color: var(--color-muted);
-}
-.workspace-nav nav {
-  display: grid;
-  gap: 5px;
-  margin-top: 26px;
-}
-.workspace-nav nav a,
-.workspace-nav nav span {
-  padding: 11px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-.workspace-nav nav .active {
-  background: color-mix(in oklab, var(--color-focus) 9%, transparent);
-  font-weight: 700;
-}
-.workspace-nav nav span {
-  color: var(--color-faint);
-}
-.workspace-main {
-  min-width: 0;
-  padding: 0 clamp(24px, 6vw, 86px) 70px;
-}
-.workspace-main > header {
-  display: flex;
-  min-height: 74px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 22px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.workspace-main > header button {
-  border: 0;
-  border-bottom: 1px solid var(--color-ink);
-  background: transparent;
-  color: var(--color-ink);
-  cursor: pointer;
-}
 .overview-heading {
   padding-top: clamp(64px, 10vh, 110px);
 }
@@ -553,38 +429,6 @@ onMounted(load)
   }
 }
 @media (max-width: 760px) {
-  .workspace-shell {
-    display: block;
-  }
-  .workspace-nav {
-    flex-wrap: wrap;
-    min-height: auto;
-    flex-direction: row;
-    align-items: center;
-    padding: 14px 18px;
-    border-right: 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .brand {
-    padding: 8px;
-  }
-  .switcher {
-    margin-left: auto;
-    border: 0;
-  }
-  .workspace-nav nav {
-    display: grid;
-    width: 100%;
-    grid-template-columns: repeat(4, 1fr);
-    margin-top: 10px;
-    text-align: center;
-  }
-  .workspace-main {
-    padding-inline: 20px;
-  }
-  .workspace-main > header {
-    display: none;
-  }
   .overview-heading {
     padding-top: 54px;
   }
