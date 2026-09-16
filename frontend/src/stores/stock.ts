@@ -21,6 +21,7 @@ export const useStockStore = defineStore('stock', () => {
   const searchResults = ref<StockSearchResponseVO[]>([])
   const searchLoading = ref(false)
   const searchError = ref('')
+  let searchRequestVersion = 0
   const submitLoading = ref(false)
   const submitError = ref('')
   const candlestickSeries = ref<StockCandlestickSeriesVO | null>(null)
@@ -50,17 +51,24 @@ export const useStockStore = defineStore('stock', () => {
   }
 
   async function search(keyword: string) {
+    const requestVersion = ++searchRequestVersion
     searchLoading.value = true
     searchError.value = ''
     try {
       const result = (await searchStocks(keyword.trim())).data.data
-      searchResults.value = result
+      if (requestVersion === searchRequestVersion) {
+        searchResults.value = result
+      }
       return result
     } catch (error) {
-      searchError.value = error instanceof Error ? error.message : '股票搜索失败'
+      if (requestVersion === searchRequestVersion) {
+        searchError.value = error instanceof Error ? error.message : '股票搜索失败'
+      }
       throw error
     } finally {
-      searchLoading.value = false
+      if (requestVersion === searchRequestVersion) {
+        searchLoading.value = false
+      }
     }
   }
 
@@ -199,19 +207,19 @@ export const useStockStore = defineStore('stock', () => {
   }
 
   function clearSearch() {
+    searchRequestVersion += 1
     searchResults.value = []
+    searchLoading.value = false
     searchError.value = ''
   }
 
   function clearAll() {
     items.value = []
-    searchResults.value = []
     listError.value = ''
-    searchError.value = ''
     submitError.value = ''
     listLoading.value = false
-    searchLoading.value = false
     submitLoading.value = false
+    clearSearch()
     clearCandlesticks()
     clearIntraday()
   }

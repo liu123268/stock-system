@@ -34,6 +34,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const members = ref<WorkspaceMemberResponseVO[]>([])
   const membersLoading = ref(false)
   const membersError = ref('')
+  let currentRequestVersion = 0
 
   async function loadWorkspaces() {
     loading.value = true
@@ -64,23 +65,32 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function loadCurrent(workspaceId: number) {
+    const requestVersion = ++currentRequestVersion
     loading.value = true
     errorMessage.value = ''
     currentWorkspace.value = null
     try {
       const result = (await getWorkspace(workspaceId)).data
-      currentWorkspace.value = result.data
+      if (requestVersion === currentRequestVersion) {
+        currentWorkspace.value = result.data
+      }
       return result.data
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : '空间加载失败'
+      if (requestVersion === currentRequestVersion) {
+        errorMessage.value = error instanceof Error ? error.message : '空间加载失败'
+      }
       throw error
     } finally {
-      loading.value = false
+      if (requestVersion === currentRequestVersion) {
+        loading.value = false
+      }
     }
   }
 
   function clearCurrent() {
+    currentRequestVersion += 1
     currentWorkspace.value = null
+    loading.value = false
     errorMessage.value = ''
     currentInvitation.value = null
     invitationHistory.value = []
@@ -188,6 +198,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearAll() {
+    currentRequestVersion += 1
     workspaces.value = []
     currentWorkspace.value = null
     currentInvitation.value = null

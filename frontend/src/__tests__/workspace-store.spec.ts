@@ -39,6 +39,16 @@ function response<T>(data: T): AxiosResponse<T> {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 const summary: WorkspaceSummaryResponseVO = {
   workspaceId: 12,
   name: '家庭研究组',
@@ -126,6 +136,28 @@ describe('workspace store', () => {
 
     expect(store.workspaces).toEqual([summary])
     expect(store.currentWorkspace?.name).toBe('家庭研究组')
+  })
+
+  it('keeps the newest workspace when an older request finishes later', async () => {
+    const olderRequest = deferred<AxiosResponse<ApiResult<WorkspaceDetailResponseVO>>>()
+    const newerRequest = deferred<AxiosResponse<ApiResult<WorkspaceDetailResponseVO>>>()
+    vi.mocked(getWorkspace)
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockReturnValueOnce(newerRequest.promise)
+
+    const store = useWorkspaceStore()
+    const olderLoad = store.loadCurrent(12)
+    const newerLoad = store.loadCurrent(13)
+    newerRequest.resolve(
+      response({ code: 'SUCCESS', message: '成功', data: { ...detail, workspaceId: 13, name: '新空间' } }),
+    )
+    await newerLoad
+    olderRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: detail }))
+    await olderLoad
+
+    expect(store.currentWorkspace?.workspaceId).toBe(13)
+    expect(store.currentWorkspace?.name).toBe('新空间')
+    expect(store.loading).toBe(false)
   })
 
   it('creates a workspace and refreshes the selectable list', async () => {

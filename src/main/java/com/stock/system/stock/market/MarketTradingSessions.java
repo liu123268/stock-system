@@ -13,6 +13,7 @@ public final class MarketTradingSessions {
         String normalized = symbol.toUpperCase();
         if (normalized.endsWith(".HK")) return ZoneId.of("Asia/Hong_Kong");
         if (isChinaA(normalized)) return ZoneId.of("Asia/Shanghai");
+        // V1 只定义了 A 股和港股交易时段；不能借用 sidecar 中的 .US 时区分支伪造美股交易规则。
         throw new IllegalArgumentException("Unsupported market symbol: " + symbol);
     }
 

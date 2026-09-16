@@ -1103,10 +1103,10 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 .positive {
-  color: #3d8b71;
+  color: #ae746d;
 }
 .negative {
-  color: #ae746d;
+  color: #3d8b71;
 }
 .stock-update {
   text-align: right;

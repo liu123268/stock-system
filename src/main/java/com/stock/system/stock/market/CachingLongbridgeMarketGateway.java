@@ -10,10 +10,14 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -80,7 +84,10 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
     ) {
         String key = MarketCacheKeys.candlesticksBefore(
                 properties.getKeyPrefix(), symbol, period, count, before);
-        return getOrLoad(key, listType(LongbridgeCandlestick.class), properties.getHistoricalTtl(),
+        Duration ttl = historicalCandlestickTtl(
+                period, before, Instant.now(), marketZone(symbol),
+                properties.getHistoricalTtl(), properties.getCandlestickTtl());
+        return getOrLoad(key, listType(LongbridgeCandlestick.class), ttl,
                 () -> upstream.getCandlesticksBefore(symbol, period, count, before));
     }
 
@@ -246,12 +253,48 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
         return objectMapper.getTypeFactory().constructCollectionType(List.class, itemType);
     }
 
+    static Duration historicalCandlestickTtl(
+            CandlestickPeriod period,
+            Instant before,
+            Instant now,
+            ZoneId marketZone,
+            Duration historicalTtl,
+            Duration updatingTtl
+    ) {
+        Instant currentPeriodStart = currentPeriodStart(period, now.atZone(marketZone)).toInstant();
+        // before 是排他的上界。只有它不晚于当前周期起点时，结果才不可能包含仍会变化的当前 K 线。
+        return before.isAfter(currentPeriodStart) ? updatingTtl : historicalTtl;
+    }
+
+    private static ZonedDateTime currentPeriodStart(CandlestickPeriod period, ZonedDateTime now) {
+        return switch (period) {
+            case MINUTE_1 -> now.truncatedTo(ChronoUnit.MINUTES);
+            case MINUTE_5 -> minutePeriodStart(now, 5);
+            case MINUTE_15 -> minutePeriodStart(now, 15);
+            case MINUTE_30 -> minutePeriodStart(now, 30);
+            case HOUR_1 -> now.truncatedTo(ChronoUnit.HOURS);
+            case DAY -> now.toLocalDate().atStartOfDay(now.getZone());
+            case WEEK -> now.toLocalDate()
+                    .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                    .atStartOfDay(now.getZone());
+            case MONTH -> now.toLocalDate().withDayOfMonth(1).atStartOfDay(now.getZone());
+            case YEAR -> now.toLocalDate().withDayOfYear(1).atStartOfDay(now.getZone());
+        };
+    }
+
+    private static ZonedDateTime minutePeriodStart(ZonedDateTime now, int periodMinutes) {
+        return now.withMinute(now.getMinute() - now.getMinute() % periodMinutes)
+                .withSecond(0)
+                .withNano(0);
+    }
+
     private ZoneId marketZone(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase();
         if (normalized.endsWith(".HK")) {
             return ZoneId.of("Asia/Hong_Kong");
         }
         if (normalized.endsWith(".US")) {
+            // sidecar 适配层能识别美股时区，但 V1 业务只允许 A 股和港股；不要据此宣称系统支持美股。
             return ZoneId.of("America/New_York");
         }
         return ZoneId.of("Asia/Shanghai");

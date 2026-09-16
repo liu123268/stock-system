@@ -299,6 +299,13 @@ class WorkspaceIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk());
 
+        WorkspaceMember removed = findMember(workspaceId, memberUserId);
+        WorkspaceInvitation oldInvitationAtRemovalBoundary = invitationMapper.selectById(
+                oldInvitation.path("invitationId").asLong()
+        );
+        oldInvitationAtRemovalBoundary.setCreatedAt(removed.getLastInactiveAt());
+        invitationMapper.updateById(oldInvitationAtRemovalBoundary);
+
         expectJoinError(
                 memberToken,
                 oldInvitation.path("inviteCode").asText(),
@@ -311,6 +318,8 @@ class WorkspaceIntegrationTest extends MySqlIntegrationTest {
                 workspaceId,
                 oldInvitation.path("invitationId").asLong()
         );
+        assertThat(invitationMapper.selectById(newInvitation.path("invitationId").asLong())
+                .getCreatedAt()).isAfter(removed.getLastInactiveAt());
         joinWorkspace(memberToken, newInvitation.path("inviteCode").asText());
         WorkspaceMember restored = findMember(workspaceId, memberUserId);
         assertThat(restored.getId()).isEqualTo(membershipId);

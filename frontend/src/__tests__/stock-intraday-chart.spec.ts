@@ -54,6 +54,8 @@ describe('StockIntradayChart display contract', () => {
       yAxis: Array<{ axisPointer?: { label?: { formatter?: (params: { value: number }) => string } } }>
       series: Array<{
         name: string
+        lineStyle?: { color?: string }
+        itemStyle?: { color?: string }
         tooltip?: { valueFormatter?: (value: number) => string }
       }>
     }
@@ -61,6 +63,8 @@ describe('StockIntradayChart display contract', () => {
     expect(option.series[1]?.tooltip?.valueFormatter?.(100.025097)).toBe('100.03')
     expect(option.series[2]?.name).toBe('涨跌幅')
     expect(option.series[2]?.tooltip?.valueFormatter?.(1.03)).toBe('+1.03%')
+    expect(option.series[0]?.lineStyle?.color).toBe('#3F6F8F')
+    expect(option.series[3]?.itemStyle?.color).toBe('rgba(98, 103, 107, 0.38)')
     expect(option.yAxis[1]?.axisPointer?.label?.formatter?.({ value: 1.03 })).toBe('+1.03%')
   })
 })

@@ -21,7 +21,6 @@ function switchWorkspace() {
 function logout() {
   authStore.logout()
   workspaceStore.clearAll()
-  stockStore.clearAll()
   return router.push('/')
 }
 </script>

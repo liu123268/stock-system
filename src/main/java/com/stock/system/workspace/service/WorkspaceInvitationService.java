@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 
@@ -88,7 +89,7 @@ public class WorkspaceInvitationService {
             invitationMapper.updateById(current);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nextInvitationCreatedAt(workspaceId);
         for (int attempt = 0; attempt < CODE_GENERATION_ATTEMPTS; attempt++) {
             WorkspaceInvitation invitation = new WorkspaceInvitation();
             invitation.setWorkspaceId(workspaceId);
@@ -106,6 +107,15 @@ public class WorkspaceInvitationService {
             }
         }
         throw new BusinessException(ErrorCode.CONCURRENT_OPERATION_CONFLICT);
+    }
+
+    private LocalDateTime nextInvitationCreatedAt(Long workspaceId) {
+        LocalDateTime candidate = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+        LocalDateTime latestRemovedAt = memberMapper.selectLatestRemovedAt(workspaceId);
+        if (latestRemovedAt != null && !candidate.isAfter(latestRemovedAt)) {
+            return latestRemovedAt.plus(1, ChronoUnit.MILLIS);
+        }
+        return candidate;
     }
 
     @Transactional

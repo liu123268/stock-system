@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -210,6 +211,31 @@ class CachingLongbridgeMarketGatewayTest {
         assertThat(gateway.getQuotes(List.of("600519.SH")).get("600519.SH").lastDone())
                 .isEqualByComparingTo("1501.00");
         verify(upstream, times(2)).getQuotes(List.of("600519.SH"));
+    }
+
+    @Test
+    void currentAggregatePeriodUsesShortTtlEvenThroughHistoricalApi() {
+        Instant now = Instant.parse("2026-09-15T02:00:00Z");
+        Instant directApiBefore = Instant.parse("2026-09-15T02:00:01Z");
+
+        for (CandlestickPeriod period : List.of(
+                CandlestickPeriod.WEEK, CandlestickPeriod.MONTH, CandlestickPeriod.YEAR)) {
+            assertThat(CachingLongbridgeMarketGateway.historicalCandlestickTtl(
+                    period, directApiBefore, now, ZoneId.of("Asia/Shanghai"),
+                    Duration.ofHours(12), Duration.ofMinutes(1)))
+                    .isEqualTo(Duration.ofMinutes(1));
+        }
+    }
+
+    @Test
+    void batchBeforeCurrentAggregatePeriodKeepsLongHistoricalTtl() {
+        Instant now = Instant.parse("2026-09-15T02:00:00Z");
+        Instant beforeCurrentMonth = Instant.parse("2026-08-31T16:00:00Z");
+
+        assertThat(CachingLongbridgeMarketGateway.historicalCandlestickTtl(
+                CandlestickPeriod.MONTH, beforeCurrentMonth, now, ZoneId.of("Asia/Shanghai"),
+                Duration.ofHours(12), Duration.ofMinutes(1)))
+                .isEqualTo(Duration.ofHours(12));
     }
 
     private CachingLongbridgeMarketGateway gateway(

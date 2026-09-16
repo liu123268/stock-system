@@ -1,6 +1,6 @@
 # 测试与验收规则
 
-更新时间：2026-09-11
+更新时间：2026-09-16
 
 ## 1. 测试目标与选择
 
@@ -21,7 +21,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - 邀请并发测试使用 6 个独立线程与 `CyclicBarrier` 同步起跑，验证 5 人成功、1 人收到 `INVITATION_EXHAUSTED`；所有权并发测试验证旧 OWNER 同时向两个目标转让时只有一个成功。后续继续覆盖并发同名创建和并发重新生成邀请。
 - 多步事务回滚通过测试配置中的可控替身制造中间失败，不在生产代码加入测试故障开关。
 - 股票研究测试已覆盖 V3 表与生成列唯一约束、模拟搜索、可信行情字段、OWNER/MEMBER 添加、非成员和归档拒绝、重复添加、跨空间隔离，以及观点写入受控失败时前三类写入整体回滚。
-- Maven 常用命令：`mvn "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" test`。
+- Maven 普通回归会启动 Spring `test` profile 并连接本机 `stock_system_test`。运行前必须让启动 Maven 的进程能够读取 `DB_PASSWORD` 和不少于 32 个 UTF-8 字节的 `JWT_SECRET`；当前本机数据库用户名固定为非敏感配置 `root`，不要求 `DB_USERNAME`。在 Windows 用户环境变量中新增值后，已经打开的 IDEA、终端或 Maven 不会自动获得新值，需要完全退出并重新打开对应程序。缺少变量时看到 `Could not resolve placeholder 'DB_PASSWORD'` 或 `'JWT_SECRET'`，表示测试进程没有取得运行配置，不是业务断言失败。
+- Maven 常用命令：`mvn "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" test`。报告中的测试数必须来自本次完整命令，不能把源码中的 `@Test` 数量或多次残留 XML 相加后写成“全部通过”。
 
 ### 2.1 Longbridge sidecar 测试
 
@@ -47,7 +48,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - `lint:check` 依次运行不带 `--fix` 的 Oxlint 和 ESLint，自动验收优先使用该命令，避免静态检查顺带改写任务外文件。
 - 关键全链路使用 `frontend/e2e/auth-smoke.mjs` 和本机真实 Chrome；脚本使用两个隔离浏览器上下文模拟 OWNER 与 MEMBER。
 - 修改股票目录导入、搜索别名、北交所识别或“目录存在但报价不可用”降级后，使用 `frontend` 目录的 `npm.cmd run test:e2e:directory` 手动运行 `frontend/e2e/directory-smoke.mjs`；它专门验证简体、繁体、英文、标准代码、BSE 和无报价页面边界，不替代覆盖完整成员与研究流程的 `test:e2e`。
-- 当前空间 Store 单元测试覆盖列表、创建、加入、邀请读取、重新生成、成员加载、移除、转让、归档恢复和退出状态清理；访问错误测试分别验证 401 清除账号会话、成员关系失效清除当前空间。后续继续补齐快速切换竞态和更多页面组件测试。
+- 当前空间 Store 单元测试覆盖列表、创建、加入、邀请读取、重新生成、成员加载、移除、转让、归档恢复、退出状态清理和快速切换时旧响应不得覆盖新空间；股票 Store 同样覆盖快速搜索竞态。访问错误测试分别验证 401 清除账号会话、成员关系失效清除当前空间。后续继续补齐更多页面组件测试。
 - 浏览器闭环连接真实后端和 `stock_system_test`，已覆盖完整成员生命周期、所有权转让、归档、只读重入、恢复和退出登录本地状态清理。
 - `application-dev.properties` 与 `application-test.properties` 都位于主运行时资源目录，不再依赖 `src/test/resources` 是否进入 `spring-boot:run` 类路径。日常开发和浏览器测试分别使用 `scripts/start-dev.cmd`、`scripts/start-test.cmd`，不用来回修改配置文件。
 - 写入前的后端启动检查和浏览器环境检查统一执行第 4 节。

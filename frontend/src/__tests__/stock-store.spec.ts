@@ -28,6 +28,16 @@ function response<T>(data: T): AxiosResponse<T> {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 const searchResult: StockSearchResponseVO = {
   code: '600519.SH',
   name: '贵州茅台',
@@ -130,6 +140,26 @@ describe('stock store', () => {
     expect(searchStocks).toHaveBeenCalledWith('茅台')
     expect(store.searchResults[0]?.source).toBe('LOCAL_MOCK')
     expect(store.searchResults[0]?.simulated).toBe(true)
+  })
+
+  it('keeps the newest search when an older request finishes later', async () => {
+    const olderRequest = deferred<AxiosResponse<ApiResult<StockSearchResponseVO[]>>>()
+    const newerRequest = deferred<AxiosResponse<ApiResult<StockSearchResponseVO[]>>>()
+    const newerResult = { ...searchResult, code: '00700.HK', name: '腾讯控股' }
+    vi.mocked(searchStocks)
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockReturnValueOnce(newerRequest.promise)
+
+    const store = useStockStore()
+    const olderSearch = store.search('茅台')
+    const newerSearch = store.search('腾讯')
+    newerRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: [newerResult] }))
+    await newerSearch
+    olderRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: [searchResult] }))
+    await olderSearch
+
+    expect(store.searchResults).toEqual([newerResult])
+    expect(store.searchLoading).toBe(false)
   })
 
   it('submits only the allowed opinion input and refreshes the shared list', async () => {

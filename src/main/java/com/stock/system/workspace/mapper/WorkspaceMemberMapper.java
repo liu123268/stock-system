@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -21,6 +22,12 @@ public interface WorkspaceMemberMapper extends BaseMapper<WorkspaceMember> {
             @Param("workspaceId") Long workspaceId,
             @Param("userId") Long userId
     );
+
+    @Select("""
+            SELECT MAX(last_inactive_at) FROM workspace_member
+            WHERE workspace_id = #{workspaceId} AND status = 'REMOVED'
+            """)
+    LocalDateTime selectLatestRemovedAt(@Param("workspaceId") Long workspaceId);
 
     @Select("""
             SELECT m.user_id AS userId,

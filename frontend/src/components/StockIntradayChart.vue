@@ -100,7 +100,7 @@ function renderChart() {
         data: chartData.prices,
         symbol: 'none',
         connectNulls: INTRADAY_LINE_CONNECT_NULLS,
-        lineStyle: { color: '#166D67', width: 1.5 },
+        lineStyle: { color: '#3F6F8F', width: 1.5 },
         tooltip: { valueFormatter: formatIntradayPrice },
       },
       {
@@ -128,7 +128,7 @@ function renderChart() {
         xAxisIndex: 1,
         yAxisIndex: 2,
         data: chartData.volumes,
-        itemStyle: { color: 'rgba(22, 109, 103, 0.42)' },
+        itemStyle: { color: 'rgba(98, 103, 107, 0.38)' },
       },
     ],
   }, true)

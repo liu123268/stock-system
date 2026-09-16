@@ -374,6 +374,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
 
     private ZoneId marketZone(String symbol) {
         if (symbol.endsWith(".US")) {
+            // 这里只负责供应商时间转换；V1 的数据库和业务入口仍只接受 A 股、港股。
             return ZoneId.of("America/New_York");
         }
         if (symbol.endsWith(".HK")) {
