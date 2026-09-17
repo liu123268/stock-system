@@ -2,17 +2,14 @@ import type { Router } from 'vue-router'
 import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { isAuthenticationFailure } from '@/utils/authentication-error'
 
 export async function handleWorkspaceApiError(error: unknown, router: Router) {
   if (!(error instanceof ApiError)) return false
 
   const authStore = useAuthStore()
   const workspaceStore = useWorkspaceStore()
-  if (
-    error.status === 401 ||
-    error.code === 'UNAUTHENTICATED' ||
-    error.code === 'ACCOUNT_DISABLED'
-  ) {
+  if (isAuthenticationFailure(error)) {
     authStore.logout()
     workspaceStore.clearAll()
     await router.replace({ name: 'login', query: { reason: 'expired' } })

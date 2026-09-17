@@ -1,6 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { isAuthenticationFailure } from '@/utils/authentication-error'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -68,7 +69,9 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to) => {
+export async function authenticationGuard(
+  to: Pick<RouteLocationNormalized, 'fullPath' | 'meta'>,
+) {
   const authStore = useAuthStore()
   const workspaceStore = useWorkspaceStore()
 
@@ -78,10 +81,16 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth) {
     try {
       await authStore.refreshCurrentUser()
-    } catch {
-      authStore.logout()
-      workspaceStore.clearAll()
-      return { name: 'login', query: { redirect: to.fullPath, reason: 'expired' } }
+    } catch (error) {
+      if (isAuthenticationFailure(error)) {
+        authStore.logout()
+        workspaceStore.clearAll()
+        return { name: 'login', query: { redirect: to.fullPath, reason: 'expired' } }
+      }
+
+      // 网络中断、超时或服务暂不可用不能证明会话失效。继续进入目标页面，
+      // 由页面已有的加载失败状态保留当前会话并提供重试入口。
+      return true
     }
   }
   if (to.meta.guestOnly && authStore.isAuthenticated) {
@@ -89,6 +98,8 @@ router.beforeEach(async (to) => {
   }
 
   return true
-})
+}
+
+router.beforeEach(authenticationGuard)
 
 export default router
