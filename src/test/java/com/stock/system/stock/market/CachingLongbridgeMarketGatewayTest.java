@@ -53,7 +53,29 @@ class CachingLongbridgeMarketGatewayTest {
         assertThat(first).containsEntry("600519.SH", quote);
         assertThat(second).isEqualTo(first);
         assertThat(cache.values).hasSize(1);
+        assertThat(cache.values.values().iterator().next().value())
+                .contains("\"source\":\"LONGBRIDGE_OPENAPI\"")
+                .contains("\"value\"");
         verify(upstream, times(1)).getQuotes(List.of("600519.SH"));
+    }
+
+    @Test
+    void cacheValueWithUnexpectedSourceIsDeletedAndReloaded() {
+        LongbridgeJsonRpcClient upstream = mock(LongbridgeJsonRpcClient.class);
+        InMemorySharedCache cache = new InMemorySharedCache();
+        var quote = new LongbridgeQuote(
+                "600519.SH", new BigDecimal("1500.00"),
+                Instant.parse("2026-09-11T01:30:00Z"), "Normal");
+        List<String> symbols = List.of("600519.SH");
+        String key = MarketCacheKeys.quotes("stock-system:market:v1", symbols);
+        cache.put(key, "{\"source\":\"UNKNOWN\",\"value\":{}}", Duration.ofMinutes(1));
+        when(upstream.getQuotes(symbols)).thenReturn(Map.of("600519.SH", quote));
+
+        Map<String, LongbridgeQuote> result = gateway(upstream, cache).getQuotes(symbols);
+
+        assertThat(result).containsEntry("600519.SH", quote);
+        assertThat(cache.values.get(key).value()).contains("\"source\":\"LONGBRIDGE_OPENAPI\"");
+        verify(upstream, times(1)).getQuotes(symbols);
     }
 
     @Test
@@ -191,6 +213,27 @@ class CachingLongbridgeMarketGatewayTest {
 
         assertThat(result).containsEntry("600519.SH", quote);
         verify(upstream).getQuotes(List.of("600519.SH"));
+    }
+
+    @Test
+    void contendedLockTimeoutFallsBackToExistingUpstreamLayer() {
+        LongbridgeJsonRpcClient upstream = mock(LongbridgeJsonRpcClient.class);
+        var quote = new LongbridgeQuote(
+                "600519.SH", new BigDecimal("1500.00"),
+                Instant.parse("2026-09-11T01:30:00Z"), "Normal");
+        when(upstream.getQuotes(List.of("600519.SH"))).thenReturn(Map.of("600519.SH", quote));
+        MarketSharedCache contendedCache = new NoOpMarketSharedCache() {
+            @Override
+            public MarketCacheLock tryLock(String key, Duration ttl) {
+                return MarketCacheLock.contended();
+            }
+        };
+
+        Map<String, LongbridgeQuote> result = gateway(upstream, contendedCache)
+                .getQuotes(List.of("600519.SH"));
+
+        assertThat(result).containsEntry("600519.SH", quote);
+        verify(upstream, times(1)).getQuotes(List.of("600519.SH"));
     }
 
     @Test

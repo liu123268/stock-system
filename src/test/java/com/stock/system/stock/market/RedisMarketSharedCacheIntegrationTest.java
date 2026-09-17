@@ -74,6 +74,7 @@ class RedisMarketSharedCacheIntegrationTest {
             verify(secondUpstream, times(0)).getQuotes(List.of("600519.SH"));
             String quoteKey = MarketCacheKeys.quotes(prefix, List.of("600519.SH"));
             assertThat(template.opsForValue().get(quoteKey))
+                    .contains("\"source\":\"LONGBRIDGE_OPENAPI\"")
                     .contains("retrievedAt")
                     .doesNotContain("APP_SECRET", "ACCESS_TOKEN", "token");
         } finally {

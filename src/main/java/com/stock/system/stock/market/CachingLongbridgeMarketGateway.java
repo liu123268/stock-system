@@ -217,7 +217,15 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
             return Optional.empty();
         }
         try {
-            return Optional.ofNullable(objectMapper.readValue(json.get(), type));
+            JavaType envelopeType = objectMapper.getTypeFactory()
+                    .constructParametricType(MarketCacheEnvelope.class, type);
+            MarketCacheEnvelope<T> envelope = objectMapper.readValue(json.get(), envelopeType);
+            if (!envelope.hasExpectedSource() || envelope.value() == null) {
+                LOGGER.warn("Deleted a market cache value with an invalid source: {}", key);
+                cache.delete(key);
+                return Optional.empty();
+            }
+            return Optional.of(envelope.value());
         } catch (JsonProcessingException exception) {
             LOGGER.warn("Deleted an unreadable market cache value: {}", key);
             cache.delete(key);
@@ -231,7 +239,7 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
             return;
         }
         try {
-            String json = objectMapper.writeValueAsString(value);
+            String json = objectMapper.writeValueAsString(MarketCacheEnvelope.fromLongbridge(value));
             cache.put(key, json, MarketCacheTtl.withJitter(
                     baseTtl, properties.getTtlJitterPercent()));
         } catch (JsonProcessingException exception) {
