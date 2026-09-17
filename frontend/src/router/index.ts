@@ -78,7 +78,7 @@ export async function authenticationGuard(
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
-  if (to.meta.requiresAuth) {
+  if (to.meta.requiresAuth && !authStore.sessionVerified) {
     try {
       await authStore.refreshCurrentUser()
     } catch (error) {

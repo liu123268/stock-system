@@ -24,7 +24,7 @@ async function load() {
     return
   }
   try {
-    await store.loadCurrent(workspaceId.value)
+    await store.ensureCurrent(workspaceId.value)
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }

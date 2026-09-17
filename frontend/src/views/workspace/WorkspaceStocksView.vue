@@ -63,7 +63,7 @@ async function load() {
 
   pageLoading.value = true
   try {
-    await workspaceStore.loadCurrent(workspaceId.value)
+    await workspaceStore.ensureCurrent(workspaceId.value)
     await stockStore.loadList(workspaceId.value)
   } catch (error) {
     await handleWorkspaceApiError(error, router)

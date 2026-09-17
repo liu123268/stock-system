@@ -47,4 +47,18 @@ describe('authentication route guard', () => {
     expect(window.localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull()
     expect(clearAll).toHaveBeenCalledOnce()
   })
+
+  it('reuses a successful session verification during later protected navigation', async () => {
+    const authStore = useAuthStore()
+    const refreshCurrentUser = vi
+      .spyOn(authStore, 'refreshCurrentUser')
+      .mockImplementation(async () => {
+        authStore.sessionVerified = true
+      })
+
+    await expect(authenticationGuard(protectedRoute('/workspaces/9/overview'))).resolves.toBe(true)
+    await expect(authenticationGuard(protectedRoute('/workspaces/9/members'))).resolves.toBe(true)
+
+    expect(refreshCurrentUser).toHaveBeenCalledOnce()
+  })
 })

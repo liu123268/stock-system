@@ -18,7 +18,7 @@ async function load() {
     return
   }
   try {
-    const workspace = await store.loadCurrent(workspaceId.value)
+    const workspace = await store.ensureCurrent(workspaceId.value)
     if (workspace.role === 'OWNER' && workspace.status === 'ACTIVE') {
       await store.loadInvitations(workspaceId.value)
     }

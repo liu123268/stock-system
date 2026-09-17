@@ -87,6 +87,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  function ensureCurrent(workspaceId: number) {
+    if (currentWorkspace.value?.workspaceId === workspaceId) {
+      return Promise.resolve(currentWorkspace.value)
+    }
+    return loadCurrent(workspaceId)
+  }
+
   function clearCurrent() {
     currentRequestVersion += 1
     currentWorkspace.value = null
@@ -228,6 +235,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     create,
     join,
     loadCurrent,
+    ensureCurrent,
     loadInvitations,
     generateInvitation,
     stopInvitation,

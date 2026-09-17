@@ -33,6 +33,7 @@ function readStoredUser(): CurrentUser | null {
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref(window.localStorage.getItem(TOKEN_STORAGE_KEY))
   const currentUser = ref<CurrentUser | null>(readStoredUser())
+  const sessionVerified = ref(false)
   const isAuthenticated = computed(() => Boolean(accessToken.value))
 
   async function login(request: LoginRequestDTO) {
@@ -45,12 +46,14 @@ export const useAuthStore = defineStore('auth', () => {
     const result = (await getCurrentUser()).data
     if (result.code !== 'SUCCESS') throw new Error(result.message || '登录状态验证失败')
     saveCurrentUser(result.data)
+    sessionVerified.value = true
   }
 
   function saveSession(loginResponse: LoginResponseVO) {
     accessToken.value = loginResponse.accessToken
     window.localStorage.setItem(TOKEN_STORAGE_KEY, loginResponse.accessToken)
     saveCurrentUser(loginResponse)
+    sessionVerified.value = true
   }
 
   function saveCurrentUser(userResponse: CurrentUserResponseVO | LoginResponseVO) {
@@ -67,10 +70,19 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     accessToken.value = null
     currentUser.value = null
+    sessionVerified.value = false
     window.localStorage.removeItem(TOKEN_STORAGE_KEY)
     window.localStorage.removeItem(USER_STORAGE_KEY)
     useStockStore().clearAll()
   }
 
-  return { accessToken, currentUser, isAuthenticated, login, refreshCurrentUser, logout }
+  return {
+    accessToken,
+    currentUser,
+    sessionVerified,
+    isAuthenticated,
+    login,
+    refreshCurrentUser,
+    logout,
+  }
 })

@@ -62,10 +62,26 @@ describe('auth store', () => {
 
     expect(window.localStorage.getItem(TOKEN_STORAGE_KEY)).toBe('jwt-token')
     expect(authStore.isAuthenticated).toBe(true)
+    expect(authStore.sessionVerified).toBe(true)
 
     await authStore.refreshCurrentUser()
 
     expect(getCurrentUser).toHaveBeenCalledOnce()
     expect(authStore.currentUser?.nickname).toBe('数据库最新昵称')
+    expect(authStore.sessionVerified).toBe(true)
+  })
+
+  it('does not treat a restored local session as verified before the backend confirms it', () => {
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, 'restored-token')
+    window.localStorage.setItem(
+      'stock-system-current-user',
+      JSON.stringify({ userId: 9, username: 'frontend_user', nickname: '前端用户' }),
+    )
+    setActivePinia(createPinia())
+
+    const authStore = useAuthStore()
+
+    expect(authStore.isAuthenticated).toBe(true)
+    expect(authStore.sessionVerified).toBe(false)
   })
 })

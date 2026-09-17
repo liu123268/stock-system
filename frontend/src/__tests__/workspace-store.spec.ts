@@ -160,6 +160,32 @@ describe('workspace store', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('reuses the current workspace detail until the route switches to another workspace', async () => {
+    vi.mocked(getWorkspace)
+      .mockResolvedValueOnce(
+        response<ApiResult<WorkspaceDetailResponseVO>>({
+          code: 'SUCCESS',
+          message: '成功',
+          data: detail,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response<ApiResult<WorkspaceDetailResponseVO>>({
+          code: 'SUCCESS',
+          message: '成功',
+          data: { ...detail, workspaceId: 13, name: '另一个空间' },
+        }),
+      )
+
+    const store = useWorkspaceStore()
+    await store.ensureCurrent(12)
+    await store.ensureCurrent(12)
+    await store.ensureCurrent(13)
+
+    expect(getWorkspace).toHaveBeenCalledTimes(2)
+    expect(store.currentWorkspace?.workspaceId).toBe(13)
+  })
+
   it('creates a workspace and refreshes the selectable list', async () => {
     vi.mocked(createWorkspace).mockResolvedValue(
       response<ApiResult<WorkspaceDetailResponseVO>>({
