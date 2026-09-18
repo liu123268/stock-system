@@ -24,7 +24,8 @@ async function load() {
     return
   }
   try {
-    await store.ensureCurrent(workspaceId.value)
+    // 归档/恢复依赖最新 OWNER 与空间状态，不能复用另一页面留下的旧详情。
+    await store.loadCurrent(workspaceId.value)
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }

@@ -26,6 +26,13 @@ const searchedStockCode = '600519.SH'
 const marketMode = process.env.E2E_MARKET_MODE ?? 'mock'
 const expectedStockSource = marketMode === 'longbridge' ? 'LONGBRIDGE_OPENAPI' : 'LOCAL_MOCK'
 
+function waitForResponseSafely(page, predicate, options) {
+  const responsePromise = page.waitForResponse(predicate, options)
+  // Playwright 的等待可能先于后续 UI 操作超时；提前挂接拒绝处理，避免 Node 在 finally 清理前退出。
+  void responsePromise.catch(() => undefined)
+  return responsePromise
+}
+
 async function readDatabaseConfig() {
   const content = `${await readFile(applicationPropertiesUrl, 'utf8')}\n${await readFile(testPropertiesUrl, 'utf8')}`
   const properties = new Map()
@@ -43,12 +50,28 @@ async function readDatabaseConfig() {
   const match = jdbcUrl?.match(/^jdbc:mysql:\/\/([^:/?]+)(?::(\d+))?\/([^?]+)/)
   if (!match) throw new Error('无法从application.properties解析MySQL连接地址')
 
+  const resolveEnvironmentPlaceholder = (value, propertyName) => {
+    const placeholder = value?.match(/^\$\{([A-Z0-9_]+)(?::([^}]*))?\}$/)
+    if (!placeholder) return value
+    const resolved = process.env[placeholder[1]] ?? placeholder[2]
+    if (resolved === undefined || resolved === '') {
+      throw new Error(`${propertyName}引用的环境变量${placeholder[1]}未提供`)
+    }
+    return resolved
+  }
+
   return {
     host: match[1],
     port: match[2] ?? '3306',
     database: match[3],
-    user: properties.get('spring.datasource.username'),
-    password: properties.get('spring.datasource.password'),
+    user: resolveEnvironmentPlaceholder(
+      properties.get('spring.datasource.username'),
+      'spring.datasource.username',
+    ),
+    password: resolveEnvironmentPlaceholder(
+      properties.get('spring.datasource.password'),
+      'spring.datasource.password',
+    ),
   }
 }
 
@@ -237,18 +260,13 @@ try {
   await page.waitForURL((url) => url.pathname === '/workspaces')
 
   await page.locator('#workspace-name').fill(workspaceName)
-  const createWorkspaceResponse = page.waitForResponse((response) => {
+  const createWorkspaceResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && path === '/api/workspaces'
-  })
-  const workspaceDetailResponse = page.waitForResponse((response) => {
-    const path = new URL(response.url()).pathname
-    return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+$/.test(path)
   })
   await page.getByRole('button', { name: '创建空间' }).click()
   await createWorkspaceResponse
   await page.waitForURL((url) => /^\/workspaces\/\d+\/overview$/.test(url.pathname))
-  await workspaceDetailResponse
 
   const pageText = await page.locator('body').innerText()
   if (!pageText.includes(ownerNickname)) {
@@ -262,7 +280,7 @@ try {
     throw new Error('登录成功后JWT没有保存到localStorage')
   }
 
-  const initialStockListResponse = page.waitForResponse((response) => {
+  const initialStockListResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+\/stocks$/.test(path)
   })
@@ -271,7 +289,7 @@ try {
     throw new Error('共享自选列表没有成功加载')
   }
   await page.locator('#stock-keyword').fill('600519')
-  const searchStockResponse = page.waitForResponse((response) => {
+  const searchStockResponse = waitForResponseSafely(page, (response) => {
     const url = new URL(response.url())
     return response.request().method() === 'GET' && url.pathname === '/api/stocks/search'
   })
@@ -286,7 +304,8 @@ try {
   await page.getByLabel('风险点').fill('估值波动和消费需求变化')
   await page.getByLabel('目标价（选填）').fill('1680')
   await page.getByLabel('止损参考价（选填）').fill('1350')
-  const addStockResponsePromise = page.waitForResponse(
+  const addStockResponsePromise = waitForResponseSafely(
+    page,
     (response) => {
       const path = new URL(response.url()).pathname
       return response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/stocks$/.test(path)
@@ -322,7 +341,7 @@ try {
     const chartApiPath = (suffix) =>
       new RegExp(`^/api/workspaces/\\d+/stocks/\\d+/${suffix}$`)
     const waitForChartResponse = (suffix, expectedStatus = 200) =>
-      page.waitForResponse((response) => {
+      waitForResponseSafely(page, (response) => {
         const path = new URL(response.url()).pathname
         return (
           response.request().method() === 'GET' &&
@@ -403,7 +422,7 @@ try {
   }
   await page.getByRole('link', { name: '概览', exact: true }).click()
 
-  const createInvitationResponse = page.waitForResponse((response) => {
+  const createInvitationResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return (
       response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/invitations$/.test(path)
@@ -434,11 +453,11 @@ try {
   await memberPage.waitForURL((url) => url.pathname === '/workspaces')
 
   await memberPage.locator('#invite-code').fill(inviteCode)
-  const joinResponse = memberPage.waitForResponse((response) => {
+  const joinResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && path === '/api/workspaces/join'
   })
-  const memberDetailResponse = memberPage.waitForResponse((response) => {
+  const memberDetailResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+$/.test(path)
   })
@@ -453,7 +472,7 @@ try {
     throw new Error('加入后页面没有显示MEMBER身份和2名有效成员')
   }
 
-  const memberStockListResponse = memberPage.waitForResponse((response) => {
+  const memberStockListResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+\/stocks$/.test(path)
   })
@@ -465,7 +484,7 @@ try {
     throw new Error('MEMBER没有看到OWNER添加的共享股票')
   }
 
-  const memberListResponse = memberPage.waitForResponse((response) => {
+  const memberListResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+\/members$/.test(path)
   })
@@ -477,7 +496,7 @@ try {
     throw new Error('成员列表没有显示空间OWNER')
   }
 
-  const leaveResponse = memberPage.waitForResponse((response) => {
+  const leaveResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/leave$/.test(path)
   })
@@ -494,7 +513,7 @@ try {
 
   await page.getByRole('link', { name: '成员', exact: true }).click()
   const memberRow = page.locator('.member-row').filter({ hasText: memberNickname })
-  const removeResponse = page.waitForResponse((response) => {
+  const removeResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return (
       response.request().method() === 'DELETE' &&
@@ -509,7 +528,7 @@ try {
 
   await memberPage.goto(`${frontendUrl}/workspaces`)
   await memberPage.locator('#invite-code').fill(inviteCode)
-  const rejectedOldInvitation = memberPage.waitForResponse((response) => {
+  const rejectedOldInvitation = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && path === '/api/workspaces/join'
   })
@@ -519,7 +538,7 @@ try {
   }
 
   await page.getByRole('link', { name: '概览', exact: true }).click()
-  const regenerateResponse = page.waitForResponse((response) => {
+  const regenerateResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return (
       response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/invitations$/.test(path)
@@ -545,7 +564,7 @@ try {
 
   await page.getByRole('link', { name: '成员', exact: true }).click()
   const transferRow = page.locator('.member-row').filter({ hasText: memberNickname })
-  const transferResponse = page.waitForResponse((response) => {
+  const transferResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return (
       response.request().method() === 'POST' &&
@@ -565,7 +584,7 @@ try {
   }
 
   await memberPage.getByRole('link', { name: '设置', exact: true }).click()
-  const archiveResponse = memberPage.waitForResponse((response) => {
+  const archiveResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/archive$/.test(path)
   })
@@ -588,7 +607,7 @@ try {
     throw new Error('普通成员重新进入归档空间后没有看到只读提示')
   }
 
-  const restoreResponse = memberPage.waitForResponse((response) => {
+  const restoreResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/restore$/.test(path)
   })

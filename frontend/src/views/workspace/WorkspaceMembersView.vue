@@ -30,8 +30,8 @@ async function load() {
     return
   }
   try {
-    await store.ensureCurrent(workspaceId.value)
-    await store.loadMembers(workspaceId.value)
+    // 成员角色可能被另一会话改变，治理动作不能沿用同 ID 空间的旧角色。
+    await Promise.all([store.loadCurrent(workspaceId.value), store.loadMembers(workspaceId.value)])
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }

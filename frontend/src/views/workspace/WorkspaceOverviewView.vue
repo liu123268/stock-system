@@ -18,7 +18,8 @@ async function load() {
     return
   }
   try {
-    const workspace = await store.ensureCurrent(workspaceId.value)
+    // 邀请权限可能被另一会话的所有权转让改变，进入治理概览时重新核对。
+    const workspace = await store.loadCurrent(workspaceId.value)
     if (workspace.role === 'OWNER' && workspace.status === 'ACTIVE') {
       await store.loadInvitations(workspaceId.value)
     }

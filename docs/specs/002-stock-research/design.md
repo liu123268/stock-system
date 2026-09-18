@@ -5,7 +5,7 @@
 
 ## 1. 文档职责
 
-本文档保存股票与初始观点闭环及后续已进入实施范围的目录、报价、K 线、分时和 Redis 方案。业务规则见 [需求](requirements.md)，实施顺序与验证证据见 [任务清单](tasks.md)。尚未进入的多人观点、永久行情库和重新关注不在这里提前展开。
+本文档保存股票与初始观点闭环及后续已进入实施范围的目录、报价、K 线、分时和 Redis 方案，以及已确认但尚未实施的拼音首字母搜索方案。业务规则见 [需求](requirements.md)，实施顺序与验证证据见 [任务清单](tasks.md)。尚未进入的多人观点、永久行情库和重新关注不在这里提前展开。
 
 ## 2. 四个核心对象
 
@@ -121,6 +121,26 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
 
 重复同步按 code 更新，保留已有 stock.id 和关联研究记录；不删除目录中暂时缺失的股票。首次目录已导入开发库，尚未实现每日定时同步、退市状态核验和供应商自动切换。北交所使用巨潮 920xxx A 股目录作为当前补充来源，完整性未确认；港股范围为主板/GEM 的 HKD 股权证券，未将所有证券类型或其他币种柜台混入。
 
+#### 4.2.1 拼音首字母搜索方案（待实施）
+
+现有搜索链路已经具备合适的扩展点：`StockMapper.searchDirectory` 先从 MySQL 取最多 30 个标准股票身份，Longbridge 只在这之后为候选批量补报价。因此拼音检索应扩展目录层，不能交给前端过滤，也不应调用供应商搜索接口。
+
+推荐的数据流是：
+
+```text
+公开目录中的中文名称
+  → 目录准备脚本统一转为简体并生成小写拼音首字母
+  → Java 导入器校验并写入 stock 的专用检索字段
+  → StockMapper 对英文字母关键字执行首字母前缀匹配
+  → 仍按原链路最多选出 30 个候选并批量补一次报价
+```
+
+- 通过新的 Flyway 迁移增加专用 `pinyin_initials` 字段，而不是把生成值临时拼进前端或在每次查询时重新转拼音。现有目录生成流程批量产生该值，既有目录通过同一导入流程回填；已执行的 V4 不回写。
+- 生成值只保留规范化的小写英文字母，例如“特变电工”为 `tbdg`。查询关键字同样清理首尾空白、统一大小写；`tbdg` 做完整匹配，`tb` 做从首字开始的前缀匹配，不把任意中间片段都当作缩写，避免结果过宽。
+- 多音字先使用有词组词典的拼音转换结果；确有常用读音差异时，继续使用现有 `search_aliases` 保存人工核对的补充别名。拼音字段只帮助召回，最终返回的 code、name、exchange 和 currency 仍来自可信目录。
+- 排序优先级为标准代码精确匹配、中文／别名精确匹配、拼音首字母完整匹配、拼音前缀匹配，再按代码稳定排序；总数仍限制为 30。前端只需把输入提示改为“代码、名称或拼音首字母”，无需新增接口或自行维护股票拼音表。
+- 验收至少覆盖 `特变电工 → tbdg/tb`、大小写一致、无关缩写不命中、多音字补充别名、原有代码／简体／繁体／英文搜索不回归，以及 Longbridge 仍只有候选确定后的一次批量报价。实现和数据回填完成前，本文不得被描述为当前能力。
+
 ### 4.3 Longbridge 基础报价接入（2026-09-09）
 
 真实最短链路已经从“等待 Java SDK 浏览器 OAuth”调整为“复用官方 CLI 已完成的 Device Authorization Flow”。Java SDK 已升级至 `4.5.0`，但仍没有通过公开 API 导入 CLI Token 的能力；官方 CLI `v0.28.5` 的 `quote` 和稳定 `serve` JSON-RPC 都已实测成功。因此当前传输层使用 Spring Boot 管理 `longbridge serve` sidecar，完整取舍见 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。
@@ -204,7 +224,7 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
 
 ### 4.6 Redis 共享行情缓存与访问保护
 
-CODE-206E 实施中，尚未整体验收。原来 provider 直接依赖 `LongbridgeJsonRpcClient` 的网关接口：缓存只存在一个 Java 进程内，另一实例无法复用。现在 `CachingLongbridgeMarketGateway` 通过 `@Primary` 成为四类网关接口的首选实现，把可重建的行情缓存放在 provider 与旧客户端之间；Controller、Vue 和研究事务不直接操作 Redis。新增依赖为 Spring Data Redis，连接客户端使用 Lettuce。关闭 Redis 时使用 `NoOpMarketSharedCache`，仍走原行情链路，不切换 Mock。
+CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `LongbridgeJsonRpcClient` 的网关接口：缓存只存在一个 Java 进程内，另一实例无法复用。现在 `CachingLongbridgeMarketGateway` 通过 `@Primary` 成为四类网关接口的首选实现，把可重建的行情缓存放在 provider 与旧客户端之间；Controller、Vue 和研究事务不直接操作 Redis。新增依赖为 Spring Data Redis，连接客户端使用 Lettuce。关闭 Redis 时使用 `NoOpMarketSharedCache`，连接故障时进入冷却并回到原行情链路，均不切换 Mock。
 
 ```text
 业务 Service 按接口校验身份与访问范围
@@ -239,7 +259,7 @@ CODE-206E 实施中，尚未整体验收。原来 provider 直接依赖 `Longbri
 
 本机开发拓扑是 Windows 若依 Redis `127.0.0.1:6379` 与 Ubuntu WSL2 Redis `127.0.0.1:6380` 并存，stock-system 只连接后者；这是为避免本机两个项目互相抢端口的开发隔离，不是生产架构要求。WSL 实例使用 `/tmp`，关闭 RDB 与 AOF，重启后缓存为空但可从 Longbridge 重建；生产 Redis 的持久化、容量上限、备份和淘汰策略必须按部署可靠性单独决定。
 
-历史批次的未收盘长缓存问题已按上述排他边界收敛，缓存来源也已由统一信封显式保留。命中、未命中、合并和加载目前主要靠 DEBUG 日志，且“loaded from upstream”可能只是调用到旧客户端缓存，不能据此冒充真实外部请求次数或性能结论。未完成验收和测试证据集中见 [CODE-206E](tasks.md#code-206e-redis-共享行情缓存实施中证据2026-09-11)，运行与配置方式见 [开发环境](../../engineering/development.md#10-redis-本地学习环境)。
+历史批次的未收盘长缓存问题已按上述排他边界收敛，缓存来源也已由统一信封显式保留。命中、未命中、合并和加载目前主要靠 DEBUG 日志，且“loaded from upstream”可能只是调用到旧客户端缓存，不能据此冒充真实外部请求次数或性能结论。最终锁竞争、真实页面命中／未命中和 Redis 故障降级证据见 [CODE-206E 最终验收](tasks.md#code-206e-最终验收证据2026-09-18)，运行与配置方式见 [开发环境](../../engineering/development.md#10-redis-本地学习环境)。
 
 ## 5. 首批 API
 
