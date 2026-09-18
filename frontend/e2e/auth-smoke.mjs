@@ -300,8 +300,8 @@ try {
   await page.getByRole('button', { name: /贵州茅台.*600519\.SH/ }).click()
   await page.getByLabel('观点倾向').selectOption('BULLISH')
   await page.getByLabel('关注周期').selectOption('MEDIUM')
-  await page.getByLabel('观点理由').fill('品牌优势和现金流仍需持续验证')
-  await page.getByLabel('风险点').fill('估值波动和消费需求变化')
+  await page.getByLabel('判断理由').fill('品牌优势和现金流仍需持续验证')
+  await page.getByLabel('关键观察条件').fill('估值波动和消费需求变化')
   await page.getByLabel('目标价（选填）').fill('1680')
   await page.getByLabel('止损参考价（选填）').fill('1350')
   const addStockResponsePromise = waitForResponseSafely(
@@ -482,6 +482,86 @@ try {
   }
   if (!(await memberPage.locator('body').innerText()).includes('贵州茅台')) {
     throw new Error('MEMBER没有看到OWNER添加的共享股票')
+  }
+
+  const memberResearchResponse = waitForResponseSafely(memberPage, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'GET' &&
+      /^\/api\/workspaces\/\d+\/stocks\/\d+\/research$/.test(path)
+    )
+  })
+  await memberPage.getByRole('link', { name: '贵州茅台', exact: true }).click()
+  if ((await memberResearchResponse).status() !== 200) {
+    throw new Error('MEMBER没有成功进入股票研究详情')
+  }
+  await memberPage.getByLabel('记录类型').selectOption('UPDATE')
+  await memberPage.getByLabel('观点倾向').selectOption('NEUTRAL')
+  await memberPage.getByLabel('关注周期').selectOption('MEDIUM')
+  await memberPage.getByLabel('判断理由').fill('MEMBER补充了估值观察观点')
+  await memberPage.getByLabel('关键观察条件').fill('需求变化仍需后续验证')
+  const memberOpinionResponse = waitForResponseSafely(memberPage, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'POST' &&
+      /^\/api\/workspaces\/\d+\/stocks\/\d+\/opinions$/.test(path)
+    )
+  })
+  await memberPage.getByRole('button', { name: '发表到时间线', exact: true }).click()
+  if ((await memberOpinionResponse).status() !== 200) {
+    throw new Error('MEMBER没有成功发表观点更新')
+  }
+  await memberPage.getByText('MEMBER补充了估值观察观点', { exact: true }).waitFor()
+
+  const ownerStockListForResearch = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+\/stocks$/.test(path)
+  })
+  await page.getByRole('link', { name: '共享自选', exact: true }).click()
+  if ((await ownerStockListForResearch).status() !== 200) {
+    throw new Error('OWNER没有重新加载共享自选列表')
+  }
+  const ownerResearchResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'GET' &&
+      /^\/api\/workspaces\/\d+\/stocks\/\d+\/research$/.test(path)
+    )
+  })
+  await page.getByRole('link', { name: '贵州茅台', exact: true }).click()
+  if ((await ownerResearchResponse).status() !== 200) {
+    throw new Error('OWNER没有成功进入股票研究详情')
+  }
+  await page.getByText('MEMBER补充了估值观察观点', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '结束本轮关注', exact: true }).click()
+  const endCycleResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'POST' &&
+      /^\/api\/workspaces\/\d+\/stocks\/\d+\/end$/.test(path)
+    )
+  })
+  await page.getByRole('button', { name: '确认结束', exact: true }).click()
+  if ((await endCycleResponse).status() !== 200) {
+    throw new Error('OWNER没有成功结束研究周期')
+  }
+  await page.getByText('本轮关注已经结束，研究记录已转为只读历史。', { exact: true }).waitFor()
+
+  await page.getByLabel('观点倾向').selectOption('BULLISH')
+  await page.getByLabel('关注周期').selectOption('LONG')
+  await page.getByLabel('判断理由').fill('重新观察后建立新的研究周期')
+  await page.getByLabel('关键观察条件').fill('新周期仍需独立跟踪风险')
+  const reopenResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/stocks$/.test(path)
+  })
+  await page.getByRole('button', { name: '重新开启关注', exact: true }).click()
+  if ((await reopenResponse).status() !== 200) {
+    throw new Error('OWNER没有成功重新开启研究周期')
+  }
+  await page.getByText('新的研究周期已经开启，旧周期仍保留在下方。', { exact: true }).waitFor()
+  if ((await page.getByText(/第 \d+ 期/).count()) !== 2) {
+    throw new Error('重新关注后没有同时显示新旧两个研究周期')
   }
 
   const memberListResponse = waitForResponseSafely(memberPage, (response) => {

@@ -14,16 +14,15 @@ public record AddWorkspaceStockRequestDTO(
         String code,
 
         @NotBlank(message = "观点倾向不能为空")
-        @Pattern(regexp = "BULLISH|NEUTRAL|CAUTIOUS", message = "观点倾向不合法")
+        @Pattern(regexp = "BULLISH|NEUTRAL|BEARISH", message = "观点倾向不合法")
         String stance,
 
-        @NotBlank(message = "观点理由不能为空")
-        @Size(max = 1000, message = "观点理由最多1000个字符")
+        @NotBlank(message = "判断理由不能为空")
+        @Size(max = 1000, message = "判断理由最多1000个字符")
         String reason,
 
-        @NotBlank(message = "风险点不能为空")
-        @Size(max = 1000, message = "风险点最多1000个字符")
-        String riskNote,
+        @Size(max = 1000, message = "关键观察条件最多1000个字符")
+        String observationNote,
 
         @NotBlank(message = "关注周期不能为空")
         @Pattern(regexp = "SHORT|MEDIUM|LONG", message = "关注周期不合法")

@@ -31,9 +31,10 @@ public class WorkspaceStockListRow {
     private String authorNickname;
     private String stance;
     private String reason;
-    private String riskNote;
+    private String observationNote;
     private String horizon;
     private BigDecimal targetPrice;
     private BigDecimal stopLossPrice;
     private LocalDateTime opinionCreatedAt;
+    private Boolean initialOpinionWithdrawn;
 }

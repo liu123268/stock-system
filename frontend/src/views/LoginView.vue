@@ -40,11 +40,13 @@ const rules: FormRules<LoginForm> = {
 }
 
 async function handleLogin() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (submitting.value) return
 
   submitting.value = true
   try {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
+
     await authStore.login(form)
     ElMessage.success('欢迎回来')
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/workspaces'
@@ -89,7 +91,6 @@ async function handleLogin() {
           placeholder="请输入密码"
           size="large"
           show-password
-          @keyup.enter="handleLogin"
         />
       </el-form-item>
 

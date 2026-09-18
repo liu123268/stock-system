@@ -3,19 +3,29 @@ package com.stock.system.stock.controller;
 import com.stock.system.common.api.Result;
 import com.stock.system.security.LoginUser;
 import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
+import com.stock.system.stock.dto.UpdateAttentionLevelRequestDTO;
+import com.stock.system.stock.dto.CreateStockOpinionRequestDTO;
 import com.stock.system.stock.service.StockResearchService;
 import com.stock.system.stock.service.StockCandlestickService;
 import com.stock.system.stock.service.StockIntradayService;
+import com.stock.system.stock.service.StockResearchLifecycleService;
 import com.stock.system.stock.vo.AddWorkspaceStockResponseVO;
 import com.stock.system.stock.vo.WorkspaceStockListResponseVO;
 import com.stock.system.stock.vo.StockCandlestickSeriesVO;
 import com.stock.system.stock.vo.StockIntradaySeriesVO;
+import com.stock.system.stock.vo.UpdateAttentionLevelResponseVO;
+import com.stock.system.stock.vo.EndedWorkspaceStockResponseVO;
+import com.stock.system.stock.vo.ResearchCycleStateResponseVO;
+import com.stock.system.stock.vo.StockOpinionResponseVO;
+import com.stock.system.stock.vo.WorkspaceStockResearchResponseVO;
 import org.springframework.web.bind.annotation.RequestParam;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,15 +41,18 @@ public class WorkspaceStockController {
     private final StockResearchService stockResearchService;
     private final StockCandlestickService stockCandlestickService;
     private final StockIntradayService stockIntradayService;
+    private final StockResearchLifecycleService lifecycleService;
 
     public WorkspaceStockController(
             StockResearchService stockResearchService,
             StockCandlestickService stockCandlestickService,
-            StockIntradayService stockIntradayService
+            StockIntradayService stockIntradayService,
+            StockResearchLifecycleService lifecycleService
     ) {
         this.stockResearchService = stockResearchService;
         this.stockCandlestickService = stockCandlestickService;
         this.stockIntradayService = stockIntradayService;
+        this.lifecycleService = lifecycleService;
     }
 
     @PostMapping
@@ -57,6 +70,68 @@ public class WorkspaceStockController {
             @PathVariable Long workspaceId
     ) {
         return Result.success(stockResearchService.list(currentUser.userId(), workspaceId));
+    }
+
+    @GetMapping("/ended")
+    public Result<List<EndedWorkspaceStockResponseVO>> listEnded(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId
+    ) {
+        return Result.success(lifecycleService.listEnded(currentUser.userId(), workspaceId));
+    }
+
+    @GetMapping("/{workspaceStockId}/research")
+    public Result<WorkspaceStockResearchResponseVO> researchDetail(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId
+    ) {
+        return Result.success(lifecycleService.detail(
+                currentUser.userId(), workspaceId, workspaceStockId));
+    }
+
+    @PostMapping("/{workspaceStockId}/end")
+    public Result<ResearchCycleStateResponseVO> end(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId
+    ) {
+        return Result.success(lifecycleService.end(
+                currentUser.userId(), workspaceId, workspaceStockId));
+    }
+
+    @PostMapping("/{workspaceStockId}/opinions")
+    public Result<StockOpinionResponseVO> createOpinion(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId,
+            @Valid @RequestBody CreateStockOpinionRequestDTO request
+    ) {
+        return Result.success(lifecycleService.createOpinion(
+                currentUser.userId(), workspaceId, workspaceStockId, request));
+    }
+
+    @DeleteMapping("/{workspaceStockId}/opinions/{opinionId}")
+    public Result<Void> withdrawOpinion(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId,
+            @PathVariable Long opinionId
+    ) {
+        lifecycleService.withdrawOpinion(
+                currentUser.userId(), workspaceId, workspaceStockId, opinionId);
+        return Result.success(null);
+    }
+
+    @PatchMapping("/{workspaceStockId}/attention")
+    public Result<UpdateAttentionLevelResponseVO> updateAttentionLevel(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId,
+            @Valid @RequestBody UpdateAttentionLevelRequestDTO request
+    ) {
+        return Result.success(stockResearchService.updateAttentionLevel(
+                currentUser.userId(), workspaceId, workspaceStockId, request));
     }
 
     @GetMapping("/{workspaceStockId}/candlesticks")

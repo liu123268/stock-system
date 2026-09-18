@@ -1,6 +1,6 @@
 # 项目实际技术栈
 
-更新时间：2026-09-16
+更新时间：2026-09-18
 
 本文档记录项目技术的真实状态。用户最初提供的学习目标和候选技术清单保存在 [技术目标与选型参考](../project/technology-reference.md)，两者不得混淆。
 
@@ -50,7 +50,7 @@
 | Apifox                          | 计划         | 人工联调和流程测试                             | OpenAPI 契约形成后                                                         |
 | Longbridge OpenAPI / CLI        | CLI `v0.28.5`，Java SDK `4.5.0` 仅测试 | 已使用（报价、K 线、分时与交易日历） | Spring Boot 管理官方 `longbridge serve`，通过五个固定只读 JSON-RPC 方法拉取真实行情；Java SDK 保留为隔离 OAuth 探测依赖 |
 | 行情适配层                      | 目录、Mock、Longbridge | 已使用       | 三个 provider 分别管理标准身份／最新报价、K 线和分时；隔离业务与供应商 DTO |
-| Redis / Spring Data Redis / Lettuce | 已使用，CODE-206E 未完成验收 | 只读行情共享缓存、同 Key 请求合并和故障降级 | 依赖、网关装饰器和开关已接入；已有单元与真实 Redis 隔离测试，真实页面链路与剩余边界见 [任务证据](../specs/002-stock-research/tasks.md)；不与 WebSocket/SSE 捆绑 |
+| Redis / Spring Data Redis / Lettuce | 已使用 | 只读行情共享缓存、同 Key 请求合并和故障降级 | 依赖、网关装饰器和开关已接入；单元、真实 Redis 与页面验收的范围见 [任务证据](../specs/002-stock-research/tasks.md)；不与 WebSocket/SSE 捆绑 |
 | 定时任务                        | 计划         | 每天一次自动扫描股票目录的新股、名称变化和可确认的状态变化 | 先确定目录来源和状态证据，再实现幂等同步、失败保留旧数据与同步审计 |
 | MQ（RocketMQ / Kafka 优先评估） | 候选         | 活动动态、提醒、数据同步等非核心异步任务       | 出现真实异步事件后再根据可靠性、顺序、吞吐和学习目标选一种，不同时引入多种 |
 | Actuator                        | 计划         | 健康检查和运行状态                             | 部署与可观测性阶段                                                         |
@@ -66,22 +66,7 @@
 
 ### 3.1 外部行情调用与密钥边界
 
-真实行情供应商只能作为 Spring Boot 服务端的上游数据源。Vue/React 前端只能调用本项目的 Spring Boot API，不能直接调用 Longbridge 或其他供应商 API，也不能接收或保存 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等供应商凭据。
-
-```text
-Vue/React ←→ Spring Boot → MySQL（身份、权限与研究事实）
-                    │
-                    ↓
-            Redis 共享行情缓存（可关闭）
-                    │ 未命中／故障降级
-                    ↓
-            进程内短缓存 / Longbridge 网关
-                    │ 官方 CLI `serve` / JSON-RPC
-                    ↓
-              Longbridge OpenAPI
-```
-
-CLI OAuth Token 由运行 Spring Boot 的 OS 账号保存在其受保护的 Longbridge 缓存中；项目不读取或复制缓存。凭据不能进入前端源码、浏览器响应、普通日志、Git、Redis 或构建产物。Spring Boot 负责调用上游、校验返回值、记录来源和时间，再向前端返回经过项目接口约束的结果。Redis 已接在原有进程内短缓存外层；关闭或故障时仍可降级，不能把完成部分验证等同于整个 CODE-206E 验收。缓存 Key、TTL、并发保证和未完成边界统一见 [SPEC-002 缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。WebSocket/SSE 仍是独立候选。架构取舍见 [ADR-002](decisions/ADR-002-longbridge-cli-sidecar.md)，部署额外要求见 [部署说明](../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)。
+服务端调用、凭据隔离与浏览器验收要求统一见 [SPEC-002 行情安全边界](../specs/002-stock-research/design.md#40-外部行情调用与密钥边界)，不在技术清单重复维护调用图和规则。传输取舍见 [ADR-002](decisions/ADR-002-longbridge-cli-sidecar.md)，环境化要求见 [部署说明](../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)。
 
 ## 4. 当前明确不采用
 

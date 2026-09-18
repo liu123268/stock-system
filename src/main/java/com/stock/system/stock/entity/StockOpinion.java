@@ -19,9 +19,11 @@ public class StockOpinion {
     private String type;
     private String stance;
     private String reason;
-    private String riskNote;
+    private String observationNote;
     private String horizon;
     private BigDecimal targetPrice;
     private BigDecimal stopLossPrice;
     private LocalDateTime createdAt;
+    private LocalDateTime withdrawnAt;
+    private Long withdrawnByUserId;
 }

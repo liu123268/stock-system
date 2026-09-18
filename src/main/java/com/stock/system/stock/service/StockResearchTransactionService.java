@@ -1,6 +1,8 @@
 package com.stock.system.stock.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.stock.system.common.api.ErrorCode;
+import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
 import com.stock.system.stock.entity.ResearchCycle;
 import com.stock.system.stock.entity.Stock;
@@ -12,6 +14,7 @@ import com.stock.system.stock.mapper.StockOpinionMapper;
 import com.stock.system.stock.mapper.WorkspaceStockMapper;
 import com.stock.system.stock.market.StockQuoteSnapshot;
 import com.stock.system.stock.vo.AddWorkspaceStockResponseVO;
+import com.stock.system.stock.vo.UpdateAttentionLevelResponseVO;
 import com.stock.system.workspace.service.WorkspaceService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,7 +87,7 @@ public class StockResearchTransactionService {
         opinion.setType("INITIAL");
         opinion.setStance(request.stance());
         opinion.setReason(request.reason().trim());
-        opinion.setRiskNote(request.riskNote().trim());
+        opinion.setObservationNote(normalizeOptionalText(request.observationNote()));
         opinion.setHorizon(request.horizon());
         opinion.setTargetPrice(request.targetPrice());
         opinion.setStopLossPrice(request.stopLossPrice());
@@ -92,6 +95,43 @@ public class StockResearchTransactionService {
         stockOpinionMapper.insert(opinion);
 
         return new AddWorkspaceStockResponseVO(workspaceStock.getId(), cycle.getId(), false);
+    }
+
+    private String normalizeOptionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    @Transactional
+    public UpdateAttentionLevelResponseVO updateAttentionLevel(
+            Long userId,
+            Long workspaceId,
+            Long workspaceStockId,
+            String attentionLevel
+    ) {
+        workspaceService.requireActiveMemberForUpdate(userId, workspaceId);
+        ResearchCycle cycle = researchCycleMapper.selectActiveForUpdate(
+                workspaceId,
+                workspaceStockId
+        );
+        if (cycle == null) {
+            if (workspaceStockMapper.selectStockIdentity(workspaceId, workspaceStockId) == null) {
+                throw new BusinessException(ErrorCode.WORKSPACE_STOCK_NOT_FOUND);
+            }
+            throw new BusinessException(ErrorCode.ACTIVE_RESEARCH_CYCLE_NOT_FOUND);
+        }
+
+        if (!attentionLevel.equals(cycle.getAttentionLevel())) {
+            cycle.setAttentionLevel(attentionLevel);
+            researchCycleMapper.updateById(cycle);
+        }
+        return new UpdateAttentionLevelResponseVO(
+                workspaceStockId,
+                cycle.getId(),
+                cycle.getAttentionLevel()
+        );
     }
 
     private Stock upsertStock(StockQuoteSnapshot snapshot) {

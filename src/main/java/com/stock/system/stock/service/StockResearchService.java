@@ -3,10 +3,12 @@ package com.stock.system.stock.service;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
+import com.stock.system.stock.dto.UpdateAttentionLevelRequestDTO;
 import com.stock.system.stock.market.MarketDataProvider;
 import com.stock.system.stock.market.StockQuoteSnapshot;
 import com.stock.system.stock.vo.AddWorkspaceStockResponseVO;
 import com.stock.system.stock.vo.WorkspaceStockListResponseVO;
+import com.stock.system.stock.vo.UpdateAttentionLevelResponseVO;
 import com.stock.system.stock.mapper.WorkspaceStockListRow;
 import com.stock.system.stock.mapper.WorkspaceStockMapper;
 import com.stock.system.workspace.service.WorkspaceService;
@@ -56,7 +58,22 @@ public class StockResearchService {
                 .toList();
     }
 
+    public UpdateAttentionLevelResponseVO updateAttentionLevel(
+            Long userId,
+            Long workspaceId,
+            Long workspaceStockId,
+            UpdateAttentionLevelRequestDTO request
+    ) {
+        return transactionService.updateAttentionLevel(
+                userId,
+                workspaceId,
+                workspaceStockId,
+                request.attentionLevel()
+        );
+    }
+
     private WorkspaceStockListResponseVO toListResponse(WorkspaceStockListRow row) {
+        boolean withdrawn = Boolean.TRUE.equals(row.getInitialOpinionWithdrawn());
         return new WorkspaceStockListResponseVO(
                 row.getWorkspaceStockId(),
                 row.getResearchCycleId(),
@@ -77,12 +94,13 @@ public class StockResearchService {
                 row.getAuthorUserId(),
                 row.getAuthorNickname(),
                 row.getStance(),
-                row.getReason(),
-                row.getRiskNote(),
+                withdrawn ? null : row.getReason(),
+                withdrawn ? null : row.getObservationNote(),
                 row.getHorizon(),
-                row.getTargetPrice(),
-                row.getStopLossPrice(),
-                row.getOpinionCreatedAt()
+                withdrawn ? null : row.getTargetPrice(),
+                withdrawn ? null : row.getStopLossPrice(),
+                row.getOpinionCreatedAt(),
+                withdrawn
         );
     }
 }

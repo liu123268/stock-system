@@ -537,9 +537,9 @@
         </div>
         <aside class="progress-block" aria-label="当前进度">
           <p class="progress-label">当前主线</p>
-          <div class="progress-value">Redis 行情缓存接入中</div>
+          <div class="progress-value">研究周期基础流程可用</div>
           <p class="progress-note">
-            pull 行情与交易日边界已验收；当前完成缓存代码和分层测试，仍需补齐边界与真实页面整链验收。最新进度见
+            行情、Redis 与周期已有阶段验收；本轮审查发现的正确性缺口仍待修复。最新进度见
             <a href="project/status.md">项目状态</a>。
           </p>
         </aside>
@@ -738,15 +738,15 @@
             <span class="status status-ui">页面可操作</span>
           </article>
 
-          <article class="capability" data-status="next">
+          <article class="capability" data-status="ui">
             <div class="capability-kicker">核心 V1</div>
             <div>
               <h3>股票详情、研究周期与多人观点时间线</h3>
               <p>
-                后续将支持观点更新、结束关注、重新开启研究周期、历史只读、筛选与复盘；旧观点不会被新判断覆盖。
+                已实现观点更新、结束与重新关注、多期历史和组合筛选；撤回列表、旧页面周期冲突等审查缺口尚待修复，详见任务清单。
               </p>
             </div>
-            <span class="status status-next">尚未开发</span>
+            <span class="status status-ui">基础可用，待修正</span>
           </article>
 
           <article class="capability" data-status="next">
@@ -825,7 +825,7 @@
     <footer>
       <div class="shell footer-inner">
         <span
-          >2026-09-11 文档核对快照；历史验收日期和范围见
+          >2026-09-18 文档核对快照；历史验收日期和范围见
           <a href="specs/002-stock-research/tasks.md">阶段实施证据</a>，不代表本次重新运行全部测试。</span
         >
         <a class="jump-link" href="#page-title">返回顶部</a>

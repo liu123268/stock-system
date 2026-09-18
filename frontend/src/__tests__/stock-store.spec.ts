@@ -3,9 +3,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import { AxiosHeaders, type AxiosResponse } from 'axios'
 import {
   addWorkspaceStock,
+  endWorkspaceStockResearch,
   getWorkspaceStockCandlesticks,
+  getWorkspaceStockResearch,
+  listEndedWorkspaceStocks,
   listWorkspaceStocks,
   searchStocks,
+  updateWorkspaceStockAttention,
 } from '@/api/stock'
 import type { ApiResult } from '@/api/auth'
 import type {
@@ -13,6 +17,7 @@ import type {
   StockCandlestickSeriesVO,
   StockSearchResponseVO,
   WorkspaceStockListResponseVO,
+  WorkspaceStockResearchResponseVO,
 } from '@/api/stock'
 import { useStockStore } from '@/stores/stock'
 
@@ -71,11 +76,12 @@ const listItem: WorkspaceStockListResponseVO = {
   authorNickname: '研究成员',
   stance: 'BULLISH',
   reason: '品牌优势仍然稳定',
-  riskNote: '估值可能继续收缩',
+  observationNote: '估值可能继续收缩',
   horizon: 'MEDIUM',
   targetPrice: 1680,
   stopLossPrice: 1350,
   opinionCreatedAt: '2026-09-07T14:00:00',
+  initialOpinionWithdrawn: false,
 }
 
 const candlestickSeries: StockCandlestickSeriesVO = {
@@ -167,7 +173,7 @@ describe('stock store', () => {
       code: '600519.SH',
       stance: 'BULLISH' as const,
       reason: '品牌优势仍然稳定',
-      riskNote: '估值可能继续收缩',
+      observationNote: '估值可能继续收缩',
       horizon: 'MEDIUM' as const,
       targetPrice: 1680,
       stopLossPrice: 1350,
@@ -194,6 +200,97 @@ describe('stock store', () => {
     expect(listWorkspaceStocks).toHaveBeenCalledWith(12)
     expect(result.alreadyActive).toBe(false)
     expect(store.items).toEqual([listItem])
+  })
+
+  it('switches the attention level and reloads the server-sorted list', async () => {
+    const focusedItem = { ...listItem, attentionLevel: 'FOCUS' as const }
+    vi.mocked(updateWorkspaceStockAttention).mockResolvedValue(
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: { workspaceStockId: 21, researchCycleId: 31, attentionLevel: 'FOCUS' as const },
+      }),
+    )
+    vi.mocked(listWorkspaceStocks).mockResolvedValue(
+      response<ApiResult<WorkspaceStockListResponseVO[]>>({
+        code: 'SUCCESS',
+        message: '成功',
+        data: [focusedItem],
+      }),
+    )
+
+    const store = useStockStore()
+    const result = await store.updateAttention(12, 21, 'FOCUS')
+
+    expect(updateWorkspaceStockAttention).toHaveBeenCalledWith(12, 21, 'FOCUS')
+    expect(listWorkspaceStocks).toHaveBeenCalledWith(12)
+    expect(result.attentionLevel).toBe('FOCUS')
+    expect(store.items).toEqual([focusedItem])
+    expect(store.attentionUpdatingStockId).toBeNull()
+  })
+
+  it('ends a cycle and refreshes active, ended, and historical research state', async () => {
+    const detail: WorkspaceStockResearchResponseVO = {
+      workspaceStockId: 21,
+      code: '600519.SH',
+      name: '贵州茅台',
+      exchange: 'SSE',
+      currency: 'CNY',
+      listingStatus: 'LISTED',
+      cycles: [
+        {
+          id: 31,
+          status: 'ENDED',
+          attentionLevel: 'NORMAL',
+          startedByUserId: 9,
+          startedByNickname: '研究成员',
+          startedAt: '2026-09-07T14:00:00',
+          startPrice: 1488.88,
+          quoteTime: '2026-09-07T13:59:00',
+          quoteSource: 'LOCAL_MOCK',
+          simulated: true,
+          endedAt: '2026-09-18T14:00:00',
+          opinions: [],
+        },
+      ],
+    }
+    vi.mocked(endWorkspaceStockResearch).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: null }),
+    )
+    vi.mocked(getWorkspaceStockResearch).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: detail }),
+    )
+    vi.mocked(listWorkspaceStocks).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: [] }),
+    )
+    vi.mocked(listEndedWorkspaceStocks).mockResolvedValue(
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: [
+          {
+            workspaceStockId: 21,
+            code: '600519.SH',
+            name: '贵州茅台',
+            exchange: 'SSE',
+            currency: 'CNY',
+            researchCycleId: 31,
+            status: 'ENDED',
+            startedAt: '2026-09-07T14:00:00',
+            endedAt: '2026-09-18T14:00:00',
+          },
+        ],
+      }),
+    )
+
+    const store = useStockStore()
+    await store.endResearch(12, 21)
+
+    expect(endWorkspaceStockResearch).toHaveBeenCalledWith(12, 21)
+    expect(store.items).toEqual([])
+    expect(store.endedItems).toHaveLength(1)
+    expect(store.researchDetail?.cycles[0]?.status).toBe('ENDED')
+    expect(store.researchSubmitting).toBe(false)
   })
 
   it('loads candlesticks only after an explicit stock and period request', async () => {

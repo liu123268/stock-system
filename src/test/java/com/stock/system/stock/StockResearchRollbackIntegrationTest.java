@@ -75,7 +75,7 @@ class StockResearchRollbackIntegrationTest extends MySqlIntegrationTest {
                                   "code": "600519.SH",
                                   "stance": "BULLISH",
                                   "reason": "验证事务回滚",
-                                  "riskNote": "受控失败",
+                                  "observationNote": "受控失败",
                                   "horizon": "MEDIUM"
                                 }
                                 """))

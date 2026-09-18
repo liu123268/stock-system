@@ -1,6 +1,6 @@
 # ADR-002：用官方 Longbridge CLI sidecar 接入只读行情
 
-状态：已确认；原只读行情链路的验证见 SPEC-002 tasks。Redis 外层已实现，CODE-206E 尚未完成闭环验收。
+状态：已确认；阶段验证及当前缺口见 [SPEC-002 tasks](../../specs/002-stock-research/tasks.md)，本记录只维护传输选型。
 
 日期：2026-09-10；最后核对：2026-09-11
 

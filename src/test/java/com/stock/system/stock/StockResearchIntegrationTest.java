@@ -31,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -169,7 +171,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                                   "code": "600519.SH",
                                   "stance": "BULLISH",
                                   "reason": "   ",
-                                  "riskNote": "估值波动风险",
+                                  "observationNote": "估值波动风险",
                                   "horizon": "MEDIUM"
                                 }
                                 """))
@@ -180,6 +182,29 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
         assertThat(workspaceStockMapper.selectCount(null)).isZero();
         assertThat(researchCycleMapper.selectCount(null)).isZero();
         assertThat(stockOpinionMapper.selectCount(null)).isZero();
+    }
+
+    @Test
+    void bearishOpinionAcceptsAnOmittedObservationNote() throws Exception {
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/stocks", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "600519.SH",
+                                  "stance": "BEARISH",
+                                  "reason": "当前估值与增长不匹配",
+                                  "horizon": "MEDIUM"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        StockOpinion opinion = stockOpinionMapper.selectOne(
+                new LambdaQueryWrapper<StockOpinion>()
+                        .eq(StockOpinion::getType, "INITIAL")
+        );
+        assertThat(opinion.getStance()).isEqualTo("BEARISH");
+        assertThat(opinion.getObservationNote()).isNull();
     }
 
     @Test
@@ -209,6 +234,261 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2));
+    }
+
+    @Test
+    void activeMemberSwitchesAttentionBothWaysButStrangerAndArchivedWorkspaceCannot()
+            throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        long cycleId = added.path("data").path("researchCycleId").longValue();
+        String path = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/attention";
+
+        mockMvc.perform(patch(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"attentionLevel":"FOCUS"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.researchCycleId").value(cycleId))
+                .andExpect(jsonPath("$.data.attentionLevel").value("FOCUS"));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].attentionLevel").value("FOCUS"));
+
+        mockMvc.perform(patch(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"attentionLevel":"NORMAL"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attentionLevel").value("NORMAL"));
+
+        mockMvc.perform(patch(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"attentionLevel":"IMPORTANT"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(patch(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + strangerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"attentionLevel":"FOCUS"}
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_NOT_FOUND"));
+
+        workspaceService.archive(ownerId, workspaceId);
+        mockMvc.perform(patch(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"attentionLevel":"FOCUS"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ARCHIVED"));
+
+        assertThat(researchCycleMapper.selectById(cycleId).getAttentionLevel())
+                .isEqualTo("NORMAL");
+    }
+
+    @Test
+    void membersBuildAResearchTimelineEndAndReopenWithoutChangingOldCycle()
+            throws Exception {
+        JsonNode firstAdd = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = firstAdd.path("data").path("workspaceStockId").longValue();
+        long firstCycleId = firstAdd.path("data").path("researchCycleId").longValue();
+        String opinionsPath = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/opinions";
+
+        JsonNode memberOpinion = new ResultActionsJson(
+                mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(opinionBody("UPDATE", "NEUTRAL", "估值进入观察区间"))),
+                objectMapper
+        ).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.authorNickname").value("research_member"))
+                .andReturnJson();
+        long opinionId = memberOpinion.path("data").path("id").longValue();
+
+        mockMvc.perform(delete(opinionsPath + "/{opinionId}", workspaceId, workspaceStockId, opinionId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("STOCK_OPINION_ACCESS_DENIED"));
+
+        mockMvc.perform(delete(opinionsPath + "/{opinionId}", workspaceId, workspaceStockId, opinionId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(opinionBody("REVIEW", "BEARISH", "风险已经上升")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.type").value("REVIEW"));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/end",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ENDED"));
+
+        mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(opinionBody("UPDATE", "BULLISH", "不应写入旧周期")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACTIVE_RESEARCH_CYCLE_NOT_FOUND"));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks/ended", workspaceId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].workspaceStockId").value(workspaceStockId))
+                .andExpect(jsonPath("$.data[0].researchCycleId").value(firstCycleId));
+
+        JsonNode secondAdd = addStock(memberToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.alreadyActive").value(false))
+                .andReturnJson();
+        long secondCycleId = secondAdd.path("data").path("researchCycleId").longValue();
+        assertThat(secondCycleId).isNotEqualTo(firstCycleId);
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cycles.length()").value(2))
+                .andExpect(jsonPath("$.data.cycles[0].id").value(secondCycleId))
+                .andExpect(jsonPath("$.data.cycles[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.cycles[1].id").value(firstCycleId))
+                .andExpect(jsonPath("$.data.cycles[1].status").value("ENDED"))
+                .andExpect(jsonPath("$.data.cycles[1].opinions.length()").value(3))
+                .andExpect(jsonPath("$.data.cycles[1].opinions[1].withdrawn").value(true))
+                .andExpect(jsonPath("$.data.cycles[1].opinions[1].reason").doesNotExist())
+                .andExpect(jsonPath("$.data.cycles[1].opinions[2].canWithdraw").value(false));
+
+        assertThat(countWorkspaceStocks(workspaceId)).isEqualTo(1);
+        assertThat(researchCycleMapper.selectCount(null)).isEqualTo(2);
+        assertThat(stockOpinionMapper.selectCount(null)).isEqualTo(4);
+    }
+
+    @Test
+    void withdrawingInitialOpinionCancelsCycleAndKeepsAuditHistory() throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        long researchCycleId = added.path("data").path("researchCycleId").longValue();
+        long initialOpinionId = stockOpinionMapper.selectOne(
+                new LambdaQueryWrapper<StockOpinion>()
+                        .eq(StockOpinion::getResearchCycleId, researchCycleId)
+                        .eq(StockOpinion::getType, "INITIAL")
+        ).getId();
+
+        mockMvc.perform(delete(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/opinions/{opinionId}",
+                        workspaceId,
+                        workspaceStockId,
+                        initialOpinionId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks/ended", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].workspaceStockId").value(workspaceStockId))
+                .andExpect(jsonPath("$.data[0].status").value("CANCELLED"));
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cycles[0].status").value("CANCELLED"))
+                .andExpect(jsonPath("$.data.cycles[0].opinions[0].withdrawn").value(true))
+                .andExpect(jsonPath("$.data.cycles[0].opinions[0].reason").doesNotExist())
+                .andExpect(jsonPath("$.data.cycles[0].opinions[0].observationNote").doesNotExist());
+
+        assertThat(researchCycleMapper.selectById(researchCycleId).getStatus())
+                .isEqualTo("CANCELLED");
+        assertThat(researchCycleMapper.selectCount(null)).isEqualTo(1);
+        assertThat(stockOpinionMapper.selectCount(null)).isEqualTo(1);
+    }
+
+    @Test
+    void opinionCannotBeWithdrawnAfterFiveMinutes() throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        long researchCycleId = added.path("data").path("researchCycleId").longValue();
+        StockOpinion initial = stockOpinionMapper.selectOne(
+                new LambdaQueryWrapper<StockOpinion>()
+                        .eq(StockOpinion::getResearchCycleId, researchCycleId)
+                        .eq(StockOpinion::getType, "INITIAL")
+        );
+        initial.setCreatedAt(java.time.LocalDateTime.now().minusMinutes(6));
+        stockOpinionMapper.updateById(initial);
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cycles[0].opinions[0].canWithdraw").value(false));
+
+        mockMvc.perform(delete(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/opinions/{opinionId}",
+                        workspaceId,
+                        workspaceStockId,
+                        initial.getId())
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STOCK_OPINION_WITHDRAW_WINDOW_EXPIRED"));
+
+        assertThat(researchCycleMapper.selectById(researchCycleId).getStatus())
+                .isEqualTo("ACTIVE");
+        assertThat(stockOpinionMapper.selectById(initial.getId()).getWithdrawnAt()).isNull();
+    }
+
+    @Test
+    void archivedWorkspaceNeverOffersOpinionWithdrawal() throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        workspaceService.archive(ownerId, workspaceId);
+
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cycles[0].opinions[0].canWithdraw").value(false));
     }
 
     @Test
@@ -333,7 +613,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                   "code": "%s",
                   "stance": "BULLISH",
                   "reason": "长期品牌优势",
-                  "riskNote": "估值波动风险",
+                  "observationNote": "估值波动风险",
                   "horizon": "MEDIUM",
                   "targetPrice": 700.0000,
                   "stopLossPrice": 500.0000,
@@ -342,6 +622,20 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                   "source": "FAKE"
                 }
                 """.formatted(code);
+    }
+
+    private String opinionBody(String type, String stance, String reason) {
+        return """
+                {
+                  "type": "%s",
+                  "stance": "%s",
+                  "reason": "%s",
+                  "observationNote": "需要继续验证基本面变化",
+                  "horizon": "MEDIUM",
+                  "targetPrice": 1600.0000,
+                  "stopLossPrice": 1300.0000
+                }
+                """.formatted(type, stance, reason);
     }
 
     private long countWorkspaceStocks(Long targetWorkspaceId) {

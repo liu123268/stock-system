@@ -152,8 +152,8 @@ class StockResearchSchemaIntegrationTest extends MySqlIntegrationTest {
                 """
                         INSERT INTO stock_opinion (
                             research_cycle_id, author_user_id, type, stance,
-                            reason, risk_note, horizon, target_price, stop_loss_price
-                        ) VALUES (?, ?, 'INITIAL', 'BULLISH', '迁移约束验证', '测试风险', 'MEDIUM', 12.0000, 9.0000)
+                            reason, observation_note, horizon, target_price, stop_loss_price
+                        ) VALUES (?, ?, 'INITIAL', 'BULLISH', '迁移约束验证', '测试观察条件', 'MEDIUM', 12.0000, 9.0000)
                         """,
                 researchCycleId,
                 userId

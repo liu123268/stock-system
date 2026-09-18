@@ -24,10 +24,11 @@ public record WorkspaceStockListResponseVO(
         String authorNickname,
         String stance,
         String reason,
-        String riskNote,
+        String observationNote,
         String horizon,
         BigDecimal targetPrice,
         BigDecimal stopLossPrice,
-        LocalDateTime opinionCreatedAt
+        LocalDateTime opinionCreatedAt,
+        boolean initialOpinionWithdrawn
 ) {
 }

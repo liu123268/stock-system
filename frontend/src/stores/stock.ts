@@ -2,16 +2,26 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   addWorkspaceStock,
+  createWorkspaceStockOpinion,
+  endWorkspaceStockResearch,
   getWorkspaceStockCandlesticks,
   getWorkspaceStockIntraday,
+  getWorkspaceStockResearch,
+  listEndedWorkspaceStocks,
   listWorkspaceStocks,
   searchStocks,
+  updateWorkspaceStockAttention,
+  withdrawWorkspaceStockOpinion,
   type AddWorkspaceStockRequestDTO,
+  type AttentionLevel,
   type CandlestickPeriod,
+  type CreateStockOpinionRequestDTO,
+  type EndedWorkspaceStockResponseVO,
   type StockCandlestickSeriesVO,
   type StockIntradaySeriesVO,
   type StockSearchResponseVO,
   type WorkspaceStockListResponseVO,
+  type WorkspaceStockResearchResponseVO,
 } from '@/api/stock'
 
 export const useStockStore = defineStore('stock', () => {
@@ -24,6 +34,13 @@ export const useStockStore = defineStore('stock', () => {
   let searchRequestVersion = 0
   const submitLoading = ref(false)
   const submitError = ref('')
+  const attentionUpdatingStockId = ref<number | null>(null)
+  const attentionError = ref('')
+  const endedItems = ref<EndedWorkspaceStockResponseVO[]>([])
+  const researchDetail = ref<WorkspaceStockResearchResponseVO | null>(null)
+  const researchLoading = ref(false)
+  const researchError = ref('')
+  const researchSubmitting = ref(false)
   const candlestickSeries = ref<StockCandlestickSeriesVO | null>(null)
   const candlestickLoading = ref(false)
   const candlestickError = ref('')
@@ -84,6 +101,109 @@ export const useStockStore = defineStore('stock', () => {
       throw error
     } finally {
       submitLoading.value = false
+    }
+  }
+
+  async function updateAttention(
+    workspaceId: number,
+    workspaceStockId: number,
+    attentionLevel: AttentionLevel,
+  ) {
+    attentionUpdatingStockId.value = workspaceStockId
+    attentionError.value = ''
+    try {
+      const result = (
+        await updateWorkspaceStockAttention(workspaceId, workspaceStockId, attentionLevel)
+      ).data.data
+      await loadList(workspaceId)
+      return result
+    } catch (error) {
+      attentionError.value = error instanceof Error ? error.message : '关注级别更新失败'
+      throw error
+    } finally {
+      attentionUpdatingStockId.value = null
+    }
+  }
+
+  async function loadEnded(workspaceId: number) {
+    const result = (await listEndedWorkspaceStocks(workspaceId)).data.data
+    endedItems.value = result
+    return result
+  }
+
+  async function loadResearch(workspaceId: number, workspaceStockId: number) {
+    researchLoading.value = true
+    researchError.value = ''
+    try {
+      const result = (await getWorkspaceStockResearch(workspaceId, workspaceStockId)).data.data
+      researchDetail.value = result
+      return result
+    } catch (error) {
+      researchError.value = error instanceof Error ? error.message : '研究记录加载失败'
+      throw error
+    } finally {
+      researchLoading.value = false
+    }
+  }
+
+  async function endResearch(workspaceId: number, workspaceStockId: number) {
+    researchSubmitting.value = true
+    researchError.value = ''
+    try {
+      await endWorkspaceStockResearch(workspaceId, workspaceStockId)
+      await Promise.all([
+        loadResearch(workspaceId, workspaceStockId),
+        loadList(workspaceId),
+        loadEnded(workspaceId),
+      ])
+    } catch (error) {
+      researchError.value = error instanceof Error ? error.message : '结束关注失败'
+      throw error
+    } finally {
+      researchSubmitting.value = false
+    }
+  }
+
+  async function createOpinion(
+    workspaceId: number,
+    workspaceStockId: number,
+    request: CreateStockOpinionRequestDTO,
+  ) {
+    researchSubmitting.value = true
+    researchError.value = ''
+    try {
+      const result = (
+        await createWorkspaceStockOpinion(workspaceId, workspaceStockId, request)
+      ).data.data
+      await loadResearch(workspaceId, workspaceStockId)
+      return result
+    } catch (error) {
+      researchError.value = error instanceof Error ? error.message : '观点发表失败'
+      throw error
+    } finally {
+      researchSubmitting.value = false
+    }
+  }
+
+  async function withdrawOpinion(
+    workspaceId: number,
+    workspaceStockId: number,
+    opinionId: number,
+  ) {
+    researchSubmitting.value = true
+    researchError.value = ''
+    try {
+      await withdrawWorkspaceStockOpinion(workspaceId, workspaceStockId, opinionId)
+      await Promise.all([
+        loadResearch(workspaceId, workspaceStockId),
+        loadList(workspaceId),
+        loadEnded(workspaceId),
+      ])
+    } catch (error) {
+      researchError.value = error instanceof Error ? error.message : '观点撤回失败'
+      throw error
+    } finally {
+      researchSubmitting.value = false
     }
   }
 
@@ -215,6 +335,11 @@ export const useStockStore = defineStore('stock', () => {
 
   function clearAll() {
     items.value = []
+    endedItems.value = []
+    researchDetail.value = null
+    researchError.value = ''
+    researchLoading.value = false
+    researchSubmitting.value = false
     listError.value = ''
     submitError.value = ''
     listLoading.value = false
@@ -233,6 +358,13 @@ export const useStockStore = defineStore('stock', () => {
     searchError,
     submitLoading,
     submitError,
+    attentionUpdatingStockId,
+    attentionError,
+    endedItems,
+    researchDetail,
+    researchLoading,
+    researchError,
+    researchSubmitting,
     candlestickSeries,
     candlestickLoading,
     candlestickError,
@@ -244,6 +376,12 @@ export const useStockStore = defineStore('stock', () => {
     loadList,
     search,
     add,
+    updateAttention,
+    loadEnded,
+    loadResearch,
+    endResearch,
+    createOpinion,
+    withdrawOpinion,
     loadCandlesticks,
     loadOlderCandlesticks,
     loadIntraday,

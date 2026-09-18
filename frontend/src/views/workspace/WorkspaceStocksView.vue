@@ -49,7 +49,7 @@ const candlestickPeriods: { value: CandlestickPeriod; label: string }[] = [
 const opinion = reactive({
   stance: 'NEUTRAL' as StockStance,
   reason: '',
-  riskNote: '',
+  observationNote: '',
   horizon: 'MEDIUM' as OpinionHorizon,
   targetPrice: '',
   stopLossPrice: '',
@@ -64,7 +64,10 @@ async function load() {
   pageLoading.value = true
   try {
     await workspaceStore.ensureCurrent(workspaceId.value)
-    await stockStore.loadList(workspaceId.value)
+    await Promise.all([
+      stockStore.loadList(workspaceId.value),
+      stockStore.loadEnded(workspaceId.value),
+    ])
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   } finally {
@@ -116,8 +119,8 @@ async function submitOpinion() {
   if (!selectedStock.value) return
   const targetPrice = optionalPrice(opinion.targetPrice)
   const stopLossPrice = optionalPrice(opinion.stopLossPrice)
-  if (!opinion.reason.trim() || !opinion.riskNote.trim()) {
-    formError.value = '请填写观点理由和风险点'
+  if (!opinion.reason.trim()) {
+    formError.value = '请填写判断理由'
     return
   }
   if (Number.isNaN(targetPrice) || Number.isNaN(stopLossPrice)) {
@@ -132,11 +135,12 @@ async function submitOpinion() {
       code: selectedStock.value.code,
       stance: opinion.stance,
       reason: opinion.reason.trim(),
-      riskNote: opinion.riskNote.trim(),
+      observationNote: opinion.observationNote.trim() || null,
       horizon: opinion.horizon,
       targetPrice,
       stopLossPrice,
     })
+    await stockStore.loadEnded(workspaceId.value)
     successMessage.value = result.alreadyActive
       ? `${selectedStock.value.name} 已经在共享自选中，没有重复创建研究周期。`
       : `${selectedStock.value.name} 已加入共享自选，初始观点已经保存。`
@@ -147,6 +151,18 @@ async function submitOpinion() {
   }
 }
 
+async function toggleAttention(item: WorkspaceStockListResponseVO) {
+  try {
+    await stockStore.updateAttention(
+      workspaceId.value,
+      item.workspaceStockId,
+      item.attentionLevel === 'FOCUS' ? 'NORMAL' : 'FOCUS',
+    )
+  } catch (error) {
+    await handleWorkspaceApiError(error, router)
+  }
+}
+
 function resetAddFlow() {
   selectedStock.value = null
   keyword.value = ''
@@ -154,7 +170,7 @@ function resetAddFlow() {
   stockStore.clearSearch()
   opinion.stance = 'NEUTRAL'
   opinion.reason = ''
-  opinion.riskNote = ''
+  opinion.observationNote = ''
   opinion.horizon = 'MEDIUM'
   opinion.targetPrice = ''
   opinion.stopLossPrice = ''
@@ -183,7 +199,7 @@ function formatTime(value: string) {
 }
 
 function stanceLabel(stance: StockStance) {
-  return { BULLISH: '看多', NEUTRAL: '中性', CAUTIOUS: '谨慎' }[stance]
+  return { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '看空' }[stance]
 }
 
 function horizonLabel(horizon: OpinionHorizon) {
@@ -399,6 +415,7 @@ onBeforeUnmount(stopIntradayRefresh)
         v-if="selectedStock"
         class="opinion-form"
         aria-labelledby="opinion-title"
+        novalidate
         @submit.prevent="submitOpinion"
       >
         <div class="form-heading">
@@ -411,16 +428,16 @@ onBeforeUnmount(stopIntradayRefresh)
 
         <div class="field-grid compact-fields">
           <label>
-            <span>观点倾向</span>
-            <select v-model="opinion.stance">
+            <span>观点倾向（必填）</span>
+            <select v-model="opinion.stance" required>
               <option value="BULLISH">看多</option>
               <option value="NEUTRAL">中性</option>
-              <option value="CAUTIOUS">谨慎</option>
+              <option value="BEARISH">看空</option>
             </select>
           </label>
           <label>
-            <span>关注周期</span>
-            <select v-model="opinion.horizon">
+            <span>关注周期（必填）</span>
+            <select v-model="opinion.horizon" required>
               <option value="SHORT">短期</option>
               <option value="MEDIUM">中期</option>
               <option value="LONG">长期</option>
@@ -430,21 +447,22 @@ onBeforeUnmount(stopIntradayRefresh)
 
         <div class="field-grid text-fields">
           <label>
-            <span>观点理由</span>
+            <span>判断理由（必填）</span>
             <textarea
               v-model="opinion.reason"
               maxlength="1000"
               rows="5"
-              placeholder="你为什么开始关注这只股票？"
+              required
+              placeholder="为什么形成当前的看多、中性或看空判断？"
             ></textarea>
           </label>
           <label>
-            <span>风险点</span>
+            <span>关键观察条件（选填）</span>
             <textarea
-              v-model="opinion.riskNote"
+              v-model="opinion.observationNote"
               maxlength="1000"
               rows="5"
-              placeholder="什么情况可能推翻当前判断？"
+              placeholder="哪些变化可能支持、削弱或推翻当前判断？"
             ></textarea>
           </label>
         </div>
@@ -517,13 +535,25 @@ onBeforeUnmount(stopIntradayRefresh)
         <span></span><span></span><span></span>
       </div>
       <div v-else-if="stockStore.items.length" class="stock-list">
+        <p v-if="stockStore.attentionError" class="inline-error" role="alert">
+          {{ stockStore.attentionError }}
+        </p>
         <article v-for="item in stockStore.items" :key="item.workspaceStockId">
           <div class="stock-summary">
             <div class="identity">
               <span class="attention">{{
                 item.attentionLevel === 'FOCUS' ? '重点关注' : '普通关注'
               }}</span>
-              <h3>{{ item.name }}</h3>
+              <h3>
+                <RouterLink
+                  :to="{
+                    name: 'workspace-stock-research',
+                    params: { workspaceId, workspaceStockId: item.workspaceStockId },
+                  }"
+                >
+                  {{ item.name }}
+                </RouterLink>
+              </h3>
               <p>{{ item.code }} · {{ item.exchange }}</p>
             </div>
             <div class="metric">
@@ -533,11 +563,32 @@ onBeforeUnmount(stopIntradayRefresh)
             </div>
             <div class="metric">
               <span>初始倾向</span>
-              <strong>{{ stanceLabel(item.stance) }}</strong>
-              <small>{{ horizonLabel(item.horizon) }} · {{ item.authorNickname }}</small>
+              <strong>{{ item.initialOpinionWithdrawn ? '已撤回' : stanceLabel(item.stance) }}</strong>
+              <small>
+                {{
+                  item.initialOpinionWithdrawn
+                    ? item.authorNickname
+                    : `${horizonLabel(item.horizon)} · ${item.authorNickname}`
+                }}
+              </small>
             </div>
           </div>
           <div class="stock-actions">
+            <button
+              v-if="!isArchived"
+              class="attention-toggle"
+              type="button"
+              :disabled="stockStore.attentionUpdatingStockId !== null"
+              @click="toggleAttention(item)"
+            >
+              {{
+                stockStore.attentionUpdatingStockId === item.workspaceStockId
+                  ? '正在更新…'
+                  : item.attentionLevel === 'FOCUS'
+                    ? '改为普通关注'
+                    : '设为重点关注'
+              }}
+            </button>
             <button
               class="kline-toggle"
               type="button"
@@ -680,14 +731,17 @@ onBeforeUnmount(stopIntradayRefresh)
           </section>
           <details>
             <summary>查看初始观点与行情记录</summary>
-            <div class="opinion-detail">
+            <p v-if="item.initialOpinionWithdrawn" class="withdrawn-summary">
+              这条初始观点已由作者撤回，正文和价格信息已隐藏，发表记录仍保留。
+            </p>
+            <div v-else class="opinion-detail">
               <div>
-                <span>观点理由</span>
+                <span>判断理由</span>
                 <p>{{ item.reason }}</p>
               </div>
-              <div>
-                <span>风险点</span>
-                <p>{{ item.riskNote }}</p>
+              <div v-if="item.observationNote">
+                <span>关键观察条件</span>
+                <p>{{ item.observationNote }}</p>
               </div>
               <dl>
                 <div>
@@ -715,6 +769,31 @@ onBeforeUnmount(stopIntradayRefresh)
         <h3>共享自选还是空的</h3>
         <p v-if="isArchived">这个归档空间没有保存过正在关注的股票。</p>
         <p v-else>从上方搜索一只标准股票，并写下第一条可回看的判断。</p>
+      </div>
+    </section>
+
+    <section v-if="stockStore.endedItems.length" class="ended-section" aria-labelledby="ended-title">
+      <div class="list-heading">
+        <div>
+          <p class="section-label">历史研究</p>
+          <h2 id="ended-title">已结束关注</h2>
+        </div>
+      </div>
+      <div class="ended-list">
+        <RouterLink
+          v-for="item in stockStore.endedItems"
+          :key="item.workspaceStockId"
+          :to="{
+            name: 'workspace-stock-research',
+            params: { workspaceId, workspaceStockId: item.workspaceStockId },
+          }"
+        >
+          <span>
+            <strong>{{ item.name }}</strong>
+            <small>{{ item.code }} · {{ item.exchange }}</small>
+          </span>
+          <span>{{ item.status === 'CANCELLED' ? '取消于' : '结束于' }} {{ formatTime(item.endedAt) }}</span>
+        </RouterLink>
       </div>
     </section>
   </template>
@@ -990,6 +1069,34 @@ textarea:focus {
 .stock-list article {
   border-bottom: 1px solid var(--color-border);
 }
+.identity a {
+  color: inherit;
+  text-decoration-color: color-mix(in oklab, var(--color-focus) 45%, transparent);
+  text-underline-offset: 4px;
+}
+.ended-section {
+  padding: 64px 0;
+}
+.ended-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 4px;
+  border-bottom: 1px solid var(--color-border);
+  color: inherit;
+  text-decoration: none;
+}
+.ended-list strong,
+.ended-list small {
+  display: block;
+}
+.ended-list small,
+.ended-list a > span:last-child {
+  margin-top: 4px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
 .stock-summary {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.55fr) minmax(150px, 0.55fr);
@@ -1023,6 +1130,21 @@ textarea:focus {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+.attention-toggle {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-action);
+  background: var(--color-surface);
+  color: var(--color-focus);
+  cursor: pointer;
+  font-weight: 650;
+}
+.attention-toggle:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+.attention-toggle:focus-visible,
 .kline-toggle:focus-visible,
 .period-switch button:focus-visible,
 .kline-error button:focus-visible {
@@ -1161,6 +1283,11 @@ summary {
   margin-top: 20px;
   padding: 22px;
   background: var(--color-surface);
+}
+.withdrawn-summary {
+  margin-top: 18px;
+  color: var(--color-muted);
+  font-size: 13px;
 }
 .opinion-detail p {
   margin-top: 7px;
