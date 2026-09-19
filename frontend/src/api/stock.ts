@@ -53,6 +53,7 @@ export interface UpdateAttentionLevelResponseVO {
 export type OpinionType = 'INITIAL' | 'UPDATE' | 'REVIEW'
 
 export interface CreateStockOpinionRequestDTO {
+  researchCycleId: number
   type: Exclude<OpinionType, 'INITIAL'>
   stance: StockStance
   reason: string
@@ -217,11 +218,12 @@ export function addWorkspaceStock(workspaceId: number, request: AddWorkspaceStoc
 export function updateWorkspaceStockAttention(
   workspaceId: number,
   workspaceStockId: number,
+  researchCycleId: number,
   attentionLevel: AttentionLevel,
 ) {
   return http.patch<ApiResult<UpdateAttentionLevelResponseVO>>(
     `/workspaces/${workspaceId}/stocks/${workspaceStockId}/attention`,
-    { attentionLevel },
+    { researchCycleId, attentionLevel },
   )
 }
 
@@ -237,9 +239,14 @@ export function getWorkspaceStockResearch(workspaceId: number, workspaceStockId:
   )
 }
 
-export function endWorkspaceStockResearch(workspaceId: number, workspaceStockId: number) {
+export function endWorkspaceStockResearch(
+  workspaceId: number,
+  workspaceStockId: number,
+  researchCycleId: number,
+) {
   return http.post<ApiResult<unknown>>(
     `/workspaces/${workspaceId}/stocks/${workspaceStockId}/end`,
+    { researchCycleId },
   )
 }
 

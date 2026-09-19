@@ -39,6 +39,7 @@ class LongbridgeMarketDataProviderTest {
                 .allSatisfy(snapshot -> {
                     assertThat(snapshot.price()).isPositive();
                     assertThat(snapshot.source()).isEqualTo("LONGBRIDGE_OPENAPI");
+                    assertThat(snapshot.listingStatus()).isEqualTo("LISTED");
                     assertThat(snapshot.simulated()).isFalse();
                 });
         assertThat(snapshots.get(0).quoteTime())
@@ -67,6 +68,33 @@ class LongbridgeMarketDataProviderTest {
         verify(quoteGateway, never()).getQuotes(any());
     }
 
+    @Test
+    void mapsOnlySupportedLongbridgeTradingStatuses() {
+        Stock stock = stock("600519.SH", "贵州茅台", "SSE", "CNY", "SSE_DIRECTORY");
+        when(stockMapper.searchDirectory("茅台")).thenReturn(List.of(stock));
+
+        when(quoteGateway.getQuotes(any())).thenReturn(Map.of(
+                "600519.SH", quote("600519.SH", "1290.88", "2026-09-09T07:00:00Z", "Halted")
+        ));
+        assertThat(provider.search("茅台")).singleElement()
+                .extracting(StockQuoteSnapshot::listingStatus)
+                .isEqualTo("SUSPENDED");
+
+        when(quoteGateway.getQuotes(any())).thenReturn(Map.of(
+                "600519.SH", quote("600519.SH", "1290.88", "2026-09-09T07:00:00Z", "Delisted")
+        ));
+        assertThat(provider.search("茅台")).singleElement()
+                .extracting(StockQuoteSnapshot::listingStatus)
+                .isEqualTo("DELISTED");
+
+        when(quoteGateway.getQuotes(any())).thenReturn(Map.of(
+                "600519.SH", quote("600519.SH", "1290.88", "2026-09-09T07:00:00Z", "CodeMoved")
+        ));
+        assertThat(provider.search("茅台")).singleElement()
+                .extracting(StockQuoteSnapshot::listingStatus)
+                .isEqualTo("UNKNOWN");
+    }
+
     private Stock stock(String code, String name, String exchange, String currency, String source) {
         Stock stock = new Stock();
         stock.setCode(code);
@@ -79,6 +107,10 @@ class LongbridgeMarketDataProviderTest {
     }
 
     private LongbridgeQuote quote(String symbol, String price, String timestamp) {
-        return new LongbridgeQuote(symbol, new BigDecimal(price), Instant.parse(timestamp), "Normal");
+        return quote(symbol, price, timestamp, "Normal");
+    }
+
+    private LongbridgeQuote quote(String symbol, String price, String timestamp, String tradeStatus) {
+        return new LongbridgeQuote(symbol, new BigDecimal(price), Instant.parse(timestamp), tradeStatus);
     }
 }

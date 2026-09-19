@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
@@ -23,17 +24,26 @@ public interface StockMapper extends BaseMapper<Stock> {
             """)
     List<Stock> searchDirectory(@Param("keyword") String keyword);
 
+    @Select("""
+            SELECT * FROM stock
+            WHERE code = #{code}
+              AND source <> 'LOCAL_MOCK'
+            FOR UPDATE
+            """)
+    Stock selectDirectoryByCodeForUpdate(@Param("code") String code);
+
+    @Update("UPDATE stock SET listing_status = #{listingStatus} WHERE id = #{stockId}")
+    int updateListingStatus(
+            @Param("stockId") Long stockId,
+            @Param("listingStatus") String listingStatus
+    );
+
     @Insert("""
             INSERT INTO stock (code, name, exchange, currency, listing_status, source)
             VALUES (#{code}, #{name}, #{exchange}, #{currency}, #{listingStatus}, #{source})
             ON DUPLICATE KEY UPDATE
-                id = LAST_INSERT_ID(id),
-                name = VALUES(name),
-                exchange = VALUES(exchange),
-                currency = VALUES(currency),
-                listing_status = VALUES(listing_status),
-                source = VALUES(source)
+                id = LAST_INSERT_ID(id)
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
-    int upsert(Stock stock);
+    int insertIfAbsent(Stock stock);
 }

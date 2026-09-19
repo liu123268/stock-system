@@ -86,11 +86,12 @@ public class StockResearchLifecycleService {
     public ResearchCycleStateResponseVO end(
             Long userId,
             Long workspaceId,
-            Long workspaceStockId
+            Long workspaceStockId,
+            Long researchCycleId
     ) {
         workspaceService.requireActiveMemberForUpdate(userId, workspaceId);
         requireStock(workspaceId, workspaceStockId);
-        ResearchCycle cycle = requireActiveCycle(workspaceId, workspaceStockId);
+        ResearchCycle cycle = requireActiveCycle(workspaceId, workspaceStockId, researchCycleId);
         LocalDateTime endedAt = LocalDateTime.now();
         cycle.setStatus("ENDED");
         cycle.setEndedAt(endedAt);
@@ -112,7 +113,8 @@ public class StockResearchLifecycleService {
     ) {
         workspaceService.requireActiveMemberForUpdate(userId, workspaceId);
         requireStock(workspaceId, workspaceStockId);
-        ResearchCycle cycle = requireActiveCycle(workspaceId, workspaceStockId);
+        ResearchCycle cycle = requireActiveCycle(
+                workspaceId, workspaceStockId, request.researchCycleId());
 
         StockOpinion opinion = new StockOpinion();
         opinion.setResearchCycleId(cycle.getId());
@@ -179,13 +181,17 @@ public class StockResearchLifecycleService {
         return stock;
     }
 
-    private ResearchCycle requireActiveCycle(Long workspaceId, Long workspaceStockId) {
+    private ResearchCycle requireActiveCycle(
+            Long workspaceId,
+            Long workspaceStockId,
+            Long expectedResearchCycleId
+    ) {
         ResearchCycle cycle = researchCycleMapper.selectActiveForUpdate(
                 workspaceId,
                 workspaceStockId
         );
-        if (cycle == null) {
-            throw new BusinessException(ErrorCode.ACTIVE_RESEARCH_CYCLE_NOT_FOUND);
+        if (cycle == null || !cycle.getId().equals(expectedResearchCycleId)) {
+            throw new BusinessException(ErrorCode.RESEARCH_CYCLE_CHANGED);
         }
         return cycle;
     }

@@ -62,6 +62,7 @@ async function load() {
   }
 
   pageLoading.value = true
+  stockStore.clearRefreshWarning()
   try {
     await workspaceStore.ensureCurrent(workspaceId.value)
     await Promise.all([
@@ -94,6 +95,16 @@ async function search() {
 }
 
 function selectStock(stock: StockSearchResponseVO) {
+  if (stock.listingStatus === 'DELISTED') {
+    selectedStock.value = null
+    formError.value = '这只股票已经退市，不能开启新的研究周期。'
+    return
+  }
+  if (stock.listingStatus === 'UNKNOWN') {
+    selectedStock.value = null
+    formError.value = '这只股票的交易状态暂时无法核实，不能开启新的研究周期。'
+    return
+  }
   if (stock.price === null) {
     selectedStock.value = null
     formError.value = '这只股票已收录，暂无可用报价，暂时不能记录关注价格。'
@@ -102,6 +113,14 @@ function selectStock(stock: StockSearchResponseVO) {
   selectedStock.value = stock
   formError.value = ''
   successMessage.value = ''
+}
+
+function listingStatusLabel(stock: StockSearchResponseVO) {
+  if (stock.simulated) return '模拟行情'
+  if (stock.listingStatus === 'LISTED') return '正常上市'
+  if (stock.listingStatus === 'SUSPENDED') return '停牌（可研究）'
+  if (stock.listingStatus === 'DELISTED') return '已退市'
+  return '交易状态待核实'
 }
 
 function cancelSelection() {
@@ -117,6 +136,7 @@ function optionalPrice(value: string | number) {
 
 async function submitOpinion() {
   if (!selectedStock.value) return
+  const stock = selectedStock.value
   const targetPrice = optionalPrice(opinion.targetPrice)
   const stopLossPrice = optionalPrice(opinion.stopLossPrice)
   if (!opinion.reason.trim()) {
@@ -131,23 +151,37 @@ async function submitOpinion() {
   formError.value = ''
   successMessage.value = ''
   try {
-    const result = await stockStore.add(workspaceId.value, {
-      code: selectedStock.value.code,
+    const draft = {
       stance: opinion.stance,
       reason: opinion.reason.trim(),
       observationNote: opinion.observationNote.trim() || null,
       horizon: opinion.horizon,
       targetPrice,
       stopLossPrice,
-    })
-    await stockStore.loadEnded(workspaceId.value)
-    successMessage.value = result.alreadyActive
-      ? `${selectedStock.value.name} 已经在共享自选中，没有重复创建研究周期。`
-      : `${selectedStock.value.name} 已加入共享自选，初始观点已经保存。`
+    }
+    const result = await stockStore.add(workspaceId.value, { code: stock.code, ...draft })
+    if (result.alreadyActive) {
+      stockStore.keepResearchDraft(workspaceId.value, result.workspaceStockId, draft)
+      await router.push({
+        name: 'workspace-stock-research',
+        params: { workspaceId: workspaceId.value, workspaceStockId: result.workspaceStockId },
+      })
+      return
+    }
+    successMessage.value = `${stock.name} 已加入共享自选，初始观点已经保存。`
     resetAddFlow()
   } catch (error) {
     if (await handleWorkspaceApiError(error, router)) return
     formError.value = error instanceof Error ? error.message : '添加股票失败'
+  }
+}
+
+async function retryPageData() {
+  try {
+    await Promise.all([stockStore.loadList(workspaceId.value), stockStore.loadEnded(workspaceId.value)])
+    stockStore.clearRefreshWarning()
+  } catch (error) {
+    await handleWorkspaceApiError(error, router)
   }
 }
 
@@ -156,6 +190,7 @@ async function toggleAttention(item: WorkspaceStockListResponseVO) {
     await stockStore.updateAttention(
       workspaceId.value,
       item.workspaceStockId,
+      item.researchCycleId,
       item.attentionLevel === 'FOCUS' ? 'NORMAL' : 'FOCUS',
     )
   } catch (error) {
@@ -301,7 +336,10 @@ async function loadOlderCandlesticks(workspaceStockId: number) {
 }
 
 onMounted(load)
-onBeforeUnmount(stopIntradayRefresh)
+onBeforeUnmount(() => {
+  stopIntradayRefresh()
+  stockStore.clearListViews()
+})
 </script>
 
 <template>
@@ -394,13 +432,7 @@ onBeforeUnmount(stopIntradayRefresh)
             <strong>{{
               stock.price === null ? '暂无报价' : formatPrice(stock.price, stock.currency)
             }}</strong>
-            <small>{{
-              stock.simulated
-                ? '模拟行情'
-                : stock.listingStatus === 'UNKNOWN'
-                  ? '交易状态待核实'
-                  : '标准股票目录'
-            }}</small>
+            <small>{{ listingStatusLabel(stock) }}</small>
           </span>
         </button>
       </div>
@@ -510,6 +542,10 @@ onBeforeUnmount(stopIntradayRefresh)
 
     <p v-if="successMessage" class="success-message" aria-live="polite">
       {{ successMessage }}
+    </p>
+    <p v-if="stockStore.refreshWarning" class="inline-error" role="alert">
+      {{ stockStore.refreshWarning }}
+      <button type="button" @click="retryPageData">只重新加载页面数据</button>
     </p>
 
     <section class="list-section" aria-labelledby="shared-list-title">

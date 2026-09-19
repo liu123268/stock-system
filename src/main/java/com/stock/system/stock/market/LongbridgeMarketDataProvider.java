@@ -81,7 +81,7 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
                 stock.getName(),
                 stock.getExchange(),
                 stock.getCurrency(),
-                stock.getListingStatus(),
+                usable ? mapListingStatus(quote.tradeStatus()) : "UNKNOWN",
                 usable ? quote.lastDone() : null,
                 quoteTime,
                 usable ? SOURCE : stock.getSource(),
@@ -94,5 +94,17 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
                 && quote.lastDone() != null
                 && quote.lastDone().signum() > 0
                 && quote.timestamp() != null;
+    }
+
+    private String mapListingStatus(String tradeStatus) {
+        if (tradeStatus == null) {
+            return "UNKNOWN";
+        }
+        return switch (tradeStatus.trim().toUpperCase(Locale.ROOT)) {
+            case "NORMAL", "0" -> "LISTED";
+            case "HALTED", "1" -> "SUSPENDED";
+            case "DELISTED", "2" -> "DELISTED";
+            default -> "UNKNOWN";
+        };
     }
 }

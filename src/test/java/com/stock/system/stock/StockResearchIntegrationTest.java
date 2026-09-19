@@ -126,6 +126,25 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void addingResearchKeepsExistingDirectoryIdentity() throws Exception {
+        Stock directoryStock = new Stock();
+        directoryStock.setCode("600519.SH");
+        directoryStock.setName("目录中的贵州茅台");
+        directoryStock.setExchange("SSE");
+        directoryStock.setCurrency("CNY");
+        directoryStock.setListingStatus("UNKNOWN");
+        directoryStock.setSource("SSE_DIRECTORY");
+        stockMapper.insert(directoryStock);
+
+        addStock(ownerToken, workspaceId, "600519.SH").andExpect(status().isOk());
+
+        Stock stored = stockMapper.selectById(directoryStock.getId());
+        assertThat(stored.getName()).isEqualTo("目录中的贵州茅台");
+        assertThat(stored.getListingStatus()).isEqualTo("UNKNOWN");
+        assertThat(stored.getSource()).isEqualTo("SSE_DIRECTORY");
+    }
+
+    @Test
     void activeMemberCanAddButStrangerAndArchivedWorkspaceCannot() throws Exception {
         addStock(memberToken, workspaceId, "600519.SH")
                 .andExpect(status().isOk())
@@ -250,8 +269,8 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"attentionLevel":"FOCUS"}
-                                """))
+                                {"researchCycleId":%d,"attentionLevel":"FOCUS"}
+                                """.formatted(cycleId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.researchCycleId").value(cycleId))
                 .andExpect(jsonPath("$.data.attentionLevel").value("FOCUS"));
@@ -265,8 +284,8 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"attentionLevel":"NORMAL"}
-                                """))
+                                {"researchCycleId":%d,"attentionLevel":"NORMAL"}
+                                """.formatted(cycleId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.attentionLevel").value("NORMAL"));
 
@@ -274,8 +293,8 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"attentionLevel":"IMPORTANT"}
-                                """))
+                                {"researchCycleId":%d,"attentionLevel":"IMPORTANT"}
+                                """.formatted(cycleId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
@@ -283,8 +302,8 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + strangerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"attentionLevel":"FOCUS"}
-                                """))
+                                {"researchCycleId":%d,"attentionLevel":"FOCUS"}
+                                """.formatted(cycleId)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_NOT_FOUND"));
 
@@ -293,8 +312,8 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"attentionLevel":"FOCUS"}
-                                """))
+                                {"researchCycleId":%d,"attentionLevel":"FOCUS"}
+                                """.formatted(cycleId)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ARCHIVED"));
 
@@ -316,7 +335,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                 mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(opinionBody("UPDATE", "NEUTRAL", "估值进入观察区间"))),
+                        .content(opinionBody(firstCycleId, "UPDATE", "NEUTRAL", "估值进入观察区间"))),
                 objectMapper
         ).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.authorNickname").value("research_member"))
@@ -335,7 +354,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
         mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(opinionBody("REVIEW", "BEARISH", "风险已经上升")))
+                        .content(opinionBody(firstCycleId, "REVIEW", "BEARISH", "风险已经上升")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.type").value("REVIEW"));
 
@@ -343,16 +362,18 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/end",
                         workspaceId,
                         workspaceStockId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"researchCycleId\":" + firstCycleId + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ENDED"));
 
         mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(opinionBody("UPDATE", "BULLISH", "不应写入旧周期")))
+                        .content(opinionBody(firstCycleId, "UPDATE", "BULLISH", "不应写入旧周期")))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ACTIVE_RESEARCH_CYCLE_NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value("RESEARCH_CYCLE_CHANGED"));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks/ended", workspaceId)
                         .header("Authorization", "Bearer " + memberToken))
@@ -366,6 +387,38 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                 .andReturnJson();
         long secondCycleId = secondAdd.path("data").path("researchCycleId").longValue();
         assertThat(secondCycleId).isNotEqualTo(firstCycleId);
+
+        mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(opinionBody(firstCycleId, "UPDATE", "BULLISH", "旧页面不能写入新周期")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESEARCH_CYCLE_CHANGED"));
+
+        mockMvc.perform(patch(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/attention",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"researchCycleId\":" + firstCycleId
+                                + ",\"attentionLevel\":\"FOCUS\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESEARCH_CYCLE_CHANGED"));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/end",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"researchCycleId\":" + firstCycleId + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESEARCH_CYCLE_CHANGED"));
+
+        assertThat(researchCycleMapper.selectById(secondCycleId).getStatus()).isEqualTo("ACTIVE");
+        assertThat(researchCycleMapper.selectById(secondCycleId).getAttentionLevel())
+                .isEqualTo("NORMAL");
 
         mockMvc.perform(get(
                         "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
@@ -624,9 +677,10 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                 """.formatted(code);
     }
 
-    private String opinionBody(String type, String stance, String reason) {
+    private String opinionBody(long researchCycleId, String type, String stance, String reason) {
         return """
                 {
+                  "researchCycleId": %d,
                   "type": "%s",
                   "stance": "%s",
                   "reason": "%s",
@@ -635,7 +689,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                   "targetPrice": 1600.0000,
                   "stopLossPrice": 1300.0000
                 }
-                """.formatted(type, stance, reason);
+                """.formatted(researchCycleId, type, stance, reason);
     }
 
     private long countWorkspaceStocks(Long targetWorkspaceId) {

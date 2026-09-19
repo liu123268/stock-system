@@ -5,6 +5,7 @@ import com.stock.system.security.LoginUser;
 import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
 import com.stock.system.stock.dto.UpdateAttentionLevelRequestDTO;
 import com.stock.system.stock.dto.CreateStockOpinionRequestDTO;
+import com.stock.system.stock.dto.ResearchCycleCommandRequestDTO;
 import com.stock.system.stock.service.StockResearchService;
 import com.stock.system.stock.service.StockCandlestickService;
 import com.stock.system.stock.service.StockIntradayService;
@@ -94,10 +95,11 @@ public class WorkspaceStockController {
     public Result<ResearchCycleStateResponseVO> end(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,
-            @PathVariable Long workspaceStockId
+            @PathVariable Long workspaceStockId,
+            @Valid @RequestBody ResearchCycleCommandRequestDTO request
     ) {
         return Result.success(lifecycleService.end(
-                currentUser.userId(), workspaceId, workspaceStockId));
+                currentUser.userId(), workspaceId, workspaceStockId, request.researchCycleId()));
     }
 
     @PostMapping("/{workspaceStockId}/opinions")

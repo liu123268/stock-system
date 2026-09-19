@@ -53,7 +53,8 @@ public class StockResearchTransactionService {
     ) {
         workspaceService.requireActiveMemberForUpdate(userId, workspaceId);
 
-        Stock stock = upsertStock(snapshot);
+        requireResearchableStatus(snapshot);
+        Stock stock = resolveStock(snapshot);
         WorkspaceStock workspaceStock = findOrCreateWorkspaceStock(
                 workspaceId,
                 stock.getId(),
@@ -109,6 +110,7 @@ public class StockResearchTransactionService {
             Long userId,
             Long workspaceId,
             Long workspaceStockId,
+            Long researchCycleId,
             String attentionLevel
     ) {
         workspaceService.requireActiveMemberForUpdate(userId, workspaceId);
@@ -120,7 +122,10 @@ public class StockResearchTransactionService {
             if (workspaceStockMapper.selectStockIdentity(workspaceId, workspaceStockId) == null) {
                 throw new BusinessException(ErrorCode.WORKSPACE_STOCK_NOT_FOUND);
             }
-            throw new BusinessException(ErrorCode.ACTIVE_RESEARCH_CYCLE_NOT_FOUND);
+            throw new BusinessException(ErrorCode.RESEARCH_CYCLE_CHANGED);
+        }
+        if (!cycle.getId().equals(researchCycleId)) {
+            throw new BusinessException(ErrorCode.RESEARCH_CYCLE_CHANGED);
         }
 
         if (!attentionLevel.equals(cycle.getAttentionLevel())) {
@@ -134,10 +139,32 @@ public class StockResearchTransactionService {
         );
     }
 
-    private Stock upsertStock(StockQuoteSnapshot snapshot) {
+    private Stock resolveStock(StockQuoteSnapshot snapshot) {
+        if (!snapshot.simulated()) {
+            Stock stock = stockMapper.selectDirectoryByCodeForUpdate(snapshot.code());
+            if (stock == null) {
+                throw new BusinessException(ErrorCode.STOCK_NOT_AVAILABLE);
+            }
+            if (!snapshot.listingStatus().equals(stock.getListingStatus())) {
+                stockMapper.updateListingStatus(stock.getId(), snapshot.listingStatus());
+                stock.setListingStatus(snapshot.listingStatus());
+            }
+            return stock;
+        }
         Stock stock = toStock(snapshot);
-        stockMapper.upsert(stock);
-        return stock;
+        stockMapper.insertIfAbsent(stock);
+        return stockMapper.selectOne(new LambdaQueryWrapper<Stock>()
+                .eq(Stock::getCode, snapshot.code()));
+    }
+
+    private void requireResearchableStatus(StockQuoteSnapshot snapshot) {
+        if ("DELISTED".equals(snapshot.listingStatus())) {
+            throw new BusinessException(ErrorCode.STOCK_NOT_AVAILABLE);
+        }
+        if (!"LISTED".equals(snapshot.listingStatus())
+                && !"SUSPENDED".equals(snapshot.listingStatus())) {
+            throw new BusinessException(ErrorCode.STOCK_STATUS_UNAVAILABLE);
+        }
     }
 
     private Stock toStock(StockQuoteSnapshot snapshot) {

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { AxiosHeaders, type AxiosResponse } from 'axios'
 import {
   addWorkspaceStock,
+  createWorkspaceStockOpinion,
   endWorkspaceStockResearch,
   getWorkspaceStockCandlesticks,
   getWorkspaceStockResearch,
@@ -14,7 +15,9 @@ import {
 import type { ApiResult } from '@/api/auth'
 import type {
   AddWorkspaceStockResponseVO,
+  EndedWorkspaceStockResponseVO,
   StockCandlestickSeriesVO,
+  StockOpinionResponseVO,
   StockSearchResponseVO,
   WorkspaceStockListResponseVO,
   WorkspaceStockResearchResponseVO,
@@ -108,6 +111,21 @@ const candlestickSeries: StockCandlestickSeriesVO = {
   ],
 }
 
+function researchDetail(
+  workspaceStockId: number,
+  name: string,
+): WorkspaceStockResearchResponseVO {
+  return {
+    workspaceStockId,
+    code: workspaceStockId === 21 ? '600519.SH' : '00700.HK',
+    name,
+    exchange: workspaceStockId === 21 ? 'SSE' : 'HKEX',
+    currency: workspaceStockId === 21 ? 'CNY' : 'HKD',
+    listingStatus: 'LISTED',
+    cycles: [],
+  }
+}
+
 describe('stock store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -122,6 +140,9 @@ describe('stock store', () => {
         data: [listItem],
       }),
     )
+    vi.mocked(listEndedWorkspaceStocks).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: [] }),
+    )
 
     const store = useStockStore()
     await store.loadList(12)
@@ -129,6 +150,88 @@ describe('stock store', () => {
     expect(listWorkspaceStocks).toHaveBeenCalledWith(12)
     expect(store.items).toEqual([listItem])
     expect(store.listError).toBe('')
+  })
+
+  it('keeps the newest workspace list when an older request finishes later', async () => {
+    const olderRequest = deferred<AxiosResponse<ApiResult<WorkspaceStockListResponseVO[]>>>()
+    const newerRequest = deferred<AxiosResponse<ApiResult<WorkspaceStockListResponseVO[]>>>()
+    const newerItem = { ...listItem, workspaceStockId: 22, code: '00700.HK', name: '腾讯控股' }
+    vi.mocked(listWorkspaceStocks)
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockReturnValueOnce(newerRequest.promise)
+
+    const store = useStockStore()
+    const olderLoad = store.loadList(12)
+    const newerLoad = store.loadList(13)
+    newerRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: [newerItem] }))
+    await newerLoad
+    olderRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: [listItem] }))
+    await olderLoad
+
+    expect(store.items).toEqual([newerItem])
+    expect(store.listLoading).toBe(false)
+  })
+
+  it('keeps the newest ended list when an older workspace request finishes later', async () => {
+    const olderRequest = deferred<AxiosResponse<ApiResult<EndedWorkspaceStockResponseVO[]>>>()
+    const newerRequest = deferred<AxiosResponse<ApiResult<EndedWorkspaceStockResponseVO[]>>>()
+    const newerItem: EndedWorkspaceStockResponseVO = {
+      workspaceStockId: 22,
+      code: '00700.HK',
+      name: '腾讯控股',
+      exchange: 'HKEX',
+      currency: 'HKD' as const,
+      researchCycleId: 32,
+      status: 'ENDED' as const,
+      startedAt: '2026-09-19T10:00:00',
+      endedAt: '2026-09-20T10:00:00',
+    }
+    vi.mocked(listEndedWorkspaceStocks)
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockReturnValueOnce(newerRequest.promise)
+
+    const store = useStockStore()
+    const olderLoad = store.loadEnded(12)
+    const newerLoad = store.loadEnded(13)
+    newerRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: [newerItem] }))
+    await newerLoad
+    olderRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: [] }))
+    await olderLoad
+
+    expect(store.endedItems).toEqual([newerItem])
+  })
+
+  it('keeps the newest research detail and invalidates responses after clearing state', async () => {
+    const olderRequest = deferred<AxiosResponse<ApiResult<WorkspaceStockResearchResponseVO>>>()
+    const newerRequest = deferred<AxiosResponse<ApiResult<WorkspaceStockResearchResponseVO>>>()
+    vi.mocked(getWorkspaceStockResearch)
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockReturnValueOnce(newerRequest.promise)
+
+    const store = useStockStore()
+    const olderLoad = store.loadResearch(12, 21)
+    const newerLoad = store.loadResearch(12, 22)
+    newerRequest.resolve(
+      response({ code: 'SUCCESS', message: '成功', data: researchDetail(22, '腾讯控股') }),
+    )
+    await newerLoad
+    olderRequest.resolve(
+      response({ code: 'SUCCESS', message: '成功', data: researchDetail(21, '贵州茅台') }),
+    )
+    await olderLoad
+    expect(store.researchDetail?.workspaceStockId).toBe(22)
+
+    const pendingRequest = deferred<AxiosResponse<ApiResult<WorkspaceStockResearchResponseVO>>>()
+    vi.mocked(getWorkspaceStockResearch).mockReturnValueOnce(pendingRequest.promise)
+    const pendingLoad = store.loadResearch(12, 21)
+    store.clearAll()
+    pendingRequest.resolve(
+      response({ code: 'SUCCESS', message: '成功', data: researchDetail(21, '贵州茅台') }),
+    )
+    await pendingLoad
+
+    expect(store.researchDetail).toBeNull()
+    expect(store.researchLoading).toBe(false)
   })
 
   it('trims the keyword and keeps trusted search response fields', async () => {
@@ -192,6 +295,9 @@ describe('stock store', () => {
         data: [listItem],
       }),
     )
+    vi.mocked(listEndedWorkspaceStocks).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: [] }),
+    )
 
     const store = useStockStore()
     const result = await store.add(12, request)
@@ -200,6 +306,92 @@ describe('stock store', () => {
     expect(listWorkspaceStocks).toHaveBeenCalledWith(12)
     expect(result.alreadyActive).toBe(false)
     expect(store.items).toEqual([listItem])
+  })
+
+  it('reports a refresh warning without turning a saved add into a submission failure', async () => {
+    vi.mocked(addWorkspaceStock).mockResolvedValue(
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: { workspaceStockId: 21, researchCycleId: 31, alreadyActive: false },
+      }),
+    )
+    vi.mocked(listWorkspaceStocks).mockRejectedValue(new Error('列表暂时不可用'))
+    vi.mocked(listEndedWorkspaceStocks).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: [] }),
+    )
+
+    const store = useStockStore()
+    const result = await store.add(12, {
+      code: '600519.SH',
+      stance: 'BULLISH',
+      reason: '品牌优势仍然稳定',
+      observationNote: null,
+      horizon: 'MEDIUM',
+      targetPrice: null,
+      stopLossPrice: null,
+    })
+
+    expect(result.workspaceStockId).toBe(21)
+    expect(store.submitError).toBe('')
+    expect(store.refreshWarning).toContain('研究已经保存')
+  })
+
+  it('reports a refresh warning without turning a saved opinion into a publish failure', async () => {
+    const savedOpinion: StockOpinionResponseVO = {
+      id: 51,
+      authorUserId: 9,
+      authorNickname: '研究成员',
+      type: 'UPDATE',
+      stance: 'BULLISH',
+      reason: '盈利能力继续改善',
+      observationNote: null,
+      horizon: 'MEDIUM',
+      targetPrice: null,
+      stopLossPrice: null,
+      createdAt: '2026-09-20T00:00:00',
+      withdrawn: false,
+      withdrawnAt: null,
+      canWithdraw: true,
+    }
+    vi.mocked(createWorkspaceStockOpinion).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: savedOpinion }),
+    )
+    vi.mocked(getWorkspaceStockResearch).mockRejectedValue(new Error('详情暂时不可用'))
+
+    const store = useStockStore()
+    const result = await store.createOpinion(12, 21, {
+      researchCycleId: 31,
+      type: 'UPDATE',
+      stance: 'BULLISH',
+      reason: '盈利能力继续改善',
+      observationNote: null,
+      horizon: 'MEDIUM',
+      targetPrice: null,
+      stopLossPrice: null,
+    })
+
+    expect(result).toEqual(savedOpinion)
+    expect(store.researchError).toBe('详情暂时不可用')
+    expect(store.refreshWarning).toContain('观点已经保存')
+  })
+
+  it('carries a duplicate-add draft only into its matching research page', () => {
+    const store = useStockStore()
+    const draft = {
+      stance: 'BULLISH' as const,
+      reason: '保留这段尚未发表的判断',
+      observationNote: null,
+      horizon: 'MEDIUM' as const,
+      targetPrice: null,
+      stopLossPrice: null,
+    }
+
+    store.keepResearchDraft(12, 21, draft)
+
+    expect(store.takeResearchDraft(12, 22)).toBeNull()
+    expect(store.takeResearchDraft(12, 21)).toEqual(draft)
+    expect(store.takeResearchDraft(12, 21)).toBeNull()
   })
 
   it('switches the attention level and reloads the server-sorted list', async () => {
@@ -220,9 +412,9 @@ describe('stock store', () => {
     )
 
     const store = useStockStore()
-    const result = await store.updateAttention(12, 21, 'FOCUS')
+    const result = await store.updateAttention(12, 21, 31, 'FOCUS')
 
-    expect(updateWorkspaceStockAttention).toHaveBeenCalledWith(12, 21, 'FOCUS')
+    expect(updateWorkspaceStockAttention).toHaveBeenCalledWith(12, 21, 31, 'FOCUS')
     expect(listWorkspaceStocks).toHaveBeenCalledWith(12)
     expect(result.attentionLevel).toBe('FOCUS')
     expect(store.items).toEqual([focusedItem])
@@ -284,9 +476,9 @@ describe('stock store', () => {
     )
 
     const store = useStockStore()
-    await store.endResearch(12, 21)
+    await store.endResearch(12, 21, 31)
 
-    expect(endWorkspaceStockResearch).toHaveBeenCalledWith(12, 21)
+    expect(endWorkspaceStockResearch).toHaveBeenCalledWith(12, 21, 31)
     expect(store.items).toEqual([])
     expect(store.endedItems).toHaveLength(1)
     expect(store.researchDetail?.cycles[0]?.status).toBe('ENDED')

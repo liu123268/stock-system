@@ -42,11 +42,16 @@ public class StockResearchService {
             Long workspaceId,
             AddWorkspaceStockRequestDTO request
     ) {
+        workspaceService.requireActiveMemberForUpdate(userId, workspaceId);
         String code = request.code().trim().toUpperCase(Locale.ROOT);
         StockQuoteSnapshot snapshot = marketDataProvider.getLatestQuote(code)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MARKET_QUOTE_UNAVAILABLE));
         if ("DELISTED".equals(snapshot.listingStatus())) {
             throw new BusinessException(ErrorCode.STOCK_NOT_AVAILABLE);
+        }
+        if (!"LISTED".equals(snapshot.listingStatus())
+                && !"SUSPENDED".equals(snapshot.listingStatus())) {
+            throw new BusinessException(ErrorCode.STOCK_STATUS_UNAVAILABLE);
         }
         return transactionService.add(userId, workspaceId, request, snapshot);
     }
@@ -68,6 +73,7 @@ public class StockResearchService {
                 userId,
                 workspaceId,
                 workspaceStockId,
+                request.researchCycleId(),
                 request.attentionLevel()
         );
     }

@@ -25,6 +25,7 @@ const currentCycle = computed(() =>
 const endConfirming = ref(false)
 const formError = ref('')
 const successMessage = ref('')
+const pageRefreshWarning = ref('')
 const authorFilter = ref('ALL')
 const stanceFilter = ref('ALL')
 const typeFilter = ref('ALL')
@@ -40,6 +41,18 @@ const opinion = reactive({
   targetPrice: '',
   stopLossPrice: '',
 })
+
+function restorePendingDraft() {
+  const draft = stockStore.takeResearchDraft(workspaceId.value, workspaceStockId.value)
+  if (!draft) return
+  opinion.stance = draft.stance
+  opinion.reason = draft.reason
+  opinion.observationNote = draft.observationNote ?? ''
+  opinion.horizon = draft.horizon
+  opinion.targetPrice = draft.targetPrice?.toString() ?? ''
+  opinion.stopLossPrice = draft.stopLossPrice?.toString() ?? ''
+  successMessage.value = '这只股票已经有活动研究周期。你的草稿已保留，可确认后作为观点发表。'
+}
 
 const authors = computed(() => {
   const values = new Map<number, string>()
@@ -69,9 +82,12 @@ async function load() {
     await router.replace('/workspaces')
     return
   }
+  stockStore.clearRefreshWarning()
+  pageRefreshWarning.value = ''
   try {
     await workspaceStore.ensureCurrent(workspaceId.value)
     await stockStore.loadResearch(workspaceId.value, workspaceStockId.value)
+    restorePendingDraft()
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }
@@ -110,7 +126,7 @@ async function submitOpinion(reopen: boolean) {
     if (reopen) {
       const detail = stockStore.researchDetail
       if (!detail) return
-      await stockStore.add(workspaceId.value, {
+      const result = await stockStore.add(workspaceId.value, {
         code: detail.code,
         stance: opinion.stance,
         reason: opinion.reason.trim(),
@@ -119,13 +135,27 @@ async function submitOpinion(reopen: boolean) {
         targetPrice,
         stopLossPrice,
       })
-      await Promise.all([
-        stockStore.loadResearch(workspaceId.value, workspaceStockId.value),
-        stockStore.loadEnded(workspaceId.value),
-      ])
+      try {
+        await stockStore.loadResearch(workspaceId.value, workspaceStockId.value)
+      } catch {
+        pageRefreshWarning.value = result.alreadyActive
+          ? '其他成员已经开启研究周期，但详情刷新失败；你的草稿仍然保留，请重新加载。'
+          : '新的研究周期已经开启，但详情刷新失败，请重新加载。'
+        formError.value = pageRefreshWarning.value
+      }
+      if (result.alreadyActive) {
+        successMessage.value = '其他成员已经先开启研究周期，你的草稿仍然保留，可作为观点发表。'
+        return
+      }
       successMessage.value = '新的研究周期已经开启，旧周期仍保留在下方。'
     } else {
+      const cycle = currentCycle.value
+      if (!cycle) {
+        formError.value = '研究周期已经变化，请刷新后重试'
+        return
+      }
       await stockStore.createOpinion(workspaceId.value, workspaceStockId.value, {
+        researchCycleId: cycle.id,
         type: opinion.type,
         stance: opinion.stance,
         reason: opinion.reason.trim(),
@@ -143,9 +173,27 @@ async function submitOpinion(reopen: boolean) {
   }
 }
 
-async function endResearch() {
+async function retryResearchData() {
   try {
-    await stockStore.endResearch(workspaceId.value, workspaceStockId.value)
+    await Promise.all([
+      stockStore.loadResearch(workspaceId.value, workspaceStockId.value),
+      stockStore.loadList(workspaceId.value),
+      stockStore.loadEnded(workspaceId.value),
+    ])
+    restorePendingDraft()
+    stockStore.clearRefreshWarning()
+    pageRefreshWarning.value = ''
+    formError.value = ''
+  } catch (error) {
+    await handleWorkspaceApiError(error, router)
+  }
+}
+
+async function endResearch() {
+  const cycle = currentCycle.value
+  if (!cycle) return
+  try {
+    await stockStore.endResearch(workspaceId.value, workspaceStockId.value, cycle.id)
     endConfirming.value = false
     successMessage.value = '本轮关注已经结束，研究记录已转为只读历史。'
   } catch (error) {
@@ -210,6 +258,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (withdrawClock !== undefined) window.clearInterval(withdrawClock)
+  stockStore.clearResearchView()
 })
 </script>
 
@@ -218,9 +267,9 @@ onBeforeUnmount(() => {
     正在读取研究记录…
   </section>
   <section v-else-if="stockStore.researchError && !stockStore.researchDetail" class="page-state">
-    <h1>研究记录暂时无法加载</h1>
-    <p>{{ stockStore.researchError }}</p>
-    <button type="button" @click="load">重新加载</button>
+    <h1>{{ stockStore.refreshWarning || pageRefreshWarning ? '操作已经保存，页面暂未刷新' : '研究记录暂时无法加载' }}</h1>
+    <p>{{ pageRefreshWarning || stockStore.refreshWarning || stockStore.researchError }}</p>
+    <button type="button" @click="retryResearchData">重新加载页面数据</button>
   </section>
   <template v-else-if="stockStore.researchDetail">
     <header class="research-header">
@@ -233,6 +282,10 @@ onBeforeUnmount(() => {
     <p v-if="successMessage" class="success-message" aria-live="polite">{{ successMessage }}</p>
     <p v-if="stockStore.researchError" class="error-message" role="alert">
       {{ stockStore.researchError }}
+    </p>
+    <p v-if="stockStore.refreshWarning" class="error-message" role="alert">
+      {{ stockStore.refreshWarning }}
+      <button type="button" @click="retryResearchData">只重新加载页面数据</button>
     </p>
 
     <section v-if="currentCycle && !isArchived" class="current-actions">

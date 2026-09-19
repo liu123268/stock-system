@@ -41,12 +41,14 @@ public enum ErrorCode {
             "所选日期不是该市场的交易日"),
     WORKSPACE_STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "当前空间中不存在这只共享股票"),
     ACTIVE_RESEARCH_CYCLE_NOT_FOUND(HttpStatus.CONFLICT, "这只股票当前没有活动研究周期"),
+    RESEARCH_CYCLE_CHANGED(HttpStatus.CONFLICT, "研究周期已经变化，请刷新后重试"),
     STOCK_OPINION_NOT_FOUND(HttpStatus.NOT_FOUND, "观点不存在"),
     STOCK_OPINION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "只能撤回自己的观点"),
     STOCK_OPINION_ALREADY_WITHDRAWN(HttpStatus.CONFLICT, "观点已经撤回"),
     STOCK_OPINION_WITHDRAW_WINDOW_EXPIRED(HttpStatus.CONFLICT,
             "观点发表已超过 5 分钟，请新增观点说明变化或更正"),
     STOCK_NOT_AVAILABLE(HttpStatus.CONFLICT, "该股票当前不能开始新的研究周期"),
+    STOCK_STATUS_UNAVAILABLE(HttpStatus.CONFLICT, "该股票交易状态暂时无法核实，不能开始新的研究周期"),
     CONCURRENT_OPERATION_CONFLICT(HttpStatus.CONFLICT, "并发操作冲突，请刷新后重试"),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "服务器暂时无法处理请求");
 

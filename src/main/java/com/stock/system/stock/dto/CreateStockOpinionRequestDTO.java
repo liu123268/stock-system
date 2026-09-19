@@ -3,12 +3,17 @@ package com.stock.system.stock.dto;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 
 public record CreateStockOpinionRequestDTO(
+        @NotNull(message = "研究周期不能为空")
+        @Positive(message = "研究周期不合法")
+        Long researchCycleId,
         @NotBlank(message = "观点类型不能为空")
         @Pattern(regexp = "UPDATE|REVIEW", message = "观点类型不合法")
         String type,
