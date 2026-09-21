@@ -114,11 +114,13 @@ PowerShell 使用 npm.cmd，Maven 使用系统 mvn。本机 Maven 缓存位于�
 
 ## 8. 股票目录导入
 
-`scripts/probe-stock-directory.py` 负责公开目录下载，`scripts/prepare-stock-directory.py` 将多种字段批量转换为统一 JSON；都不连接数据库。Python 需要 pandas、openpyxl、`opencc-python-reimplemented==0.1.7`，本机捆绑环境已有前两者，本次 OpenCC 仅装入忽略目录 `target/market-python`。后端无需安装 Python 库。
+`scripts/probe-stock-directory.py` 负责公开目录下载，`scripts/prepare-stock-directory.py` 将多种字段批量转换为统一 JSON；都不连接数据库。Python 需要 pandas、openpyxl、`opencc-python-reimplemented==0.1.7` 和 `pypinyin==0.55.0`；本地依赖安装在忽略目录 `target/market-python`，后端无需安装 Python 库。拼音使用词组词典生成小写首字母，人工核实的多音字补充读音仍写入 `searchAliases`。
 
 准备结果位于 `target/market-directory-probe/directory.json`。先查看采集状态和 coverageNote；失败不能使用旧文件假称同步成功。target 是本地中间产物，清理后需要重新采集。当前北交所使用巨潮 920xxx A 股名单，完整覆盖核对未完成，不以旧 43/83/87 前缀猜测所属交易所。
 
 Java 源文件启动入口 `scripts/ImportStockDirectory.java` 调用正式 `StockDirectoryImporter`。在项目根目录、编译完成且 classpath 包含 target/classes 和项目依赖时执行：`java --class-path <classpath> scripts/ImportStockDirectory.java test verify <目录JSON>`，会核对实际测试库、迁移、导入、重复导入和回滚；`dev inspect` 只读核对开发库，`dev apply <目录JSON>` 才执行真实开发数据导入。凭据从现有配置/环境读取，不放入命令参数。它不启动应用或端口；迁移前检查 catalog，数据批次异常整体回滚。apply 在 target 保存原股票信息备份、核对已有 ID 不变及全部导入字段后提交，不删除目录缺失记录。
+
+只补派生拼音且不重新抓市场时，先用 `dev export <JSON>` 从现有开发库只读导出可信目录身份，再运行 `python scripts/prepare-stock-directory.py --enrich-pinyin <输入JSON> <输出JSON>`，随后先用 `test verify` 验证整批并回滚，最后才用 `dev backfill <输出JSON>`。backfill 会应用新迁移、在 target 备份原行，并只更新 `pinyin_initials`；任一代码未匹配就整批回滚，不改 `last_synced_at`、来源、状态、ID 或研究关联。
 
 `target/directory-classpath.txt` 是目录导入阶段从 Maven 测试报告的 java.class.path 提取的本机运行辅助文件。它会随依赖与工作区变化，不能作为永久部署配置。已经运行的 IntelliJ 后端需要重启才能加载新的 Java 搜索逻辑；导入本身立即对数据库可见。
 

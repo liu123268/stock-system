@@ -21,27 +21,29 @@ for (const file of ['application.properties', 'application-test.properties']) {
 }
 const match = properties.get('spring.datasource.url').match(/^jdbc:mysql:\/\/([^:/?]+):(\d+)\/([^?]+)/)
 assert.equal(match?.[3], 'stock_system_test')
+assert.ok(process.env.DB_PASSWORD, 'DB_PASSWORD is required for directory browser cleanup')
 function sql(statement) {
   return execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', [
     `--host=${match[1]}`, `--port=${match[2]}`, `--user=${properties.get('spring.datasource.username')}`,
     '--database=stock_system_test', '--default-character-set=utf8mb4', '--batch', '--skip-column-names',
-  ], { input: statement, encoding: 'utf8', env: { ...process.env, MYSQL_PWD: properties.get('spring.datasource.password') } }).trim()
+  ], { input: statement, encoding: 'utf8', env: { ...process.env, MYSQL_PWD: process.env.DB_PASSWORD } }).trim()
 }
 assert.equal(sql('SELECT DATABASE()'), 'stock_system_test')
 const environment = await (await fetch(`${backend}/api/test/environment`)).json()
 assert.equal(environment.data.profile, 'test')
 assert.equal(environment.data.database, 'stock_system_test')
-assert.equal(sql("SELECT COUNT(*) FROM stock WHERE code IN ('00700.HK','000001.SZ','920002.BJ')"), '0')
+assert.equal(sql("SELECT COUNT(*) FROM stock WHERE code IN ('00700.HK','000001.SZ','600089.SH','920002.BJ')"), '0')
 let browser
 let spaceId
 let seeded = false
 let userCreated = false
 const errors = []
 try {
-  sql(`INSERT INTO stock(code,name,exchange,currency,listing_status,source,search_aliases) VALUES
-    ('00700.HK','腾讯控股','HKEX','HKD','UNKNOWN','${source}','騰訊控股 TENCENT'),
-    ('000001.SZ','平安银行','SZSE','CNY','UNKNOWN','${source}','平安银行'),
-    ('920002.BJ','万达轴承','BSE','CNY','UNKNOWN','${source}','万达轴承')`)
+  sql(`INSERT INTO stock(code,name,exchange,currency,listing_status,source,search_aliases,pinyin_initials) VALUES
+    ('00700.HK','腾讯控股','HKEX','HKD','UNKNOWN','${source}','騰訊控股 TENCENT','txkg'),
+    ('000001.SZ','平安银行','SZSE','CNY','UNKNOWN','${source}','平安银行','payh'),
+    ('600089.SH','特变电工','SSE','CNY','UNKNOWN','${source}','特變電工','tbdg'),
+    ('920002.BJ','万达轴承','BSE','CNY','UNKNOWN','${source}','万达轴承','wdzc')`)
   seeded = true
   const register = await fetch(`${backend}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, nickname: '目录浏览器验证' }) })
@@ -64,7 +66,7 @@ try {
   spaceId = space.data.workspaceId
   assert.ok(Number.isSafeInteger(spaceId))
   await page.goto(`${frontend}/workspaces/${spaceId}/stocks`)
-  for (const [keyword, code] of [['腾讯','00700.HK'],['騰訊','00700.HK'],['TENCENT','00700.HK'],['000001.SZ','000001.SZ'],['920002','920002.BJ']]) {
+  for (const [keyword, code] of [['腾讯','00700.HK'],['騰訊','00700.HK'],['TENCENT','00700.HK'],['000001.SZ','000001.SZ'],['tbdg','600089.SH'],['TB','600089.SH'],['920002','920002.BJ']]) {
     await page.locator('#stock-keyword').fill(keyword)
     const done = page.waitForResponse(r => r.url().includes('/api/stocks/search') && r.request().method() === 'GET')
     await page.getByRole('button', { name: '搜索股票', exact: true }).click()
@@ -75,7 +77,7 @@ try {
     await candidate.waitFor()
     assert.match(await candidate.innerText(), /暂无报价/)
     await candidate.click()
-    await page.getByText('这只股票已收录，暂无可用报价，暂时不能记录关注价格。', { exact: true }).waitFor()
+    await page.getByText('这只股票的交易状态暂时无法核实，不能开启新的研究周期。', { exact: true }).waitFor()
     assert.equal(await page.locator('.opinion-form').count(), 0)
   }
   const shots = new URL('../../target/market-directory-probe/', import.meta.url)
@@ -85,7 +87,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false)
   await page.screenshot({ path: new URL('directory-mobile.png', shots).pathname.replace(/^\/([A-Za-z]:)/, '$1'), fullPage: true })
   assert.deepEqual(errors, [])
-  console.log('PASS: simplified/traditional/English/code/BSE search, no quote fallback, desktop/mobile')
+  console.log('PASS: simplified/traditional/English/code/pinyin/BSE search, unknown status/no quote display, desktop/mobile')
 } finally {
   if (browser) await browser.close()
   if (spaceId) {
@@ -93,7 +95,7 @@ try {
     sql(`DELETE FROM workspace_invitation WHERE workspace_id=${spaceId}; DELETE FROM workspace_member WHERE workspace_id=${spaceId}; DELETE FROM workspace WHERE id=${spaceId} AND name='${spaceName}';`)
   }
   if (userCreated) sql(`DELETE FROM app_user WHERE username='${username}'`)
-  if (seeded) sql(`DELETE FROM stock WHERE source='${source}' AND code IN ('00700.HK','000001.SZ','920002.BJ')`)
+  if (seeded) sql(`DELETE FROM stock WHERE source='${source}' AND code IN ('00700.HK','000001.SZ','600089.SH','920002.BJ')`)
   const remaining = sql(`SELECT (SELECT COUNT(*) FROM app_user WHERE username='${username}') + (SELECT COUNT(*) FROM workspace WHERE name='${spaceName}') + (SELECT COUNT(*) FROM stock WHERE source='${source}')`)
   assert.equal(remaining, '0')
   console.log('CLEANUP_REMAINING=0')

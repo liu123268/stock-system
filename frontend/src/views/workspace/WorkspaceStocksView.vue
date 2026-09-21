@@ -81,7 +81,7 @@ async function search() {
   selectedStock.value = null
   stockStore.clearSearch()
   if (!keyword.value.trim()) {
-    formError.value = '请输入股票代码或名称'
+    formError.value = '请输入股票代码、名称或拼音首字母'
     return
   }
 
@@ -391,17 +391,17 @@ onBeforeUnmount(() => {
       <div class="add-copy">
         <p class="section-label">添加股票</p>
         <h2 id="add-stock-title">先搜索标准股票，再记录初始判断</h2>
-        <p>按代码或名称搜索股票；暂无报价时暂不能添加关注。模拟行情会单独标注。</p>
+        <p>按代码、名称或拼音首字母搜索股票；暂无报价时暂不能添加关注。模拟行情会单独标注。</p>
       </div>
 
       <form class="search-form" role="search" @submit.prevent="search">
-        <label for="stock-keyword">股票代码或名称</label>
+        <label for="stock-keyword">股票代码、名称或拼音首字母</label>
         <div>
           <input
             id="stock-keyword"
             v-model="keyword"
             autocomplete="off"
-            placeholder="例如 600519 或 腾讯"
+            placeholder="例如 600519、腾讯或 tbdg"
           />
           <button class="primary" type="submit" :disabled="stockStore.searchLoading">
             {{ stockStore.searchLoading ? '正在搜索…' : '搜索股票' }}
@@ -440,7 +440,7 @@ onBeforeUnmount(() => {
         v-else-if="searchHasRun && !stockStore.searchLoading && !stockStore.searchError"
         class="search-empty"
       >
-        没有找到匹配的股票，请尝试标准代码或更短的名称。
+        没有找到匹配的股票，请尝试标准代码、更短的名称或从首字开始的拼音缩写。
       </p>
 
       <form

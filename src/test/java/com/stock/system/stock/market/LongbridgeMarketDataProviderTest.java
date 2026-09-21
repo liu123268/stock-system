@@ -44,6 +44,7 @@ class LongbridgeMarketDataProviderTest {
                 });
         assertThat(snapshots.get(0).quoteTime())
                 .isEqualTo(LocalDateTime.of(2026, 9, 9, 15, 0));
+        verify(quoteGateway).getQuotes(List.of("600519.SH", "00700.HK"));
     }
 
     @Test

@@ -20,6 +20,7 @@ public class Stock {
     private String listingStatus;
     private String source;
     private String searchAliases;
+    private String pinyinInitials;
     private LocalDateTime lastSyncedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

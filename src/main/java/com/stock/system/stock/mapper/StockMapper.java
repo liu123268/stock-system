@@ -18,8 +18,18 @@ public interface StockMapper extends BaseMapper<Stock> {
             WHERE source <> 'LOCAL_MOCK'
               AND (LOCATE(UPPER(#{keyword}), CONVERT(code USING utf8mb4)) > 0
                    OR LOCATE(#{keyword}, name) > 0
-                   OR LOCATE(#{keyword}, search_aliases) > 0)
-            ORDER BY (CONVERT(code USING utf8mb4) = UPPER(#{keyword})) DESC, code
+                   OR LOCATE(#{keyword}, search_aliases) > 0
+                   OR (LOWER(#{keyword}) REGEXP '^[a-z]+$'
+                       AND CONVERT(pinyin_initials USING utf8mb4) LIKE CONCAT(LOWER(#{keyword}), '%')))
+            ORDER BY CASE
+                         WHEN CONVERT(code USING utf8mb4) = UPPER(#{keyword}) THEN 0
+                         WHEN name = #{keyword} OR search_aliases = #{keyword} THEN 1
+                         WHEN CONVERT(pinyin_initials USING utf8mb4) = LOWER(#{keyword}) THEN 2
+                         WHEN LOWER(#{keyword}) REGEXP '^[a-z]+$'
+                              AND CONVERT(pinyin_initials USING utf8mb4) LIKE CONCAT(LOWER(#{keyword}), '%') THEN 3
+                         ELSE 4
+                     END,
+                     code
             LIMIT 30
             """)
     List<Stock> searchDirectory(@Param("keyword") String keyword);
