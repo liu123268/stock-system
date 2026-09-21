@@ -167,7 +167,7 @@ V1 邀请码使用安全随机数生成 6 位大写英文字母或数字，数�
 
 > 阶段边界：3.7～3.10 的首批字段已经由 [V3 迁移](../../src/main/resources/db/migration/V3__create_stock_research_tables.sql) 固化，当前实现方案见 [SPEC-002](../specs/002-stock-research/design.md)。本节只保存跨阶段稳定的数据职责，不重复迁移中的完整字段表；3.11 仍待后续闭环设计。
 
-`stock` 保存全系统共享的沪、深、北 A 股及港股标准身份和基础信息。真实目录模式通过本地表搜索，模拟模式仍由 Mock 提供候选；用户不能自由提交名称、交易所或币种。标准代码含市场后缀并全局唯一。V4 扩展 BSE 交易所和 UNKNOWN 状态，并增加实际用于繁体/英文搜索的 `search_aliases` 与同步追溯的 `last_synced_at`；V7 增加由可信目录名称离线生成、只用于搜索召回的 ASCII 小写 `pinyin_initials`。精确定义见 [V4 迁移](../../src/main/resources/db/migration/V4__support_real_stock_directory.sql)和 [V7 迁移](../../src/main/resources/db/migration/V7__add_stock_pinyin_initials.sql)。
+`stock` 保存全系统共享的沪、深、北 A 股及港股标准身份和基础信息。真实目录模式通过本地表搜索，模拟模式仍由 Mock 提供候选；用户不能自由提交名称、交易所或币种。标准代码含市场后缀并全局唯一。V4 扩展 BSE 交易所和 UNKNOWN 状态，并增加实际用于繁体/英文搜索的 `search_aliases` 与同步追溯的 `last_synced_at`；V7 增加由可信目录名称离线生成、只用于搜索召回的 ASCII 小写 `pinyin_initials`。当前 `stock` 只保留 `id` 主键索引和 `code` 唯一二级索引，不为 `pinyin_initials` 新增索引：现有 8318 条目录的综合搜索虽经执行计划确认全表扫描，但本机单次只读实测约 6.11 毫秒，尚无实际延迟问题；数据规模或页面延迟明显变化时再重新测量，不能把该本机数字当作生产承诺。精确定义见 [V4 迁移](../../src/main/resources/db/migration/V4__support_real_stock_directory.sql)和 [V7 迁移](../../src/main/resources/db/migration/V7__add_stock_pinyin_initials.sql)。
 
 UNKNOWN 表示尚未取得可信的交易状态，不代表停牌或退市。目录导入保留既有已核实状态，原 Mock 状态不能当真实事实沿用；缺失股票不删除、不自动退市。既有股票 ID 和研究外键保持稳定。目录搜索与报价相互独立：只读目录模式也能搜索，但新研究周期仍须取得可信行情并遵守 [V1 未退市核验规则](../product/requirements-v1.md#33-共享自选股与行情)；当前只允许 LISTED 与 SUSPENDED 开启研究，DELISTED、UNKNOWN 及状态核验失败均拒绝。
 

@@ -73,13 +73,21 @@ try {
     const data = await (await done).json()
     assert.equal(data.data[0].code, code)
     assert.equal(data.data[0].price, null)
-    const candidate = page.locator('.search-results button').filter({ hasText: code })
+    const candidate = page.locator('.search-results a').filter({ hasText: code })
     await candidate.waitFor()
     assert.match(await candidate.innerText(), /暂无报价/)
     await candidate.click()
-    await page.getByText('这只股票的交易状态暂时无法核实，不能开启新的研究周期。', { exact: true }).waitFor()
+    await page.waitForURL(`**/workspaces/${spaceId}/stocks/market/${code}**`)
+    await page.getByText('这只股票的交易状态暂时无法核实，行情仍可查看，但暂时不能加入关注。', { exact: true }).waitFor()
     assert.equal(await page.locator('.opinion-form').count(), 0)
+    await page.goBack()
+    await page.waitForURL(`**/workspaces/${spaceId}/stocks**`)
+    await page.locator('#stock-keyword').waitFor()
   }
+  assert.equal(sql(`SELECT
+    (SELECT COUNT(*) FROM workspace_stock WHERE workspace_id=${spaceId}) +
+    (SELECT COUNT(*) FROM research_cycle rc JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId}) +
+    (SELECT COUNT(*) FROM stock_opinion so JOIN research_cycle rc ON rc.id=so.research_cycle_id JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId})`), '0')
   const shots = new URL('../../target/market-directory-probe/', import.meta.url)
   await mkdir(shots, { recursive: true })
   await page.screenshot({ path: new URL('directory-desktop.png', shots).pathname.replace(/^\/([A-Za-z]:)/, '$1'), fullPage: true })
@@ -87,12 +95,17 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false)
   await page.screenshot({ path: new URL('directory-mobile.png', shots).pathname.replace(/^\/([A-Za-z]:)/, '$1'), fullPage: true })
   assert.deepEqual(errors, [])
-  console.log('PASS: simplified/traditional/English/code/pinyin/BSE search, unknown status/no quote display, desktop/mobile')
+  console.log('PASS: directory search, independent read-only market page, no research writes, desktop/mobile')
 } finally {
   if (browser) await browser.close()
   if (spaceId) {
     assert.ok(Number.isSafeInteger(spaceId))
-    sql(`DELETE FROM workspace_invitation WHERE workspace_id=${spaceId}; DELETE FROM workspace_member WHERE workspace_id=${spaceId}; DELETE FROM workspace WHERE id=${spaceId} AND name='${spaceName}';`)
+    sql(`DELETE so FROM stock_opinion so JOIN research_cycle rc ON rc.id=so.research_cycle_id JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId};
+      DELETE rc FROM research_cycle rc JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId};
+      DELETE FROM workspace_stock WHERE workspace_id=${spaceId};
+      DELETE FROM workspace_invitation WHERE workspace_id=${spaceId};
+      DELETE FROM workspace_member WHERE workspace_id=${spaceId};
+      DELETE FROM workspace WHERE id=${spaceId} AND name='${spaceName}';`)
   }
   if (userCreated) sql(`DELETE FROM app_user WHERE username='${username}'`)
   if (seeded) sql(`DELETE FROM stock WHERE source='${source}' AND code IN ('00700.HK','000001.SZ','600089.SH','920002.BJ')`)

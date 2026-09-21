@@ -5,7 +5,10 @@ import {
   addWorkspaceStock,
   createWorkspaceStockOpinion,
   endWorkspaceStockResearch,
+  getWorkspaceMarketStockCandlesticks,
+  getWorkspaceMarketStockIntraday,
   getWorkspaceStockCandlesticks,
+  getWorkspaceStockMarketDetail,
   getWorkspaceStockResearch,
   listEndedWorkspaceStocks,
   listWorkspaceStocks,
@@ -17,9 +20,11 @@ import type {
   AddWorkspaceStockResponseVO,
   EndedWorkspaceStockResponseVO,
   StockCandlestickSeriesVO,
+  StockIntradaySeriesVO,
   StockOpinionResponseVO,
   StockSearchResponseVO,
   WorkspaceStockListResponseVO,
+  WorkspaceStockMarketDetailResponseVO,
   WorkspaceStockResearchResponseVO,
 } from '@/api/stock'
 import { useStockStore } from '@/stores/stock'
@@ -107,6 +112,39 @@ const candlestickSeries: StockCandlestickSeriesVO = {
       close: 1488.88,
       volume: 123456,
       turnover: 184000000,
+    },
+  ],
+}
+
+const marketDetail: WorkspaceStockMarketDetailResponseVO = {
+  ...searchResult,
+  trackingState: 'NOT_TRACKED',
+  workspaceStockId: null,
+  activeResearchCycleId: null,
+}
+
+const intradaySeries: StockIntradaySeriesVO = {
+  code: '600519.SH',
+  name: '贵州茅台',
+  currency: 'CNY',
+  tradeDate: '2026-09-21',
+  marketTimeZone: 'Asia/Shanghai',
+  referencePrice: 1480,
+  source: 'LOCAL_MOCK',
+  simulated: true,
+  retrievedAt: '2026-09-21T10:30:00',
+  updating: true,
+  tradingSessions: [
+    { start: '2026-09-21T09:30:00', end: '2026-09-21T11:30:00' },
+    { start: '2026-09-21T13:00:00', end: '2026-09-21T15:00:00' },
+  ],
+  points: [
+    {
+      time: '2026-09-21T09:30:00',
+      price: 1488.88,
+      averagePrice: 1485,
+      volume: 1200,
+      turnover: 1_786_656,
     },
   ],
 }
@@ -269,6 +307,20 @@ describe('stock store', () => {
 
     expect(store.searchResults).toEqual([newerResult])
     expect(store.searchLoading).toBe(false)
+  })
+
+  it('loads an unfollowed stock market preview with a normalized standard code', async () => {
+    vi.mocked(getWorkspaceStockMarketDetail).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: marketDetail }),
+    )
+
+    const store = useStockStore()
+    await store.loadMarketDetail(12, ' 600519.sh ')
+
+    expect(getWorkspaceStockMarketDetail).toHaveBeenCalledWith(12, '600519.SH')
+    expect(store.marketDetail).toEqual(marketDetail)
+    expect(store.marketDetail?.trackingState).toBe('NOT_TRACKED')
+    expect(store.marketDetailError).toBe('')
   })
 
   it('submits only the allowed opinion input and refreshes the shared list', async () => {
@@ -531,5 +583,56 @@ describe('stock store', () => {
       '2026-09-04T15:00:00',
     ])
     expect(store.candlestickSeries?.hasMore).toBe(false)
+  })
+
+  it('uses code-based market endpoints for an unfollowed stock and paginates its K line', async () => {
+    const older = {
+      ...candlestickSeries,
+      nextBefore: null,
+      hasMore: false,
+      candlesticks: [
+        { ...candlestickSeries.candlesticks[0]!, time: '2026-09-03T15:00:00' },
+      ],
+    }
+    vi.mocked(getWorkspaceMarketStockCandlesticks)
+      .mockResolvedValueOnce(response({ code: 'SUCCESS', message: '成功', data: candlestickSeries }))
+      .mockResolvedValueOnce(response({ code: 'SUCCESS', message: '成功', data: older }))
+
+    const store = useStockStore()
+    await store.loadMarketCandlesticks(12, ' 600519.sh ', 'day')
+    await store.loadOlderMarketCandlesticks(12, '600519.SH')
+
+    expect(getWorkspaceMarketStockCandlesticks).toHaveBeenNthCalledWith(
+      1,
+      12,
+      '600519.SH',
+      'day',
+    )
+    expect(getWorkspaceMarketStockCandlesticks).toHaveBeenNthCalledWith(
+      2,
+      12,
+      '600519.SH',
+      'day',
+      1000,
+      candlestickSeries.nextBefore,
+    )
+    expect(getWorkspaceStockCandlesticks).not.toHaveBeenCalled()
+    expect(store.candlestickSeries?.candlesticks.map((item) => item.time)).toEqual([
+      '2026-09-03T15:00:00',
+      '2026-09-04T15:00:00',
+    ])
+  })
+
+  it('uses the code-based intraday endpoint without requiring a workspace stock id', async () => {
+    vi.mocked(getWorkspaceMarketStockIntraday).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: intradaySeries }),
+    )
+
+    const store = useStockStore()
+    await store.loadMarketIntraday(12, ' 600519.sh ')
+
+    expect(getWorkspaceMarketStockIntraday).toHaveBeenCalledWith(12, '600519.SH', undefined)
+    expect(store.intradaySeries).toEqual(intradaySeries)
+    expect(store.intradayError).toBe('')
   })
 })

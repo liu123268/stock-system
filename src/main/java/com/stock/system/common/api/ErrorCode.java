@@ -39,6 +39,7 @@ public enum ErrorCode {
             "所选日期超出当前账户可查看的历史分钟行情范围"),
     MARKET_INTRADAY_NON_TRADING_DAY(HttpStatus.BAD_REQUEST,
             "所选日期不是该市场的交易日"),
+    STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "股票不存在或不在当前行情范围"),
     WORKSPACE_STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "当前空间中不存在这只共享股票"),
     ACTIVE_RESEARCH_CYCLE_NOT_FOUND(HttpStatus.CONFLICT, "这只股票当前没有活动研究周期"),
     RESEARCH_CYCLE_CHANGED(HttpStatus.CONFLICT, "研究周期已经变化，请刷新后重试"),

@@ -23,6 +23,19 @@ public interface WorkspaceStockMapper extends BaseMapper<WorkspaceStock> {
     @Select("""
             SELECT
                 ws.id AS workspace_stock_id,
+                rc.id AS active_research_cycle_id
+            FROM workspace_stock ws
+            LEFT JOIN research_cycle rc
+                ON rc.workspace_stock_id = ws.id
+                AND rc.status = 'ACTIVE'
+            WHERE ws.workspace_id = #{workspaceId}
+              AND ws.stock_id = #{stockId}
+            """)
+    WorkspaceStockTrackingRow selectTrackingState(Long workspaceId, Long stockId);
+
+    @Select("""
+            SELECT
+                ws.id AS workspace_stock_id,
                 rc.id AS research_cycle_id,
                 s.code,
                 s.name,

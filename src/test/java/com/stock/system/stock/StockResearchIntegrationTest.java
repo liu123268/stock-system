@@ -649,6 +649,101 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
+    @Test
+    void memberPreviewsUntrackedTrustedStockWithoutCreatingResearchData() throws Exception {
+        String path = "/api/workspaces/{workspaceId}/market/stocks/{code}";
+
+        mockMvc.perform(get(path, workspaceId, "600519.sh")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value("600519.SH"))
+                .andExpect(jsonPath("$.data.name").value("贵州茅台"))
+                .andExpect(jsonPath("$.data.exchange").value("SSE"))
+                .andExpect(jsonPath("$.data.currency").value("CNY"))
+                .andExpect(jsonPath("$.data.listingStatus").value("LISTED"))
+                .andExpect(jsonPath("$.data.price").value(1488.88))
+                .andExpect(jsonPath("$.data.source").value("LOCAL_MOCK"))
+                .andExpect(jsonPath("$.data.simulated").value(true))
+                .andExpect(jsonPath("$.data.trackingState").value("NOT_TRACKED"))
+                .andExpect(jsonPath("$.data.workspaceStockId").isEmpty())
+                .andExpect(jsonPath("$.data.activeResearchCycleId").isEmpty());
+
+        mockMvc.perform(get(path + "/candlesticks", workspaceId, "600519.SH")
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("period", "week")
+                        .param("count", "40"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value("600519.SH"))
+                .andExpect(jsonPath("$.data.period").value("week"))
+                .andExpect(jsonPath("$.data.candlesticks.length()").value(40));
+
+        mockMvc.perform(get(path + "/intraday", workspaceId, "600519.SH")
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("date", "2026-09-04"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value("600519.SH"))
+                .andExpect(jsonPath("$.data.tradeDate").value("2026-09-04"))
+                .andExpect(jsonPath("$.data.points.length()").value(242));
+
+        assertThat(stockMapper.selectCount(null)).isZero();
+        assertThat(countWorkspaceStocks(workspaceId)).isZero();
+        assertThat(researchCycleMapper.selectCount(null)).isZero();
+        assertThat(stockOpinionMapper.selectCount(null)).isZero();
+    }
+
+    @Test
+    void marketPreviewReportsActiveAndEndedWorkspaceTrackingState() throws Exception {
+        String previewPath = "/api/workspaces/{workspaceId}/market/stocks/{code}";
+        JsonNode added = addStock(ownerToken, workspaceId, "00700.HK")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        long researchCycleId = added.path("data").path("researchCycleId").longValue();
+
+        mockMvc.perform(get(previewPath, workspaceId, "00700.HK")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.trackingState").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.workspaceStockId").value(workspaceStockId))
+                .andExpect(jsonPath("$.data.activeResearchCycleId").value(researchCycleId));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/end",
+                        workspaceId,
+                        workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"researchCycleId\":" + researchCycleId + "}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get(previewPath, workspaceId, "00700.HK")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.trackingState").value("ENDED"))
+                .andExpect(jsonPath("$.data.workspaceStockId").value(workspaceStockId))
+                .andExpect(jsonPath("$.data.activeResearchCycleId").isEmpty());
+    }
+
+    @Test
+    void marketPreviewChecksMembershipBeforeRejectingUntrustedOrMalformedCode() throws Exception {
+        String path = "/api/workspaces/{workspaceId}/market/stocks/{code}";
+
+        mockMvc.perform(get(path, workspaceId, "000000.SH")
+                        .header("Authorization", "Bearer " + strangerToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_NOT_FOUND"));
+
+        mockMvc.perform(get(path, workspaceId, "000000.SH")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("STOCK_NOT_FOUND"));
+
+        mockMvc.perform(get(path, workspaceId, "not-a-code")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
     private ResultActionsJson addStock(String token, Long targetWorkspaceId, String code)
             throws Exception {
         return new ResultActionsJson(

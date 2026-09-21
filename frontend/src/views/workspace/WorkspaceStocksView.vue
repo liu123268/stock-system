@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
-  CandlestickPeriod,
   OpinionHorizon,
   StockSearchResponseVO,
   StockStance,
   WorkspaceStockListResponseVO,
 } from '@/api/stock'
+import StockMarketPanel from '@/components/stock/StockMarketPanel.vue'
 import { useStockStore } from '@/stores/stock'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
@@ -16,44 +16,18 @@ const route = useRoute()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const stockStore = useStockStore()
-const StockCandlestickChart = defineAsyncComponent(
-  () => import('@/components/StockCandlestickChart.vue'),
-)
-const StockIntradayChart = defineAsyncComponent(() => import('@/components/StockIntradayChart.vue'))
 
 const workspaceId = computed(() => Number(route.params.workspaceId))
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
 const pageLoading = ref(true)
 const keyword = ref('')
 const searchHasRun = ref(false)
-const selectedStock = ref<StockSearchResponseVO | null>(null)
 const formError = ref('')
-const successMessage = ref('')
 const expandedStockId = ref<number | null>(null)
-const selectedPeriod = ref<CandlestickPeriod>('day')
-const chartMode = ref<'kline' | 'intraday'>('kline')
-const intradayDate = ref('')
-let intradayRefreshTimer: ReturnType<typeof setTimeout> | null = null
-const candlestickPeriods: { value: CandlestickPeriod; label: string }[] = [
-  { value: '1m', label: '1 分' },
-  { value: '5m', label: '5 分' },
-  { value: '15m', label: '15 分' },
-  { value: '30m', label: '30 分' },
-  { value: '1h', label: '1 小时' },
-  { value: 'day', label: '日 K' },
-  { value: 'week', label: '周 K' },
-  { value: 'month', label: '月 K' },
-  { value: 'year', label: '年 K' },
-]
 
-const opinion = reactive({
-  stance: 'NEUTRAL' as StockStance,
-  reason: '',
-  observationNote: '',
-  horizon: 'MEDIUM' as OpinionHorizon,
-  targetPrice: '',
-  stopLossPrice: '',
-})
+function routeKeyword() {
+  return typeof route.query.q === 'string' ? route.query.q.trim() : ''
+}
 
 async function load() {
   if (!Number.isSafeInteger(workspaceId.value) || workspaceId.value <= 0) {
@@ -63,56 +37,53 @@ async function load() {
 
   pageLoading.value = true
   stockStore.clearRefreshWarning()
+  let loaded = false
   try {
     await workspaceStore.ensureCurrent(workspaceId.value)
     await Promise.all([
       stockStore.loadList(workspaceId.value),
       stockStore.loadEnded(workspaceId.value),
     ])
+    loaded = true
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   } finally {
     pageLoading.value = false
   }
+
+  const restoredKeyword = routeKeyword()
+  if (loaded && restoredKeyword && !isArchived.value) {
+    keyword.value = restoredKeyword
+    await runSearch(false)
+  }
 }
 
-async function search() {
-  successMessage.value = ''
-  selectedStock.value = null
+async function runSearch(updateQuery: boolean) {
   stockStore.clearSearch()
-  if (!keyword.value.trim()) {
+  const normalizedKeyword = keyword.value.trim()
+  if (!normalizedKeyword) {
     formError.value = '请输入股票代码、名称或拼音首字母'
     return
   }
 
   formError.value = ''
   searchHasRun.value = true
+  if (updateQuery && routeKeyword() !== normalizedKeyword) {
+    await router.replace({
+      name: 'workspace-stocks',
+      params: { workspaceId: workspaceId.value },
+      query: { ...route.query, q: normalizedKeyword },
+    })
+  }
   try {
-    await stockStore.search(keyword.value)
+    await stockStore.search(normalizedKeyword)
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }
 }
 
-function selectStock(stock: StockSearchResponseVO) {
-  if (stock.listingStatus === 'DELISTED') {
-    selectedStock.value = null
-    formError.value = '这只股票已经退市，不能开启新的研究周期。'
-    return
-  }
-  if (stock.listingStatus === 'UNKNOWN') {
-    selectedStock.value = null
-    formError.value = '这只股票的交易状态暂时无法核实，不能开启新的研究周期。'
-    return
-  }
-  if (stock.price === null) {
-    selectedStock.value = null
-    formError.value = '这只股票已收录，暂无可用报价，暂时不能记录关注价格。'
-    return
-  }
-  selectedStock.value = stock
-  formError.value = ''
-  successMessage.value = ''
+async function search() {
+  await runSearch(true)
 }
 
 function listingStatusLabel(stock: StockSearchResponseVO) {
@@ -121,59 +92,6 @@ function listingStatusLabel(stock: StockSearchResponseVO) {
   if (stock.listingStatus === 'SUSPENDED') return '停牌（可研究）'
   if (stock.listingStatus === 'DELISTED') return '已退市'
   return '交易状态待核实'
-}
-
-function cancelSelection() {
-  selectedStock.value = null
-  formError.value = ''
-}
-
-function optionalPrice(value: string | number) {
-  if (value === '') return null
-  const number = Number(value)
-  return Number.isFinite(number) && number > 0 ? number : Number.NaN
-}
-
-async function submitOpinion() {
-  if (!selectedStock.value) return
-  const stock = selectedStock.value
-  const targetPrice = optionalPrice(opinion.targetPrice)
-  const stopLossPrice = optionalPrice(opinion.stopLossPrice)
-  if (!opinion.reason.trim()) {
-    formError.value = '请填写判断理由'
-    return
-  }
-  if (Number.isNaN(targetPrice) || Number.isNaN(stopLossPrice)) {
-    formError.value = '目标价和止损参考价必须是大于 0 的数字'
-    return
-  }
-
-  formError.value = ''
-  successMessage.value = ''
-  try {
-    const draft = {
-      stance: opinion.stance,
-      reason: opinion.reason.trim(),
-      observationNote: opinion.observationNote.trim() || null,
-      horizon: opinion.horizon,
-      targetPrice,
-      stopLossPrice,
-    }
-    const result = await stockStore.add(workspaceId.value, { code: stock.code, ...draft })
-    if (result.alreadyActive) {
-      stockStore.keepResearchDraft(workspaceId.value, result.workspaceStockId, draft)
-      await router.push({
-        name: 'workspace-stock-research',
-        params: { workspaceId: workspaceId.value, workspaceStockId: result.workspaceStockId },
-      })
-      return
-    }
-    successMessage.value = `${stock.name} 已加入共享自选，初始观点已经保存。`
-    resetAddFlow()
-  } catch (error) {
-    if (await handleWorkspaceApiError(error, router)) return
-    formError.value = error instanceof Error ? error.message : '添加股票失败'
-  }
 }
 
 async function retryPageData() {
@@ -196,19 +114,6 @@ async function toggleAttention(item: WorkspaceStockListResponseVO) {
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }
-}
-
-function resetAddFlow() {
-  selectedStock.value = null
-  keyword.value = ''
-  searchHasRun.value = false
-  stockStore.clearSearch()
-  opinion.stance = 'NEUTRAL'
-  opinion.reason = ''
-  opinion.observationNote = ''
-  opinion.horizon = 'MEDIUM'
-  opinion.targetPrice = ''
-  opinion.stopLossPrice = ''
 }
 
 function currencySymbol(currency: string) {
@@ -241,103 +146,13 @@ function horizonLabel(horizon: OpinionHorizon) {
   return { SHORT: '短期', MEDIUM: '中期', LONG: '长期' }[horizon]
 }
 
-function candlestickPeriodLabel(period: CandlestickPeriod) {
-  return candlestickPeriods.find((item) => item.value === period)?.label ?? period
-}
-
-async function requestCandlesticks(workspaceStockId: number, period: CandlestickPeriod) {
-  try {
-    await stockStore.loadCandlesticks(workspaceId.value, workspaceStockId, period)
-  } catch (error) {
-    await handleWorkspaceApiError(error, router)
-  }
-}
-
-async function toggleCandlesticks(item: WorkspaceStockListResponseVO) {
-  if (expandedStockId.value === item.workspaceStockId) {
-    stopIntradayRefresh()
-    expandedStockId.value = null
-    stockStore.clearCandlesticks()
-    stockStore.clearIntraday()
-    return
-  }
-  stopIntradayRefresh()
-  expandedStockId.value = item.workspaceStockId
-  chartMode.value = 'kline'
-  selectedPeriod.value = 'day'
-  stockStore.clearCandlesticks()
-  await requestCandlesticks(item.workspaceStockId, selectedPeriod.value)
-}
-
-function stopIntradayRefresh() {
-  if (intradayRefreshTimer) clearTimeout(intradayRefreshTimer)
-  intradayRefreshTimer = null
-}
-
-function scheduleIntradayRefresh(workspaceStockId: number) {
-  stopIntradayRefresh()
-  if (!stockStore.intradaySeries?.updating) return
-  intradayRefreshTimer = setTimeout(async () => {
-    if (
-      chartMode.value !== 'intraday' ||
-      expandedStockId.value !== workspaceStockId ||
-      document.hidden
-    ) {
-      scheduleIntradayRefresh(workspaceStockId)
-      return
-    }
-    try {
-      await stockStore.loadIntraday(workspaceId.value, workspaceStockId, intradayDate.value, true)
-    } catch {
-      // The current chart remains visible; the next controlled refresh can recover.
-    }
-    scheduleIntradayRefresh(workspaceStockId)
-  }, 30_000)
-}
-
-async function requestIntraday(workspaceStockId: number) {
-  stopIntradayRefresh()
-  try {
-    const series = await stockStore.loadIntraday(
-      workspaceId.value,
-      workspaceStockId,
-      intradayDate.value || undefined,
-    )
-    intradayDate.value = series.tradeDate
-    scheduleIntradayRefresh(workspaceStockId)
-  } catch (error) {
-    await handleWorkspaceApiError(error, router)
-  }
-}
-
-async function selectChartMode(mode: 'kline' | 'intraday', workspaceStockId: number) {
-  if (chartMode.value === mode) return
-  chartMode.value = mode
-  if (mode === 'intraday') {
-    stockStore.clearIntraday()
-    await requestIntraday(workspaceStockId)
-  } else {
-    stopIntradayRefresh()
-  }
-}
-
-async function selectCandlestickPeriod(period: CandlestickPeriod) {
-  if (expandedStockId.value === null || selectedPeriod.value === period) return
-  selectedPeriod.value = period
-  await requestCandlesticks(expandedStockId.value, period)
-}
-
-async function loadOlderCandlesticks(workspaceStockId: number) {
-  try {
-    await stockStore.loadOlderCandlesticks(workspaceId.value, workspaceStockId)
-  } catch (error) {
-    await handleWorkspaceApiError(error, router)
-  }
+function toggleCandlesticks(item: WorkspaceStockListResponseVO) {
+  expandedStockId.value =
+    expandedStockId.value === item.workspaceStockId ? null : item.workspaceStockId
 }
 
 onMounted(load)
 onBeforeUnmount(() => {
-  stopIntradayRefresh()
   stockStore.clearListViews()
 })
 </script>
@@ -389,9 +204,9 @@ onBeforeUnmount(() => {
 
     <section v-if="!isArchived" class="add-section" aria-labelledby="add-stock-title">
       <div class="add-copy">
-        <p class="section-label">添加股票</p>
-        <h2 id="add-stock-title">先搜索标准股票，再记录初始判断</h2>
-        <p>按代码、名称或拼音首字母搜索股票；暂无报价时暂不能添加关注。模拟行情会单独标注。</p>
+        <p class="section-label">查找股票</p>
+        <h2 id="add-stock-title">先查看行情，再决定是否加入关注</h2>
+        <p>按代码、名称或拼音首字母搜索。打开一只股票只读取行情，不会自动加入共享自选。</p>
       </div>
 
       <form class="search-form" role="search" @submit.prevent="search">
@@ -412,17 +227,19 @@ onBeforeUnmount(() => {
       <p v-if="stockStore.searchError" class="inline-error" role="alert">
         {{ stockStore.searchError }}
       </p>
-      <p v-if="formError && !selectedStock" class="inline-error" role="alert">
+      <p v-if="formError" class="inline-error" role="alert">
         {{ formError }}
       </p>
 
       <div v-if="stockStore.searchResults.length" class="search-results">
-        <button
+        <RouterLink
           v-for="stock in stockStore.searchResults"
           :key="stock.code"
-          type="button"
-          :class="{ selected: selectedStock?.code === stock.code }"
-          @click="selectStock(stock)"
+          :to="{
+            name: 'workspace-stock-market',
+            params: { workspaceId, code: stock.code },
+            query: routeKeyword() ? { q: routeKeyword() } : {},
+          }"
         >
           <span>
             <strong>{{ stock.name }}</strong>
@@ -434,7 +251,8 @@ onBeforeUnmount(() => {
             }}</strong>
             <small>{{ listingStatusLabel(stock) }}</small>
           </span>
-        </button>
+          <span class="result-action">查看行情 <span aria-hidden="true">→</span></span>
+        </RouterLink>
       </div>
       <p
         v-else-if="searchHasRun && !stockStore.searchLoading && !stockStore.searchError"
@@ -443,106 +261,8 @@ onBeforeUnmount(() => {
         没有找到匹配的股票，请尝试标准代码、更短的名称或从首字开始的拼音缩写。
       </p>
 
-      <form
-        v-if="selectedStock"
-        class="opinion-form"
-        aria-labelledby="opinion-title"
-        novalidate
-        @submit.prevent="submitOpinion"
-      >
-        <div class="form-heading">
-          <div>
-            <p class="section-label">已选择 {{ selectedStock.code }}</p>
-            <h3 id="opinion-title">记录对 {{ selectedStock.name }} 的初始观点</h3>
-          </div>
-          <button type="button" @click="cancelSelection">取消选择</button>
-        </div>
-
-        <div class="field-grid compact-fields">
-          <label>
-            <span>观点倾向（必填）</span>
-            <select v-model="opinion.stance" required>
-              <option value="BULLISH">看多</option>
-              <option value="NEUTRAL">中性</option>
-              <option value="BEARISH">看空</option>
-            </select>
-          </label>
-          <label>
-            <span>关注周期（必填）</span>
-            <select v-model="opinion.horizon" required>
-              <option value="SHORT">短期</option>
-              <option value="MEDIUM">中期</option>
-              <option value="LONG">长期</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="field-grid text-fields">
-          <label>
-            <span>判断理由（必填）</span>
-            <textarea
-              v-model="opinion.reason"
-              maxlength="1000"
-              rows="5"
-              required
-              placeholder="为什么形成当前的看多、中性或看空判断？"
-            ></textarea>
-          </label>
-          <label>
-            <span>关键观察条件（选填）</span>
-            <textarea
-              v-model="opinion.observationNote"
-              maxlength="1000"
-              rows="5"
-              placeholder="哪些变化可能支持、削弱或推翻当前判断？"
-            ></textarea>
-          </label>
-        </div>
-
-        <div class="field-grid price-fields">
-          <label>
-            <span>目标价（选填）</span>
-            <div class="price-input">
-              <span>{{ currencySymbol(selectedStock.currency) }}</span>
-              <input
-                v-model="opinion.targetPrice"
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                placeholder="不填写也可以"
-              />
-            </div>
-          </label>
-          <label>
-            <span>止损参考价（选填）</span>
-            <div class="price-input">
-              <span>{{ currencySymbol(selectedStock.currency) }}</span>
-              <input
-                v-model="opinion.stopLossPrice"
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                placeholder="不填写也可以"
-              />
-            </div>
-          </label>
-        </div>
-
-        <p v-if="formError || stockStore.submitError" class="inline-error" role="alert">
-          {{ formError || stockStore.submitError }}
-        </p>
-        <div class="submit-row">
-          <span>关注价格将由后端重新读取，不采用页面显示值。</span>
-          <button class="primary" type="submit" :disabled="stockStore.submitLoading">
-            {{ stockStore.submitLoading ? '正在保存…' : '添加并保存观点' }}
-          </button>
-        </div>
-      </form>
     </section>
 
-    <p v-if="successMessage" class="success-message" aria-live="polite">
-      {{ successMessage }}
-    </p>
     <p v-if="stockStore.refreshWarning" class="inline-error" role="alert">
       {{ stockStore.refreshWarning }}
       <button type="button" @click="retryPageData">只重新加载页面数据</button>
@@ -636,135 +356,18 @@ onBeforeUnmount(() => {
             </button>
             <small>展开后才请求该股票的行情，不会为搜索候选预取。</small>
           </div>
-          <section
+          <div
             v-if="expandedStockId === item.workspaceStockId"
             :id="`stock-chart-${item.workspaceStockId}`"
-            class="kline-panel"
-            :aria-label="`${item.name} K 线与分时图`"
+            class="market-panel-slot"
           >
-            <div class="kline-heading">
-              <div>
-                <strong>
-                  {{ item.name }} ·
-                  {{ chartMode === 'kline' ? candlestickPeriodLabel(selectedPeriod) : '分时' }}
-                </strong>
-                <small v-if="chartMode === 'kline'">
-                  不复权 · 首次最多 1000 根，向左拖动继续读取更早历史
-                </small>
-                <small v-else>今天盘中每 30 秒刷新；历史日期只读取一次</small>
-              </div>
-              <div class="period-switch" aria-label="选择图表类型">
-                <button
-                  type="button"
-                  :class="{ active: chartMode === 'kline' }"
-                  :aria-pressed="chartMode === 'kline'"
-                  @click="selectChartMode('kline', item.workspaceStockId)"
-                >
-                  K 线
-                </button>
-                <button
-                  type="button"
-                  :class="{ active: chartMode === 'intraday' }"
-                  :aria-pressed="chartMode === 'intraday'"
-                  @click="selectChartMode('intraday', item.workspaceStockId)"
-                >
-                  分时
-                </button>
-              </div>
-              <div v-if="chartMode === 'kline'" class="period-switch" aria-label="选择 K 线周期">
-                <button
-                  v-for="period in candlestickPeriods"
-                  :key="period.value"
-                  type="button"
-                  :class="{ active: selectedPeriod === period.value }"
-                  :aria-pressed="selectedPeriod === period.value"
-                  :disabled="stockStore.candlestickLoading"
-                  @click="selectCandlestickPeriod(period.value)"
-                >
-                  {{ period.label }}
-                </button>
-              </div>
-              <label v-else class="intraday-date">
-                交易日
-                <input
-                  v-model="intradayDate"
-                  type="date"
-                  :disabled="stockStore.intradayLoading"
-                  @change="requestIntraday(item.workspaceStockId)"
-                />
-              </label>
-            </div>
-            <template v-if="chartMode === 'kline'">
-              <div v-if="stockStore.candlestickLoading" class="kline-loading" aria-live="polite">
-                <span></span><span></span><span></span>
-                <p>正在读取 {{ candlestickPeriodLabel(selectedPeriod) }}</p>
-              </div>
-              <div v-else-if="stockStore.candlestickError" class="kline-error" role="alert">
-                <p>{{ stockStore.candlestickError }}</p>
-                <button
-                  type="button"
-                  @click="requestCandlesticks(item.workspaceStockId, selectedPeriod)"
-                >
-                  重新加载 K 线
-                </button>
-              </div>
-              <template v-else-if="stockStore.candlestickSeries">
-                <StockCandlestickChart
-                  :candlesticks="stockStore.candlestickSeries.candlesticks"
-                  :name="stockStore.candlestickSeries.name"
-                  :period="selectedPeriod"
-                  :period-label="candlestickPeriodLabel(selectedPeriod)"
-                  @reach-start="loadOlderCandlesticks(item.workspaceStockId)"
-                />
-                <p v-if="stockStore.candlestickLoadingOlder" class="kline-meta" aria-live="polite">
-                  正在补充更早的 1000 根 K 线…
-                </p>
-                <p v-else-if="stockStore.candlestickHistoryError" class="kline-error" role="alert">
-                  {{ stockStore.candlestickHistoryError }}，再次拖到最左侧可重试。
-                </p>
-                <p v-else-if="!stockStore.candlestickSeries.hasMore" class="kline-meta">
-                  已到达当前数据源可提供的最早记录。
-                </p>
-                <p class="kline-meta">
-                  已加载 {{ stockStore.candlestickSeries.candlesticks.length }} 根 · 数据源：{{
-                    stockStore.candlestickSeries.simulated
-                      ? '本地模拟行情'
-                      : stockStore.candlestickSeries.source
-                  }}
-                  · 获取于 {{ formatTime(stockStore.candlestickSeries.retrievedAt) }}
-                </p>
-              </template>
-            </template>
-            <template v-else>
-              <div v-if="stockStore.intradayLoading" class="kline-loading" aria-live="polite">
-                <span></span><span></span><span></span>
-                <p>正在读取分时数据</p>
-              </div>
-              <div v-else-if="stockStore.intradayError" class="kline-error" role="alert">
-                <p>{{ stockStore.intradayError }}</p>
-                <button type="button" @click="requestIntraday(item.workspaceStockId)">
-                  重新加载分时图
-                </button>
-              </div>
-              <template v-else-if="stockStore.intradaySeries">
-                <StockIntradayChart
-                  :points="stockStore.intradaySeries.points"
-                  :trading-sessions="stockStore.intradaySeries.tradingSessions"
-                  :reference-price="stockStore.intradaySeries.referencePrice"
-                  :name="stockStore.intradaySeries.name"
-                />
-                <p class="kline-meta">
-                  {{ stockStore.intradaySeries.tradeDate }} ·
-                  {{ stockStore.intradaySeries.updating ? '盘中受控刷新' : '已收盘历史快照' }} ·
-                  已加载 {{ stockStore.intradaySeries.points.length }} 个点 · 数据源：{{
-                    stockStore.intradaySeries.simulated
-                      ? '本地模拟行情'
-                      : stockStore.intradaySeries.source
-                  }}
-                </p>
-              </template>
-            </template>
-          </section>
+            <StockMarketPanel
+              :workspace-id="workspaceId"
+              :workspace-stock-id="item.workspaceStockId"
+              :code="item.code"
+              :name="item.name"
+            />
+          </div>
           <details>
             <summary>查看初始观点与行情记录</summary>
             <p v-if="item.initialOpinionWithdrawn" class="withdrawn-summary">
@@ -836,7 +439,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.form-heading button,
 .list-heading button,
 .state-actions button {
   border: 0;
@@ -923,8 +525,7 @@ onBeforeUnmount(() => {
 .search-form {
   margin-top: 30px;
 }
-.search-form label,
-.opinion-form label > span {
+.search-form label {
   display: block;
   margin-bottom: 9px;
   font-size: 13px;
@@ -935,33 +536,21 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
 }
-input,
-select,
-textarea {
+input {
   width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink);
 }
-input,
-select {
+input {
   min-height: 48px;
   padding: 0 14px;
 }
-textarea {
-  min-height: 132px;
-  padding: 13px 14px;
-  line-height: 1.7;
-  resize: vertical;
-}
-input::placeholder,
-textarea::placeholder {
+input::placeholder {
   color: oklch(0.46 0.008 255);
 }
-input:focus,
-select:focus,
-textarea:focus {
+input:focus {
   border-color: var(--color-ink);
   outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
 }
@@ -983,22 +572,20 @@ textarea:focus {
   margin-top: 18px;
   border-top: 1px solid var(--color-border);
 }
-.search-results button {
-  display: flex;
+.search-results a {
+  display: grid;
   width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
   padding: 18px 12px;
-  border: 0;
   border-bottom: 1px solid var(--color-border);
   background: transparent;
   color: inherit;
-  cursor: pointer;
   text-align: left;
 }
-.search-results button:hover,
-.search-results button.selected {
+.search-results a:hover,
+.search-results a:focus-visible {
   background: color-mix(in oklab, var(--color-focus) 7%, transparent);
 }
 .search-results strong,
@@ -1013,80 +600,25 @@ textarea:focus {
   flex: 0 0 auto;
   text-align: right;
 }
-.opinion-form {
-  margin-top: 34px;
-  padding-top: 30px;
-  border-top: 1px solid var(--color-ink);
+.result-action {
+  color: var(--color-focus);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
 }
-.form-heading,
-.list-heading,
-.submit-row {
+.list-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
 }
-.form-heading h3 {
-  margin: 7px 0 0;
-  font-size: 20px;
-}
-.form-heading button {
-  color: var(--color-muted);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.field-grid {
-  display: grid;
-  gap: 22px;
-  margin-top: 24px;
-}
-.compact-fields,
-.price-fields {
-  grid-template-columns: repeat(2, minmax(0, 260px));
-}
-.text-fields {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.price-input {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-}
-.price-input:focus-within {
-  border-color: var(--color-ink);
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
-}
-.price-input > span {
-  padding-left: 14px;
-  color: var(--color-muted);
-}
-.price-input input {
-  border: 0;
-  outline: 0;
-}
-.submit-row {
-  margin-top: 26px;
-}
-.submit-row > span {
-  color: var(--color-muted);
-  font-size: 12px;
-}
 .inline-error,
-.success-message,
 .search-empty {
   margin-top: 16px;
   font-size: 13px;
 }
 .inline-error {
   color: var(--color-danger);
-}
-.success-message {
-  padding: 14px 16px;
-  background: color-mix(in oklab, var(--color-focus) 9%, var(--color-surface));
-  color: var(--color-focus);
 }
 .search-empty {
   color: var(--color-muted);
@@ -1146,15 +678,11 @@ textarea:focus {
   gap: 14px;
   padding: 0 4px 18px;
 }
-.stock-actions small,
-.kline-heading small,
-.kline-meta {
+.stock-actions small {
   color: var(--color-muted);
   font-size: 12px;
 }
-.kline-toggle,
-.period-switch button,
-.kline-error button {
+.kline-toggle {
   border: 0;
   background: transparent;
   color: var(--color-focus);
@@ -1181,101 +709,13 @@ textarea:focus {
   opacity: 0.58;
 }
 .attention-toggle:focus-visible,
-.kline-toggle:focus-visible,
-.period-switch button:focus-visible,
-.kline-error button:focus-visible {
+.kline-toggle:focus-visible {
   border-radius: 4px;
   outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
   outline-offset: 3px;
 }
-.kline-panel {
+.market-panel-slot {
   margin: 0 4px 24px;
-  padding: 22px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface);
-}
-.kline-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 12px;
-}
-.kline-heading strong,
-.kline-heading small {
-  display: block;
-}
-.kline-heading small {
-  margin-top: 4px;
-}
-.period-switch {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.period-switch button {
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: var(--radius-action);
-  color: var(--color-muted);
-}
-.period-switch button:hover,
-.period-switch button.active {
-  background: color-mix(in oklab, var(--color-focus) 10%, transparent);
-  color: var(--color-focus);
-}
-.period-switch button:disabled {
-  cursor: wait;
-  opacity: 0.6;
-}
-.intraday-date {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.intraday-date input {
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-action);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-.kline-loading {
-  padding: 72px 6%;
-}
-.kline-loading span {
-  display: block;
-  height: 16px;
-  margin-bottom: 12px;
-  background: var(--color-border);
-  animation: pulse 1.4s ease-in-out infinite alternate;
-}
-.kline-loading span:nth-child(2) {
-  width: 78%;
-}
-.kline-loading span:nth-child(3) {
-  width: 58%;
-}
-.kline-loading p,
-.kline-error p {
-  margin-top: 16px;
-  color: var(--color-muted);
-  font-size: 13px;
-}
-.kline-error {
-  padding: 48px 0;
-  text-align: center;
-}
-.kline-error button {
-  margin-top: 14px;
-}
-.kline-meta {
-  margin-top: 8px;
-  text-align: right;
 }
 .identity h3 {
   margin: 6px 0 2px;
@@ -1397,8 +837,7 @@ summary {
 }
 @media (prefers-reduced-motion: reduce) {
   .loading-line,
-  .list-skeleton span,
-  .kline-loading span {
+  .list-skeleton span {
     animation: none;
   }
 }
@@ -1412,17 +851,11 @@ summary {
   .opinion-detail dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .kline-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }
 @media (max-width: 640px) {
   .archive-notice,
   .page-heading,
-  .add-copy,
-  .form-heading,
-  .submit-row {
+  .add-copy {
     display: block;
   }
   .archive-notice span {
@@ -1442,9 +875,6 @@ summary {
     margin-top: 12px;
   }
   .search-form > div,
-  .compact-fields,
-  .text-fields,
-  .price-fields,
   .stock-summary,
   .opinion-detail,
   .opinion-detail dl {
@@ -1453,12 +883,17 @@ summary {
   .search-form .primary {
     width: 100%;
   }
-  .form-heading button {
-    margin-top: 12px;
+  .search-results a {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 16px;
   }
-  .submit-row .primary {
-    width: 100%;
-    margin-top: 18px;
+  .search-results .quote {
+    grid-column: 1;
+    text-align: left;
+  }
+  .result-action {
+    grid-row: 1 / span 2;
+    grid-column: 2;
   }
   .stock-summary {
     gap: 18px;
@@ -1467,9 +902,8 @@ summary {
     align-items: flex-start;
     flex-direction: column;
   }
-  .kline-panel {
+  .market-panel-slot {
     margin-inline: 0;
-    padding: 16px 10px;
   }
   .opinion-detail dl {
     grid-column: auto;

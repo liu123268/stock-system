@@ -5,6 +5,9 @@ import {
   createWorkspaceStockOpinion,
   endWorkspaceStockResearch,
   getWorkspaceStockCandlesticks,
+  getWorkspaceMarketStockCandlesticks,
+  getWorkspaceMarketStockIntraday,
+  getWorkspaceStockMarketDetail,
   getWorkspaceStockIntraday,
   getWorkspaceStockResearch,
   listEndedWorkspaceStocks,
@@ -23,11 +26,16 @@ import {
   type StockOpinionResponseVO,
   type StockSearchResponseVO,
   type WorkspaceStockListResponseVO,
+  type WorkspaceStockMarketDetailResponseVO,
   type WorkspaceStockResearchResponseVO,
   type UpdateAttentionLevelResponseVO,
 } from '@/api/stock'
 
 type ResearchDraft = Omit<AddWorkspaceStockRequestDTO, 'code'>
+
+type MarketReadTarget =
+  | { kind: 'workspace-stock'; workspaceStockId: number }
+  | { kind: 'directory-stock'; code: string }
 
 export const useStockStore = defineStore('stock', () => {
   const items = ref<WorkspaceStockListResponseVO[]>([])
@@ -39,6 +47,11 @@ export const useStockStore = defineStore('stock', () => {
   const searchLoading = ref(false)
   const searchError = ref('')
   let searchRequestVersion = 0
+  const marketDetail = ref<WorkspaceStockMarketDetailResponseVO | null>(null)
+  const marketDetailLoading = ref(false)
+  const marketDetailError = ref('')
+  let marketDetailRequestVersion = 0
+  let marketDetailTargetKey = ''
   const submitLoading = ref(false)
   const submitError = ref('')
   const refreshWarning = ref('')
@@ -64,10 +77,12 @@ export const useStockStore = defineStore('stock', () => {
   const candlestickLoadingOlder = ref(false)
   const candlestickHistoryError = ref('')
   let candlestickRequestVersion = 0
+  let candlestickTargetKey = ''
   const intradaySeries = ref<StockIntradaySeriesVO | null>(null)
   const intradayLoading = ref(false)
   const intradayError = ref('')
   let intradayRequestVersion = 0
+  let intradayTargetKey = ''
 
   async function loadList(workspaceId: number) {
     const requestVersion = ++listRequestVersion
@@ -113,6 +128,35 @@ export const useStockStore = defineStore('stock', () => {
     } finally {
       if (requestVersion === searchRequestVersion) {
         searchLoading.value = false
+      }
+    }
+  }
+
+  async function loadMarketDetail(workspaceId: number, code: string) {
+    const normalizedCode = code.trim().toUpperCase()
+    const targetKey = `${workspaceId}:${normalizedCode}`
+    const requestVersion = ++marketDetailRequestVersion
+    if (marketDetailTargetKey !== targetKey) {
+      marketDetail.value = null
+      marketDetailTargetKey = targetKey
+    }
+    marketDetailLoading.value = true
+    marketDetailError.value = ''
+    try {
+      const result = (await getWorkspaceStockMarketDetail(workspaceId, normalizedCode)).data.data
+      if (requestVersion === marketDetailRequestVersion) {
+        marketDetail.value = result
+      }
+      return result
+    } catch (error) {
+      if (requestVersion === marketDetailRequestVersion) {
+        marketDetail.value = null
+        marketDetailError.value = error instanceof Error ? error.message : '股票行情加载失败'
+      }
+      throw error
+    } finally {
+      if (requestVersion === marketDetailRequestVersion) {
+        marketDetailLoading.value = false
       }
     }
   }
@@ -290,19 +334,71 @@ export const useStockStore = defineStore('stock', () => {
     researchSubmitting.value = false
   }
 
-  async function loadCandlesticks(
+  function marketReadTargetKey(workspaceId: number, target: MarketReadTarget) {
+    return target.kind === 'workspace-stock'
+      ? `${workspaceId}:workspace:${target.workspaceStockId}`
+      : `${workspaceId}:directory:${target.code.trim().toUpperCase()}`
+  }
+
+  async function requestCandlestickPage(
     workspaceId: number,
-    workspaceStockId: number,
+    target: MarketReadTarget,
+    period: CandlestickPeriod,
+    count = 1000,
+    before?: string,
+  ) {
+    if (target.kind === 'workspace-stock') {
+      if (!before && count === 1000) {
+        return (
+          await getWorkspaceStockCandlesticks(workspaceId, target.workspaceStockId, period)
+        ).data.data
+      }
+      return (
+        await getWorkspaceStockCandlesticks(
+          workspaceId,
+          target.workspaceStockId,
+          period,
+          count,
+          before,
+        )
+      ).data.data
+    }
+    if (!before && count === 1000) {
+      return (
+        await getWorkspaceMarketStockCandlesticks(
+          workspaceId,
+          target.code.trim().toUpperCase(),
+          period,
+        )
+      ).data.data
+    }
+    return (
+      await getWorkspaceMarketStockCandlesticks(
+        workspaceId,
+        target.code.trim().toUpperCase(),
+        period,
+        count,
+        before,
+      )
+    ).data.data
+  }
+
+  async function loadCandlesticksForTarget(
+    workspaceId: number,
+    target: MarketReadTarget,
     period: CandlestickPeriod,
   ) {
+    const targetKey = marketReadTargetKey(workspaceId, target)
     const requestVersion = ++candlestickRequestVersion
+    if (candlestickTargetKey !== targetKey) {
+      candlestickTargetKey = targetKey
+      candlestickSeries.value = null
+    }
     candlestickLoading.value = true
     candlestickError.value = ''
     candlestickHistoryError.value = ''
     try {
-      const result = (
-        await getWorkspaceStockCandlesticks(workspaceId, workspaceStockId, period)
-      ).data.data
+      const result = await requestCandlestickPage(workspaceId, target, period)
       if (requestVersion === candlestickRequestVersion) {
         candlestickSeries.value = result
       }
@@ -320,23 +416,52 @@ export const useStockStore = defineStore('stock', () => {
     }
   }
 
-  async function loadOlderCandlesticks(workspaceId: number, workspaceStockId: number) {
+  function loadCandlesticks(
+    workspaceId: number,
+    workspaceStockId: number,
+    period: CandlestickPeriod,
+  ) {
+    return loadCandlesticksForTarget(
+      workspaceId,
+      { kind: 'workspace-stock', workspaceStockId },
+      period,
+    )
+  }
+
+  function loadMarketCandlesticks(workspaceId: number, code: string, period: CandlestickPeriod) {
+    return loadCandlesticksForTarget(
+      workspaceId,
+      { kind: 'directory-stock', code },
+      period,
+    )
+  }
+
+  async function loadOlderCandlesticksForTarget(
+    workspaceId: number,
+    target: MarketReadTarget,
+  ) {
     const current = candlestickSeries.value
-    if (!current?.hasMore || !current.nextBefore || candlestickLoadingOlder.value) return current
+    const targetKey = marketReadTargetKey(workspaceId, target)
+    if (
+      candlestickTargetKey !== targetKey ||
+      !current?.hasMore ||
+      !current.nextBefore ||
+      candlestickLoadingOlder.value
+    ) {
+      return current
+    }
 
     const requestVersion = candlestickRequestVersion
     candlestickLoadingOlder.value = true
     candlestickHistoryError.value = ''
     try {
-      const older = (
-        await getWorkspaceStockCandlesticks(
-          workspaceId,
-          workspaceStockId,
-          current.period,
-          1000,
-          current.nextBefore,
-        )
-      ).data.data
+      const older = await requestCandlestickPage(
+        workspaceId,
+        target,
+        current.period,
+        1000,
+        current.nextBefore,
+      )
       if (requestVersion !== candlestickRequestVersion) return older
 
       const merged = new Map(
@@ -365,8 +490,20 @@ export const useStockStore = defineStore('stock', () => {
     }
   }
 
+  function loadOlderCandlesticks(workspaceId: number, workspaceStockId: number) {
+    return loadOlderCandlesticksForTarget(workspaceId, {
+      kind: 'workspace-stock',
+      workspaceStockId,
+    })
+  }
+
+  function loadOlderMarketCandlesticks(workspaceId: number, code: string) {
+    return loadOlderCandlesticksForTarget(workspaceId, { kind: 'directory-stock', code })
+  }
+
   function clearCandlesticks() {
     candlestickRequestVersion += 1
+    candlestickTargetKey = ''
     candlestickSeries.value = null
     candlestickError.value = ''
     candlestickHistoryError.value = ''
@@ -374,19 +511,30 @@ export const useStockStore = defineStore('stock', () => {
     candlestickLoadingOlder.value = false
   }
 
-  async function loadIntraday(
+  async function loadIntradayForTarget(
     workspaceId: number,
-    workspaceStockId: number,
+    target: MarketReadTarget,
     date?: string,
     silent = false,
   ) {
+    const targetKey = marketReadTargetKey(workspaceId, target)
     const requestVersion = ++intradayRequestVersion
+    if (intradayTargetKey !== targetKey) {
+      intradayTargetKey = targetKey
+      intradaySeries.value = null
+    }
     if (!silent) intradayLoading.value = true
     intradayError.value = ''
     try {
-      const result = (
-        await getWorkspaceStockIntraday(workspaceId, workspaceStockId, date)
-      ).data.data
+      const result = target.kind === 'workspace-stock'
+        ? (await getWorkspaceStockIntraday(workspaceId, target.workspaceStockId, date)).data.data
+        : (
+            await getWorkspaceMarketStockIntraday(
+              workspaceId,
+              target.code.trim().toUpperCase(),
+              date,
+            )
+          ).data.data
       if (requestVersion === intradayRequestVersion) intradaySeries.value = result
       return result
     } catch (error) {
@@ -402,8 +550,37 @@ export const useStockStore = defineStore('stock', () => {
     }
   }
 
+  function loadIntraday(
+    workspaceId: number,
+    workspaceStockId: number,
+    date?: string,
+    silent = false,
+  ) {
+    return loadIntradayForTarget(
+      workspaceId,
+      { kind: 'workspace-stock', workspaceStockId },
+      date,
+      silent,
+    )
+  }
+
+  function loadMarketIntraday(
+    workspaceId: number,
+    code: string,
+    date?: string,
+    silent = false,
+  ) {
+    return loadIntradayForTarget(
+      workspaceId,
+      { kind: 'directory-stock', code },
+      date,
+      silent,
+    )
+  }
+
   function clearIntraday() {
     intradayRequestVersion += 1
+    intradayTargetKey = ''
     intradaySeries.value = null
     intradayLoading.value = false
     intradayError.value = ''
@@ -414,6 +591,14 @@ export const useStockStore = defineStore('stock', () => {
     searchResults.value = []
     searchLoading.value = false
     searchError.value = ''
+  }
+
+  function clearMarketDetail() {
+    marketDetailRequestVersion += 1
+    marketDetailTargetKey = ''
+    marketDetail.value = null
+    marketDetailLoading.value = false
+    marketDetailError.value = ''
   }
 
   function keepResearchDraft(
@@ -471,6 +656,7 @@ export const useStockStore = defineStore('stock', () => {
     attentionUpdatingStockId.value = null
     attentionError.value = ''
     clearSearch()
+    clearMarketDetail()
     clearCandlesticks()
     clearIntraday()
   }
@@ -482,6 +668,9 @@ export const useStockStore = defineStore('stock', () => {
     searchResults,
     searchLoading,
     searchError,
+    marketDetail,
+    marketDetailLoading,
+    marketDetailError,
     submitLoading,
     submitError,
     refreshWarning,
@@ -503,6 +692,7 @@ export const useStockStore = defineStore('stock', () => {
     intradayError,
     loadList,
     search,
+    loadMarketDetail,
     add,
     updateAttention,
     loadEnded,
@@ -511,11 +701,15 @@ export const useStockStore = defineStore('stock', () => {
     createOpinion,
     withdrawOpinion,
     loadCandlesticks,
+    loadMarketCandlesticks,
     loadOlderCandlesticks,
+    loadOlderMarketCandlesticks,
     loadIntraday,
+    loadMarketIntraday,
     clearCandlesticks,
     clearIntraday,
     clearSearch,
+    clearMarketDetail,
     keepResearchDraft,
     takeResearchDraft,
     clearRefreshWarning,

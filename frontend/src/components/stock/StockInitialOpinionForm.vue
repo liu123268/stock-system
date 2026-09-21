@@ -1,0 +1,317 @@
+<script setup lang="ts">
+import { reactive, ref } from 'vue'
+import type { AddWorkspaceStockRequestDTO, OpinionHorizon, StockStance } from '@/api/stock'
+
+type InitialOpinionDraft = Omit<AddWorkspaceStockRequestDTO, 'code'>
+
+const props = defineProps<{
+  stockName: string
+  currency: 'CNY' | 'HKD'
+  restarting?: boolean
+  loading?: boolean
+  error?: string
+}>()
+
+const emit = defineEmits<{
+  submit: [draft: InitialOpinionDraft]
+  cancel: []
+}>()
+
+const heading = ref<HTMLElement | null>(null)
+const localError = ref('')
+const opinion = reactive({
+  stance: 'NEUTRAL' as StockStance,
+  reason: '',
+  observationNote: '',
+  horizon: 'MEDIUM' as OpinionHorizon,
+  targetPrice: '',
+  stopLossPrice: '',
+})
+
+function optionalPrice(value: string | number) {
+  if (value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : Number.NaN
+}
+
+function currencySymbol() {
+  return props.currency === 'HKD' ? 'HK$' : '¥'
+}
+
+function submit() {
+  const targetPrice = optionalPrice(opinion.targetPrice)
+  const stopLossPrice = optionalPrice(opinion.stopLossPrice)
+  if (!opinion.reason.trim()) {
+    localError.value = '请填写判断理由'
+    return
+  }
+  if (Number.isNaN(targetPrice) || Number.isNaN(stopLossPrice)) {
+    localError.value = '目标价和止损参考价必须是大于 0 的数字'
+    return
+  }
+
+  localError.value = ''
+  emit('submit', {
+    stance: opinion.stance,
+    reason: opinion.reason.trim(),
+    observationNote: opinion.observationNote.trim() || null,
+    horizon: opinion.horizon,
+    targetPrice,
+    stopLossPrice,
+  })
+}
+
+function focusHeading() {
+  heading.value?.focus()
+}
+
+defineExpose({ focusHeading })
+</script>
+
+<template>
+  <form class="opinion-form" novalidate aria-labelledby="initial-opinion-title" @submit.prevent="submit">
+    <div class="form-heading">
+      <div>
+        <p class="section-label">{{ restarting ? '重新开启研究' : '加入共享自选' }}</p>
+        <h2 id="initial-opinion-title" ref="heading" tabindex="-1">
+          记录对 {{ stockName }} 的初始观点
+        </h2>
+      </div>
+      <button type="button" :disabled="loading" @click="emit('cancel')">取消填写</button>
+    </div>
+
+    <div class="field-grid compact-fields">
+      <label>
+        <span>观点倾向（必填）</span>
+        <select v-model="opinion.stance" required>
+          <option value="BULLISH">看多</option>
+          <option value="NEUTRAL">中性</option>
+          <option value="BEARISH">看空</option>
+        </select>
+      </label>
+      <label>
+        <span>关注周期（必填）</span>
+        <select v-model="opinion.horizon" required>
+          <option value="SHORT">短期</option>
+          <option value="MEDIUM">中期</option>
+          <option value="LONG">长期</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="field-grid text-fields">
+      <label>
+        <span>判断理由（必填）</span>
+        <textarea
+          v-model="opinion.reason"
+          maxlength="1000"
+          rows="5"
+          required
+          placeholder="为什么形成当前的看多、中性或看空判断？"
+        ></textarea>
+      </label>
+      <label>
+        <span>关键观察条件（选填）</span>
+        <textarea
+          v-model="opinion.observationNote"
+          maxlength="1000"
+          rows="5"
+          placeholder="哪些变化可能支持、削弱或推翻当前判断？"
+        ></textarea>
+      </label>
+    </div>
+
+    <div class="field-grid price-fields">
+      <label>
+        <span>目标价（选填）</span>
+        <div class="price-input">
+          <span>{{ currencySymbol() }}</span>
+          <input
+            v-model="opinion.targetPrice"
+            type="number"
+            min="0.0001"
+            step="0.0001"
+            placeholder="不填写也可以"
+          />
+        </div>
+      </label>
+      <label>
+        <span>止损参考价（选填）</span>
+        <div class="price-input">
+          <span>{{ currencySymbol() }}</span>
+          <input
+            v-model="opinion.stopLossPrice"
+            type="number"
+            min="0.0001"
+            step="0.0001"
+            placeholder="不填写也可以"
+          />
+        </div>
+      </label>
+    </div>
+
+    <p v-if="localError || error" class="inline-error" role="alert">
+      {{ localError || error }}
+    </p>
+    <div class="submit-row">
+      <span>关注价格将由后端重新读取，不采用页面当前显示值。</span>
+      <button class="primary" type="submit" :disabled="loading">
+        {{ loading ? '正在保存…' : restarting ? '重新关注并保存观点' : '加入关注并保存观点' }}
+      </button>
+    </div>
+  </form>
+</template>
+
+<style scoped>
+.opinion-form {
+  padding: 30px 0 34px;
+  border-block: 1px solid var(--color-ink);
+}
+.form-heading,
+.submit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.section-label {
+  margin: 0;
+  color: var(--color-focus);
+  font-size: 12px;
+  font-weight: 700;
+}
+.form-heading h2 {
+  margin: 7px 0 0;
+  font-size: 24px;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+.form-heading h2:focus {
+  outline: none;
+}
+.form-heading button {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.form-heading button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+.field-grid {
+  display: grid;
+  gap: 22px;
+  margin-top: 24px;
+}
+.compact-fields,
+.price-fields {
+  grid-template-columns: repeat(2, minmax(0, 260px));
+}
+.text-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+label > span {
+  display: block;
+  margin-bottom: 9px;
+  font-size: 13px;
+  font-weight: 650;
+}
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+}
+input,
+select {
+  min-height: 48px;
+  padding: 0 14px;
+}
+textarea {
+  min-height: 132px;
+  padding: 13px 14px;
+  line-height: 1.7;
+  resize: vertical;
+}
+input::placeholder,
+textarea::placeholder {
+  color: oklch(0.46 0.008 255);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-ink);
+  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
+}
+.price-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+.price-input:focus-within {
+  border-color: var(--color-ink);
+  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
+}
+.price-input > span {
+  padding-left: 14px;
+  color: var(--color-muted);
+}
+.price-input input {
+  border: 0;
+  outline: 0;
+}
+.submit-row {
+  margin-top: 26px;
+}
+.submit-row > span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.primary {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius-action);
+  background: var(--color-ink);
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+}
+.primary:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+.inline-error {
+  margin: 16px 0 0;
+  color: var(--color-danger);
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .form-heading,
+  .submit-row {
+    display: block;
+  }
+  .form-heading button {
+    margin-top: 12px;
+  }
+  .compact-fields,
+  .text-fields,
+  .price-fields {
+    grid-template-columns: 1fr;
+  }
+  .submit-row .primary {
+    width: 100%;
+    margin-top: 18px;
+  }
+}
+</style>

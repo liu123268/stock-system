@@ -26,6 +26,14 @@ export interface StockSearchResponseVO {
   simulated: boolean
 }
 
+export type StockTrackingState = 'NOT_TRACKED' | 'ACTIVE' | 'ENDED'
+
+export interface WorkspaceStockMarketDetailResponseVO extends StockSearchResponseVO {
+  trackingState: StockTrackingState
+  workspaceStockId: number | null
+  activeResearchCycleId: number | null
+}
+
 export interface AddWorkspaceStockRequestDTO {
   code: string
   stance: StockStance
@@ -204,6 +212,12 @@ export function searchStocks(keyword: string) {
   })
 }
 
+export function getWorkspaceStockMarketDetail(workspaceId: number, code: string) {
+  return http.get<ApiResult<WorkspaceStockMarketDetailResponseVO>>(
+    `/workspaces/${workspaceId}/market/stocks/${encodeURIComponent(code)}`,
+  )
+}
+
 export function listWorkspaceStocks(workspaceId: number) {
   return http.get<ApiResult<WorkspaceStockListResponseVO[]>>(`/workspaces/${workspaceId}/stocks`)
 }
@@ -291,6 +305,30 @@ export function getWorkspaceStockIntraday(
 ) {
   return http.get<ApiResult<StockIntradaySeriesVO>>(
     `/workspaces/${workspaceId}/stocks/${workspaceStockId}/intraday`,
+    { params: date ? { date } : {} },
+  )
+}
+
+export function getWorkspaceMarketStockCandlesticks(
+  workspaceId: number,
+  code: string,
+  period: CandlestickPeriod,
+  count = 1000,
+  before?: string,
+) {
+  return http.get<ApiResult<StockCandlestickSeriesVO>>(
+    `/workspaces/${workspaceId}/market/stocks/${encodeURIComponent(code)}/candlesticks`,
+    { params: { period, count, ...(before ? { before } : {}) } },
+  )
+}
+
+export function getWorkspaceMarketStockIntraday(
+  workspaceId: number,
+  code: string,
+  date?: string,
+) {
+  return http.get<ApiResult<StockIntradaySeriesVO>>(
+    `/workspaces/${workspaceId}/market/stocks/${encodeURIComponent(code)}/intraday`,
     { params: date ? { date } : {} },
   )
 }

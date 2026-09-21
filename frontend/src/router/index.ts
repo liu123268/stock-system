@@ -5,6 +5,9 @@ import { isAuthenticationFailure } from '@/utils/authentication-error'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition ?? { top: 0 }
+  },
   routes: [
     {
       path: '/',
@@ -36,6 +39,11 @@ const router = createRouter({
           path: 'stocks',
           name: 'workspace-stocks',
           component: () => import('@/views/workspace/WorkspaceStocksView.vue'),
+        },
+        {
+          path: 'stocks/market/:code',
+          name: 'workspace-stock-market',
+          component: () => import('@/views/workspace/WorkspaceStockMarketView.vue'),
         },
         {
           path: 'stocks/:workspaceStockId',

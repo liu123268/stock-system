@@ -297,7 +297,38 @@ try {
   if ((await searchStockResponse).status() !== 200) {
     throw new Error('股票搜索没有成功返回')
   }
-  await page.getByRole('button', { name: /贵州茅台.*600519\.SH/ }).click()
+  const marketPreviewResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'GET' &&
+      /\/api\/workspaces\/\d+\/market\/stocks\/600519\.SH$/.test(path)
+    )
+  })
+  const marketCandlestickResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'GET' &&
+      /\/api\/workspaces\/\d+\/market\/stocks\/600519\.SH\/candlesticks$/.test(path)
+    )
+  })
+  await page.locator('.search-results a').filter({ hasText: '600519.SH' }).click()
+  if ((await marketPreviewResponse).status() !== 200) {
+    throw new Error('未关注股票行情详情没有成功加载')
+  }
+  if ((await marketCandlestickResponse).status() !== 200) {
+    throw new Error('未关注股票日 K 没有成功加载')
+  }
+  await page.waitForURL((url) => /\/workspaces\/\d+\/stocks\/market\/600519\.SH$/.test(url.pathname))
+  await page.locator('.candlestick-chart canvas').waitFor()
+  const expectedSourceText = marketMode === 'longbridge' ? 'LONGBRIDGE_OPENAPI' : '本地模拟行情'
+  if (!(await page.locator('body').innerText()).includes(expectedSourceText)) {
+    throw new Error('独立行情页没有显示预期行情来源')
+  }
+  if ((await page.locator('.opinion-form').count()) !== 0) {
+    throw new Error('只查看未关注股票行情时不应自动展开初始观点表单')
+  }
+  await page.getByRole('button', { name: '加入共享自选', exact: true }).click()
+  await page.locator('.opinion-form').waitFor()
   await page.getByLabel('观点倾向').selectOption('BULLISH')
   await page.getByLabel('关注周期').selectOption('MEDIUM')
   await page.getByLabel('判断理由').fill('品牌优势和现金流仍需持续验证')
@@ -312,7 +343,14 @@ try {
     },
     { timeout: 5000 },
   )
-  await page.getByRole('button', { name: '添加并保存观点', exact: true }).click()
+  const addedResearchResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'GET' &&
+      /^\/api\/workspaces\/\d+\/stocks\/\d+\/research$/.test(path)
+    )
+  })
+  await page.getByRole('button', { name: '加入关注并保存观点', exact: true }).click()
   const addStockResponse = await addStockResponsePromise.catch(async () => {
     const messages = await page.locator('.inline-error').allInnerTexts()
     const formState = await page.locator('.opinion-form').evaluate((form) => ({
@@ -327,17 +365,27 @@ try {
   if (addStockResponse.status() !== 200) {
     throw new Error('股票与初始观点没有成功原子添加')
   }
-  await page.getByText(/已加入共享自选，初始观点已经保存。/).waitFor()
-  await page.getByText('贵州茅台', { exact: true }).last().waitFor()
+  if ((await addedResearchResponse).status() !== 200) {
+    throw new Error('原子添加后没有成功进入研究详情')
+  }
+  await page.waitForURL((url) => /\/workspaces\/\d+\/stocks\/\d+$/.test(url.pathname))
+  await page.getByText('贵州茅台', { exact: true }).first().waitFor()
   const stockPageText = await page.locator('body').innerText()
-  const expectedSourceText = marketMode === 'longbridge' ? 'LONGBRIDGE_OPENAPI' : '本地模拟行情'
-  if (!stockPageText.includes(expectedSourceText) || !stockPageText.includes('看多')) {
-    throw new Error(`共享自选列表没有显示预期行情来源和初始观点摘要：${stockPageText}`)
+  if (!stockPageText.includes('看多')) {
+    throw new Error(`研究详情没有显示刚保存的初始观点摘要：${stockPageText}`)
   }
 
   let realMarketChartsCompleted = false
   let realMarketScreenshotCaptured = false
   if (marketMode === 'longbridge') {
+    const stockListForCharts = waitForResponseSafely(page, (response) => {
+      const path = new URL(response.url()).pathname
+      return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+\/stocks$/.test(path)
+    })
+    await page.getByRole('link', { name: '共享自选', exact: true }).click()
+    if ((await stockListForCharts).status() !== 200) {
+      throw new Error('真实行情图验收前没有成功返回共享自选')
+    }
     const chartApiPath = (suffix) =>
       new RegExp(`^/api/workspaces/\\d+/stocks/\\d+/${suffix}$`)
     const waitForChartResponse = (suffix, expectedStatus = 200) =>
