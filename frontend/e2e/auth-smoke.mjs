@@ -199,6 +199,22 @@ async function checkServices() {
     throw new Error(`拒绝开始浏览器写入：后端实际环境为 ${JSON.stringify(environmentResult?.data)}`)
   }
 
+  const proxiedEnvironmentResponse = await fetch(`${frontendUrl}/api/test/environment`)
+  if (!proxiedEnvironmentResponse.ok) {
+    throw new Error(
+      `拒绝开始浏览器写入：前端代理无法访问测试环境探针（HTTP ${proxiedEnvironmentResponse.status}）`,
+    )
+  }
+  const proxiedEnvironmentResult = await proxiedEnvironmentResponse.json()
+  if (
+    proxiedEnvironmentResult?.data?.profile !== 'test' ||
+    proxiedEnvironmentResult?.data?.database !== 'stock_system_test'
+  ) {
+    throw new Error(
+      `拒绝开始浏览器写入：前端代理实际环境为 ${JSON.stringify(proxiedEnvironmentResult?.data)}`,
+    )
+  }
+
   const frontendResponse = await fetch(`${frontendUrl}/register`)
   if (!frontendResponse.ok) {
     throw new Error(`前端不可用：HTTP ${frontendResponse.status}`)
@@ -543,6 +559,11 @@ try {
   if ((await memberResearchResponse).status() !== 200) {
     throw new Error('MEMBER没有成功进入股票研究详情')
   }
+  if ((await memberPage.locator('.opinion-compose').count()) !== 0) {
+    throw new Error('进入研究详情时不应默认展开观点表单')
+  }
+  await memberPage.getByRole('button', { name: '发表观点更新', exact: true }).click()
+  await memberPage.locator('.opinion-compose').waitFor()
   await memberPage.getByLabel('记录类型').selectOption('UPDATE')
   await memberPage.getByLabel('观点倾向').selectOption('NEUTRAL')
   await memberPage.getByLabel('关注周期').selectOption('MEDIUM')
@@ -585,9 +606,18 @@ try {
       /^\/api\/workspaces\/\d+\/stocks\/\d+\/research$/.test(path)
     )
   })
-  await page.getByRole('link', { name: '查看完整研究时间线', exact: true }).click()
+  await page.getByRole('link', { name: '查看全部观点', exact: true }).click()
   if ((await ownerResearchResponse).status() !== 200) {
     throw new Error('OWNER没有成功进入股票研究详情')
+  }
+  await page.waitForURL((url) => url.hash === '#research-timeline')
+  await page.getByRole('heading', { name: '研究周期与观点时间线', exact: true }).waitFor()
+  await page.waitForFunction(() => {
+    const timeline = document.querySelector('#research-timeline')
+    return timeline instanceof HTMLElement && Math.abs(timeline.getBoundingClientRect().top) < 180
+  })
+  if ((await page.locator('.opinion-compose').count()) !== 0) {
+    throw new Error('从“查看全部观点”进入时不应先展开观点表单')
   }
   await page.getByText('MEMBER补充了估值观察观点', { exact: true }).waitFor()
   await page.getByRole('button', { name: '结束本轮关注', exact: true }).click()
@@ -604,6 +634,8 @@ try {
   }
   await page.getByText('本轮关注已经结束，研究记录已转为只读历史。', { exact: true }).waitFor()
 
+  await page.getByRole('button', { name: '开启新一期研究', exact: true }).click()
+  await page.locator('.opinion-compose').waitFor()
   await page.getByLabel('观点倾向').selectOption('BULLISH')
   await page.getByLabel('关注周期').selectOption('LONG')
   await page.getByLabel('判断理由').fill('重新观察后建立新的研究周期')

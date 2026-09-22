@@ -352,19 +352,22 @@ onBeforeUnmount(() => {
               >
                 {{ expandedStockId === item.workspaceStockId ? '收起行情图' : '查看行情图' }}
               </button>
+            </div>
+            <div class="research-summary-meta">
+              <small>
+                本期 {{ item.opinionCount }} 条观点 · {{ item.participantCount }} 位成员参与
+              </small>
               <RouterLink
                 class="research-link"
                 :to="{
                   name: 'workspace-stock-research',
                   params: { workspaceId, workspaceStockId: item.workspaceStockId },
+                  hash: '#research-timeline',
                 }"
               >
-                查看完整研究时间线
+                查看全部观点 <span aria-hidden="true">→</span>
               </RouterLink>
             </div>
-            <small>
-              本期 {{ item.opinionCount }} 条观点 · {{ item.participantCount }} 位成员参与
-            </small>
           </div>
           <div
             v-if="expandedStockId === item.workspaceStockId"
@@ -665,6 +668,13 @@ input:focus {
   font-size: 12px;
   white-space: nowrap;
 }
+.research-summary-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 12px;
+}
 .kline-toggle,
 .research-link {
   border: 0;
@@ -852,6 +862,13 @@ input:focus {
     display: block;
     margin-top: 12px;
     white-space: normal;
+  }
+  .research-summary-meta {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  .research-summary-meta small {
+    margin-top: 0;
   }
   .market-panel-slot {
     margin-inline: 0;

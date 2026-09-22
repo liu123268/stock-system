@@ -70,7 +70,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 1. 启动前确认目标数据库精确为 `stock_system_test`；
 2. 后端集成测试从 JDBC 实际连接再次核对 catalog，不能只相信 `test` profile；`TestDatabaseSafetyGuard` 在 test 后端启动时执行同样的检查，不符合则拒绝启动；
-3. 浏览器测试在产生业务写入前，通过仅存在于 test profile 的 `/api/test/environment` 确认后端实际连接 `stock_system_test`；启动日志只作为人工可见证据，不再是唯一保护；
+3. 浏览器测试在产生业务写入前，必须分别通过测试后端地址和测试前端代理访问仅存在于 test profile 的 `/api/test/environment`，两条路径都确认实际连接 `stock_system_test`；这同时防止后端地址正确、但 Vite 代理误连开发服务。启动日志只作为人工可见证据，不再是唯一保护；
 4. 只记录和删除本次运行唯一标识创建的数据；
 5. 在 `finally` 中执行清理；
 6. 清理后查询相关表并确认本轮标识剩余数量为 `0`；

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
   OpinionHorizon,
@@ -23,6 +23,7 @@ const currentCycle = computed(() =>
   stockStore.researchDetail?.cycles.find((cycle) => cycle.status === 'ACTIVE'),
 )
 const endConfirming = ref(false)
+const composeExpanded = ref(false)
 const formError = ref('')
 const successMessage = ref('')
 const pageRefreshWarning = ref('')
@@ -45,6 +46,7 @@ const opinion = reactive({
 function restorePendingDraft() {
   const draft = stockStore.takeResearchDraft(workspaceId.value, workspaceStockId.value)
   if (!draft) return
+  composeExpanded.value = true
   opinion.stance = draft.stance
   opinion.reason = draft.reason
   opinion.observationNote = draft.observationNote ?? ''
@@ -52,6 +54,21 @@ function restorePendingDraft() {
   opinion.targetPrice = draft.targetPrice?.toString() ?? ''
   opinion.stopLossPrice = draft.stopLossPrice?.toString() ?? ''
   successMessage.value = '这只股票已经有活动研究周期。你的草稿已保留，可确认后作为观点发表。'
+}
+
+async function scrollToTimeline() {
+  await nextTick()
+  const target = document.getElementById('research-timeline')
+  if (!target) return
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+}
+
+async function toggleCompose() {
+  composeExpanded.value = !composeExpanded.value
+  if (!composeExpanded.value) return
+  await nextTick()
+  document.querySelector<HTMLElement>('[data-opinion-first-control]')?.focus()
 }
 
 const authors = computed(() => {
@@ -88,6 +105,7 @@ async function load() {
     await workspaceStore.ensureCurrent(workspaceId.value)
     await stockStore.loadResearch(workspaceId.value, workspaceStockId.value)
     restorePendingDraft()
+    if (route.hash === '#research-timeline') await scrollToTimeline()
   } catch (error) {
     await handleWorkspaceApiError(error, router)
   }
@@ -167,6 +185,8 @@ async function submitOpinion(reopen: boolean) {
       successMessage.value = '观点已经加入当前研究时间线。'
     }
     resetForm()
+    composeExpanded.value = false
+    await scrollToTimeline()
   } catch (error) {
     if (await handleWorkspaceApiError(error, router)) return
     formError.value = error instanceof Error ? error.message : '提交失败'
@@ -195,6 +215,8 @@ async function endResearch() {
   try {
     await stockStore.endResearch(workspaceId.value, workspaceStockId.value, cycle.id)
     endConfirming.value = false
+    composeExpanded.value = false
+    resetForm()
     successMessage.value = '本轮关注已经结束，研究记录已转为只读历史。'
   } catch (error) {
     if (await handleWorkspaceApiError(error, router)) return
@@ -288,15 +310,42 @@ onBeforeUnmount(() => {
       <button type="button" @click="retryResearchData">只重新加载页面数据</button>
     </p>
 
-    <section v-if="currentCycle && !isArchived" class="current-actions">
-      <div>
+    <section v-if="!isArchived" class="current-actions">
+      <div v-if="currentCycle">
         <p class="eyebrow">当前周期</p>
         <h2>{{ currentCycle.attentionLevel === 'FOCUS' ? '重点关注' : '普通关注' }}</h2>
         <p>开始于 {{ formatTime(currentCycle.startedAt) }}，由 {{ currentCycle.startedByNickname }} 发起。</p>
       </div>
-      <button v-if="!endConfirming" class="danger-link" type="button" @click="endConfirming = true">
-        结束本轮关注
-      </button>
+      <div v-else>
+        <p class="eyebrow">当前状态</p>
+        <h2>没有正在进行的研究周期</h2>
+        <p>历史观点保持只读，需要继续跟踪时可以开启新一期。</p>
+      </div>
+      <div v-if="!endConfirming" class="current-action-controls">
+        <button
+          class="compose-toggle"
+          type="button"
+          :aria-expanded="composeExpanded"
+          aria-controls="opinion-compose"
+          @click="toggleCompose"
+        >
+          {{
+            composeExpanded
+              ? '收起观点表单'
+              : currentCycle
+                ? '发表观点更新'
+                : '开启新一期研究'
+          }}
+        </button>
+        <button
+          v-if="currentCycle"
+          class="danger-link"
+          type="button"
+          @click="endConfirming = true"
+        >
+          结束本轮关注
+        </button>
+      </div>
       <div v-else class="confirm-end">
         <span>结束后本周期永久只读。</span>
         <button type="button" @click="endConfirming = false">取消</button>
@@ -306,7 +355,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-if="!isArchived" class="opinion-compose">
+    <section v-if="!isArchived && composeExpanded" id="opinion-compose" class="opinion-compose">
       <p class="eyebrow">{{ currentCycle ? '追加研究记录' : '重新开启研究' }}</p>
       <h2>{{ currentCycle ? '发表观点更新或复盘' : '用新的初始观点开启下一段周期' }}</h2>
       <p class="form-guidance">
@@ -316,14 +365,18 @@ onBeforeUnmount(() => {
         <div class="form-grid">
           <label v-if="currentCycle">
             <span>记录类型（必填）</span>
-            <select v-model="opinion.type" required>
+            <select v-model="opinion.type" data-opinion-first-control required>
               <option value="UPDATE">观点更新</option>
               <option value="REVIEW">复盘总结</option>
             </select>
           </label>
           <label>
             <span>观点倾向（必填）</span>
-            <select v-model="opinion.stance" required>
+            <select
+              v-model="opinion.stance"
+              :data-opinion-first-control="currentCycle ? undefined : ''"
+              required
+            >
               <option value="BULLISH">看多</option>
               <option value="NEUTRAL">中性</option>
               <option value="BEARISH">看空</option>
@@ -368,7 +421,7 @@ onBeforeUnmount(() => {
       </form>
     </section>
 
-    <section class="timeline-section">
+    <section id="research-timeline" class="timeline-section">
       <div class="timeline-heading">
         <div><p class="eyebrow">完整历史</p><h2>研究周期与观点时间线</h2></div>
         <div class="filters" aria-label="观点筛选">
@@ -437,6 +490,8 @@ onBeforeUnmount(() => {
 .error-message { color: var(--color-danger); }
 .current-actions { display: flex; align-items: center; justify-content: space-between; gap: 30px; padding: 30px 0; border-bottom: 1px solid var(--color-border); }
 .current-actions h2, .opinion-compose h2, .timeline-heading h2 { margin-top: 7px; font-size: 25px; }
+.current-action-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.compose-toggle { min-height: 40px; padding: 0 16px; border: 1px solid var(--color-ink); border-radius: var(--radius-action); background: var(--color-ink); color: white; cursor: pointer; font-weight: 700; }
 .danger-link, .withdraw-link { border: 0; background: transparent; color: var(--color-danger); cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
 .confirm-end { display: flex; align-items: center; gap: 10px; color: var(--color-muted); font-size: 13px; }
 .confirm-end button, .primary { min-height: 40px; padding: 0 14px; border: 1px solid var(--color-border); border-radius: var(--radius-action); cursor: pointer; }
@@ -473,6 +528,7 @@ dd { margin: 4px 0 0; font-size: 13px; }
 .empty-filter { padding: 24px 0; }
 @media (max-width: 760px) {
   .current-actions, .timeline-heading, .cycle-card > header { align-items: flex-start; flex-direction: column; }
+  .current-action-controls { width: 100%; }
   .form-grid, .text-grid, .opinion-copy { grid-template-columns: 1fr; }
   .filters { width: 100%; flex-direction: column; }
   .filters select { width: 100%; }
