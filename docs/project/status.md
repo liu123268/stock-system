@@ -1,10 +1,10 @@
 # 当前项目状态
 
-状态核对：2026-09-21。SPEC-002 CODE-208 拼音首字母搜索、V7 迁移、现有可信目录回填和 CODE-211A 未关注股票行情页已经完成；证据见 SPEC-002 tasks。
+状态核对：2026-09-22。SPEC-002 CODE-208 拼音首字母搜索、V7 迁移、现有可信目录回填、CODE-211A 未关注股票行情页和 CODE-212 共享列表研究摘要已经完成；证据见 SPEC-002 tasks。
 
 ## 当前阶段与下一步
 
-认证与普通空间基础边界完成至 [SPEC-001 CODE-006](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索和 CODE-211A 未关注行情页均已关闭。
+认证与普通空间基础边界完成至 [SPEC-001 CODE-006](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-211A 未关注行情页和 CODE-212 共享列表研究摘要均已关闭。
 
 **下一步返回 [SPEC-001 CODE-007](../specs/001-workspace/tasks.md)，完成超级管理员用户、空间治理和操作记录。** 随后依次处理空间改名、个人资料和邀请安全；近期动态、时间线规模与研究详情最新行情／价格变化分别由 CODE-210、CODE-209 与 CODE-211B 承接，跨阶段关系见 [路线](roadmap.md)。
 
@@ -26,6 +26,7 @@
 
 ## 最近验证
 
+- 2026-09-22 CODE-212 验证：`StockResearchIntegrationTest` 18 项通过，确认最新未撤回观点、撤回回退、周期统计和列表正文边界；前端 43 项、类型检查、两套 lint 与生产构建通过。Mock Chrome 从第二位成员发表更新回到共享列表，核对最近观点与 2 条观点／2 位成员统计，并通过“查看完整研究时间线”进入详情；测试数据清理为零，详细证据见 SPEC-002 tasks。
 - 历史业务证据：2026-09-18 [PLAN-207 验收](../specs/002-stock-research/tasks.md#plan-207-研究生命周期最终证据2026-09-18)记录后端 115 项中 108 项通过、7 项外部探测跳过，前端 32 项及构建／静态检查通过，双会话浏览器与清理完成。这些测试没有覆盖本轮新列出的全部反例。
 - Redis、凭据扫描、真实页面命中／未命中及故障降级，见 [CODE-206E 最终证据](../specs/002-stock-research/tasks.md#code-206e-最终验收证据2026-09-18)。空间成员及认证历史证据见 SPEC-001 tasks；重要历史根因保留在 [Bug 复盘](../engineering/bugs/index.md)，不在本快照复制逐日记录。
 - 2026-09-21 CODE-208 完整验证：3 项 Python、7 项目录 MySQL 集成测试及 Longbridge 单次批量报价测试通过；后端完整回归 125 项中 118 项通过、7 项外部探测跳过。前端 38 项单元测试、类型检查、Oxlint、ESLint 和生产构建通过；隔离 Chrome 在桌面／移动视口覆盖原搜索与 `tbdg/TB`，数据清理为 0，临时进程已关闭、端口已释放。未调用真实 Longbridge；详细数据迁移和回填证据见 SPEC-002 tasks。

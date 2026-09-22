@@ -79,7 +79,6 @@ public class StockResearchService {
     }
 
     private WorkspaceStockListResponseVO toListResponse(WorkspaceStockListRow row) {
-        boolean withdrawn = Boolean.TRUE.equals(row.getInitialOpinionWithdrawn());
         return new WorkspaceStockListResponseVO(
                 row.getWorkspaceStockId(),
                 row.getResearchCycleId(),
@@ -96,17 +95,14 @@ public class StockResearchService {
                 row.getQuoteTime(),
                 row.getQuoteSource(),
                 Boolean.TRUE.equals(row.getSimulated()),
-                row.getInitialOpinionId(),
-                row.getAuthorUserId(),
-                row.getAuthorNickname(),
-                row.getStance(),
-                withdrawn ? null : row.getReason(),
-                withdrawn ? null : row.getObservationNote(),
-                row.getHorizon(),
-                withdrawn ? null : row.getTargetPrice(),
-                withdrawn ? null : row.getStopLossPrice(),
-                row.getOpinionCreatedAt(),
-                withdrawn
+                row.getLatestOpinionId(),
+                row.getLatestOpinionType(),
+                row.getLatestOpinionAuthorUserId(),
+                row.getLatestOpinionAuthorNickname(),
+                row.getLatestOpinionStance(),
+                row.getLatestOpinionCreatedAt(),
+                row.getOpinionCount(),
+                row.getParticipantCount()
         );
     }
 }

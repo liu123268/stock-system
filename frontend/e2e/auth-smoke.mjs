@@ -569,6 +569,15 @@ try {
   if ((await ownerStockListForResearch).status() !== 200) {
     throw new Error('OWNER没有重新加载共享自选列表')
   }
+  await page.getByText('最近一条观点', { exact: true }).waitFor()
+  const refreshedListText = await page.locator('body').innerText()
+  if (
+    !refreshedListText.includes('最近一条观点') ||
+    !refreshedListText.includes(`观点更新 · ${memberNickname}`) ||
+    !refreshedListText.includes('本期 2 条观点 · 2 位成员参与')
+  ) {
+    throw new Error(`共享列表没有显示最新观点与本期统计：${refreshedListText}`)
+  }
   const ownerResearchResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
     return (
@@ -576,7 +585,7 @@ try {
       /^\/api\/workspaces\/\d+\/stocks\/\d+\/research$/.test(path)
     )
   })
-  await page.getByRole('link', { name: '贵州茅台', exact: true }).click()
+  await page.getByRole('link', { name: '查看完整研究时间线', exact: true }).click()
   if ((await ownerResearchResponse).status() !== 200) {
     throw new Error('OWNER没有成功进入股票研究详情')
   }

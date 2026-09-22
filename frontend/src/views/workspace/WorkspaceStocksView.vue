@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
-  OpinionHorizon,
+  OpinionType,
   StockSearchResponseVO,
   StockStance,
   WorkspaceStockListResponseVO,
@@ -142,8 +142,8 @@ function stanceLabel(stance: StockStance) {
   return { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '看空' }[stance]
 }
 
-function horizonLabel(horizon: OpinionHorizon) {
-  return { SHORT: '短期', MEDIUM: '中期', LONG: '长期' }[horizon]
+function opinionTypeLabel(type: OpinionType) {
+  return { INITIAL: '初始观点', UPDATE: '观点更新', REVIEW: '复盘总结' }[type]
 }
 
 function toggleCandlesticks(item: WorkspaceStockListResponseVO) {
@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
   <template v-else-if="workspaceStore.currentWorkspace">
     <section v-if="isArchived" class="archive-notice" aria-live="polite">
       <strong>这个空间已归档，共享自选处于只读状态。</strong>
-      <span>你仍然可以查看关注时的行情快照和初始观点。</span>
+      <span>你仍然可以查看关注时的行情快照和完整研究时间线。</span>
     </section>
 
     <section class="page-heading">
@@ -318,43 +318,53 @@ onBeforeUnmount(() => {
               <small>{{ item.simulated ? '本地模拟行情' : item.quoteSource }}</small>
             </div>
             <div class="metric">
-              <span>初始倾向</span>
-              <strong>{{ item.initialOpinionWithdrawn ? '已撤回' : stanceLabel(item.stance) }}</strong>
+              <span>最近一条观点</span>
+              <strong>{{ stanceLabel(item.latestOpinionStance) }}</strong>
               <small>
-                {{
-                  item.initialOpinionWithdrawn
-                    ? item.authorNickname
-                    : `${horizonLabel(item.horizon)} · ${item.authorNickname}`
-                }}
+                {{ opinionTypeLabel(item.latestOpinionType) }} · {{ item.latestOpinionAuthorNickname }}
               </small>
+              <small>{{ formatTime(item.latestOpinionCreatedAt) }}</small>
             </div>
           </div>
           <div class="stock-actions">
-            <button
-              v-if="!isArchived"
-              class="attention-toggle"
-              type="button"
-              :disabled="stockStore.attentionUpdatingStockId !== null"
-              @click="toggleAttention(item)"
-            >
-              {{
-                stockStore.attentionUpdatingStockId === item.workspaceStockId
-                  ? '正在更新…'
-                  : item.attentionLevel === 'FOCUS'
-                    ? '改为普通关注'
-                    : '设为重点关注'
-              }}
-            </button>
-            <button
-              class="kline-toggle"
-              type="button"
-              :aria-expanded="expandedStockId === item.workspaceStockId"
-              :aria-controls="`stock-chart-${item.workspaceStockId}`"
-              @click="toggleCandlesticks(item)"
-            >
-              {{ expandedStockId === item.workspaceStockId ? '收起行情图' : '查看行情图' }}
-            </button>
-            <small>展开后才请求该股票的行情，不会为搜索候选预取。</small>
+            <div class="stock-action-controls">
+              <button
+                v-if="!isArchived"
+                class="attention-toggle"
+                type="button"
+                :disabled="stockStore.attentionUpdatingStockId !== null"
+                @click="toggleAttention(item)"
+              >
+                {{
+                  stockStore.attentionUpdatingStockId === item.workspaceStockId
+                    ? '正在更新…'
+                    : item.attentionLevel === 'FOCUS'
+                      ? '改为普通关注'
+                      : '设为重点关注'
+                }}
+              </button>
+              <button
+                class="kline-toggle"
+                type="button"
+                :aria-expanded="expandedStockId === item.workspaceStockId"
+                :aria-controls="`stock-chart-${item.workspaceStockId}`"
+                @click="toggleCandlesticks(item)"
+              >
+                {{ expandedStockId === item.workspaceStockId ? '收起行情图' : '查看行情图' }}
+              </button>
+              <RouterLink
+                class="research-link"
+                :to="{
+                  name: 'workspace-stock-research',
+                  params: { workspaceId, workspaceStockId: item.workspaceStockId },
+                }"
+              >
+                查看完整研究时间线
+              </RouterLink>
+            </div>
+            <small>
+              本期 {{ item.opinionCount }} 条观点 · {{ item.participantCount }} 位成员参与
+            </small>
           </div>
           <div
             v-if="expandedStockId === item.workspaceStockId"
@@ -368,40 +378,6 @@ onBeforeUnmount(() => {
               :name="item.name"
             />
           </div>
-          <details>
-            <summary>查看初始观点与行情记录</summary>
-            <p v-if="item.initialOpinionWithdrawn" class="withdrawn-summary">
-              这条初始观点已由作者撤回，正文和价格信息已隐藏，发表记录仍保留。
-            </p>
-            <div v-else class="opinion-detail">
-              <div>
-                <span>判断理由</span>
-                <p>{{ item.reason }}</p>
-              </div>
-              <div v-if="item.observationNote">
-                <span>关键观察条件</span>
-                <p>{{ item.observationNote }}</p>
-              </div>
-              <dl>
-                <div>
-                  <dt>目标价</dt>
-                  <dd>{{ formatPrice(item.targetPrice, item.currency) }}</dd>
-                </div>
-                <div>
-                  <dt>止损参考价</dt>
-                  <dd>{{ formatPrice(item.stopLossPrice, item.currency) }}</dd>
-                </div>
-                <div>
-                  <dt>行情时间</dt>
-                  <dd>{{ formatTime(item.quoteTime) }}</dd>
-                </div>
-                <div>
-                  <dt>发表时间</dt>
-                  <dd>{{ formatTime(item.opinionCreatedAt) }}</dd>
-                </div>
-              </dl>
-            </div>
-          </details>
         </article>
       </div>
       <div v-else class="empty-list">
@@ -493,9 +469,7 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 .page-heading dt,
-.metric span,
-.opinion-detail span,
-.opinion-detail dt {
+.metric span {
   color: var(--color-muted);
   font-size: 12px;
 }
@@ -675,24 +649,38 @@ input:focus {
 .stock-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
   padding: 0 4px 18px;
+}
+.stock-action-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 .stock-actions small {
   color: var(--color-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
-.kline-toggle {
+.kline-toggle,
+.research-link {
   border: 0;
   background: transparent;
   color: var(--color-focus);
   cursor: pointer;
   font-weight: 650;
 }
-.kline-toggle {
+.kline-toggle,
+.research-link {
   padding: 0;
   text-decoration: underline;
   text-underline-offset: 4px;
+}
+.research-link {
+  font-size: 13px;
 }
 .attention-toggle {
   min-height: 34px;
@@ -709,7 +697,8 @@ input:focus {
   opacity: 0.58;
 }
 .attention-toggle:focus-visible,
-.kline-toggle:focus-visible {
+.kline-toggle:focus-visible,
+.research-link:focus-visible {
   border-radius: 4px;
   outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
   outline-offset: 3px;
@@ -741,47 +730,6 @@ input:focus {
 .metric small {
   margin-top: 3px;
   color: var(--color-muted);
-}
-details {
-  padding: 0 4px 22px;
-}
-summary {
-  width: fit-content;
-  color: var(--color-focus);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 650;
-}
-.opinion-detail {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  margin-top: 20px;
-  padding: 22px;
-  background: var(--color-surface);
-}
-.withdrawn-summary {
-  margin-top: 18px;
-  color: var(--color-muted);
-  font-size: 13px;
-}
-.opinion-detail p {
-  margin-top: 7px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-.opinion-detail dl {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
-  margin: 0;
-  padding-top: 18px;
-  border-top: 1px solid var(--color-border);
-}
-.opinion-detail dd {
-  margin: 4px 0 0;
-  font-size: 13px;
 }
 .empty-list {
   padding: 70px 0;
@@ -848,9 +796,6 @@ summary {
   .stock-summary {
     grid-template-columns: minmax(0, 1fr) repeat(2, minmax(130px, 0.5fr));
   }
-  .opinion-detail dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 @media (max-width: 640px) {
   .archive-notice,
@@ -875,9 +820,7 @@ summary {
     margin-top: 12px;
   }
   .search-form > div,
-  .stock-summary,
-  .opinion-detail,
-  .opinion-detail dl {
+  .stock-summary {
     grid-template-columns: 1fr;
   }
   .search-form .primary {
@@ -898,15 +841,20 @@ summary {
   .stock-summary {
     gap: 18px;
   }
-  .stock-actions {
+  .stock-actions,
+  .stock-action-controls {
     align-items: flex-start;
-    flex-direction: column;
+  }
+  .stock-actions {
+    display: block;
+  }
+  .stock-actions small {
+    display: block;
+    margin-top: 12px;
+    white-space: normal;
   }
   .market-panel-slot {
     margin-inline: 0;
-  }
-  .opinion-detail dl {
-    grid-column: auto;
   }
 }
 </style>

@@ -141,17 +141,14 @@ export interface WorkspaceStockListResponseVO {
   quoteTime: string
   quoteSource: string
   simulated: boolean
-  initialOpinionId: number
-  authorUserId: number
-  authorNickname: string
-  stance: StockStance
-  reason: string | null
-  observationNote: string | null
-  horizon: OpinionHorizon
-  targetPrice: number | null
-  stopLossPrice: number | null
-  opinionCreatedAt: string
-  initialOpinionWithdrawn: boolean
+  latestOpinionId: number
+  latestOpinionType: OpinionType
+  latestOpinionAuthorUserId: number
+  latestOpinionAuthorNickname: string
+  latestOpinionStance: StockStance
+  latestOpinionCreatedAt: string
+  opinionCount: number
+  participantCount: number
 }
 
 export interface StockCandlestickVO {

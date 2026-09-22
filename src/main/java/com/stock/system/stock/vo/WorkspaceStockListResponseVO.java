@@ -19,16 +19,13 @@ public record WorkspaceStockListResponseVO(
         LocalDateTime quoteTime,
         String quoteSource,
         boolean simulated,
-        Long initialOpinionId,
-        Long authorUserId,
-        String authorNickname,
-        String stance,
-        String reason,
-        String observationNote,
-        String horizon,
-        BigDecimal targetPrice,
-        BigDecimal stopLossPrice,
-        LocalDateTime opinionCreatedAt,
-        boolean initialOpinionWithdrawn
+        Long latestOpinionId,
+        String latestOpinionType,
+        Long latestOpinionAuthorUserId,
+        String latestOpinionAuthorNickname,
+        String latestOpinionStance,
+        LocalDateTime latestOpinionCreatedAt,
+        int opinionCount,
+        int participantCount
 ) {
 }

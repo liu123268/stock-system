@@ -230,18 +230,58 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
     void activeMemberCanListSharedStocksButStrangerCannotAndArchiveRemainsReadable()
             throws Exception {
         addStock(ownerToken, workspaceId, "00700.HK").andExpect(status().isOk());
-        addStock(memberToken, workspaceId, "600519.SH").andExpect(status().isOk());
+        JsonNode added = addStock(memberToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk())
+                .andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").longValue();
+        long researchCycleId = added.path("data").path("researchCycleId").longValue();
+        String opinionsPath = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/opinions";
+        JsonNode latestOpinion = new ResultActionsJson(
+                mockMvc.perform(post(opinionsPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(opinionBody(
+                                researchCycleId,
+                                "UPDATE",
+                                "NEUTRAL",
+                                "等待新的经营数据"
+                        ))),
+                objectMapper
+        ).andExpect(status().isOk()).andReturnJson();
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks", workspaceId)
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].code").value("600519.SH"))
-                .andExpect(jsonPath("$.data[0].authorNickname").value("research_member"))
-                .andExpect(jsonPath("$.data[0].stance").value("BULLISH"))
+                .andExpect(jsonPath("$.data[0].latestOpinionType").value("UPDATE"))
+                .andExpect(jsonPath("$.data[0].latestOpinionAuthorNickname")
+                        .value("research_owner"))
+                .andExpect(jsonPath("$.data[0].latestOpinionStance").value("NEUTRAL"))
+                .andExpect(jsonPath("$.data[0].opinionCount").value(2))
+                .andExpect(jsonPath("$.data[0].participantCount").value(2))
+                .andExpect(jsonPath("$.data[0].reason").doesNotExist())
                 .andExpect(jsonPath("$.data[0].startPrice").value(1488.8800))
                 .andExpect(jsonPath("$.data[0].quoteSource").value("LOCAL_MOCK"))
                 .andExpect(jsonPath("$.data[0].simulated").value(true));
+
+        mockMvc.perform(delete(
+                        opinionsPath + "/{opinionId}",
+                        workspaceId,
+                        workspaceStockId,
+                        latestOpinion.path("data").path("id").longValue())
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks", workspaceId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].latestOpinionType").value("INITIAL"))
+                .andExpect(jsonPath("$.data[0].latestOpinionAuthorNickname")
+                        .value("research_member"))
+                .andExpect(jsonPath("$.data[0].latestOpinionStance").value("BULLISH"))
+                .andExpect(jsonPath("$.data[0].opinionCount").value(2))
+                .andExpect(jsonPath("$.data[0].participantCount").value(2));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/stocks", workspaceId)
                         .header("Authorization", "Bearer " + strangerToken))

@@ -26,15 +26,12 @@ public class WorkspaceStockListRow {
     private LocalDateTime quoteTime;
     private String quoteSource;
     private Boolean simulated;
-    private Long initialOpinionId;
-    private Long authorUserId;
-    private String authorNickname;
-    private String stance;
-    private String reason;
-    private String observationNote;
-    private String horizon;
-    private BigDecimal targetPrice;
-    private BigDecimal stopLossPrice;
-    private LocalDateTime opinionCreatedAt;
-    private Boolean initialOpinionWithdrawn;
+    private Long latestOpinionId;
+    private String latestOpinionType;
+    private Long latestOpinionAuthorUserId;
+    private String latestOpinionAuthorNickname;
+    private String latestOpinionStance;
+    private LocalDateTime latestOpinionCreatedAt;
+    private Integer opinionCount;
+    private Integer participantCount;
 }
