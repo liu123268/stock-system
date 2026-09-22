@@ -105,7 +105,7 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 ## 6. 预定实现边界
 
-分层与 DTO/VO/Entity 的职责见 [项目结构](../../engineering/project-structure.md)。本阶段 Security 提供认证身份，空间 Service 校验成员和所有者；治理 Service 校验 super_admin.user_id。
+分层与 DTO/VO/Entity 的职责见 [项目结构](../../engineering/project-structure.md)。本阶段 JWT 过滤器从当前数据库状态建立认证身份和 `ROLE_SUPER_ADMIN` Authority，SecurityConfig 对 `/api/admin/**` 统一授权，治理 Service 再使用同一 Authority 做方法级防御；空间 Service 仍按具体业务校验成员和所有者。
 
 ## 7. 关键事务
 
@@ -192,9 +192,9 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 业务权限只维护在 [需求规则及矩阵](requirements.md#6-权限矩阵)，本节说明如何映射接口：
 
-- 从认证上下文取得用户，空间 Service 查询目标有效成员后比较 owner_user_id；治理入口比较 super_admin.user_id，不能从请求体信任角色。
+- 从认证上下文取得用户，空间 Service 查询目标有效成员后比较 owner_user_id；治理身份在每次请求的 JWT 过滤阶段比较 `super_admin.user_id` 并形成 Authority，不能从请求体或前端 Pinia 信任角色。
 - 完全无成员关系和不存在的空间统一 404；已有 LEFT/REMOVED 关系返回 403 WORKSPACE_MEMBERSHIP_INACTIVE，避免向外人暴露资源。
-- 每个携带 Bearer Token 的受保护请求都在 JWT 验签后按 `userId` 查询当前 `app_user`；不存在或非 `ACTIVE` 时在过滤器阶段返回 401，治理身份也从当前 `super_admin` 关系读取而不是信任 Token 中的旧角色。账号禁用不级联改变成员或所有权，恢复后原成员关系继续生效。
+- 每个携带 Bearer Token 的受保护请求都在 JWT 验签后按 `userId` 查询当前 `app_user`；不存在或非 `ACTIVE` 时在过滤器阶段返回 401，治理身份也从当前 `super_admin` 关系读取而不是信任 Token 中的旧角色。`/api/admin/**` 和治理 Service 复用本次请求的 `ROLE_SUPER_ADMIN`，不在入口、事务层反复读取同一身份。账号禁用不级联改变成员或所有权，恢复后原成员关系继续生效。
 
 ## 9. 前端当前空间与失效处理
 

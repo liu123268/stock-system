@@ -14,20 +14,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminGovernanceTransactionService {
 
-    private final SuperAdminService superAdminService;
     private final UserService userService;
     private final WorkspaceService workspaceService;
     private final AdminOperationLogService operationLogService;
     private final AdminQueryService queryService;
 
     public AdminGovernanceTransactionService(
-            SuperAdminService superAdminService,
             UserService userService,
             WorkspaceService workspaceService,
             AdminOperationLogService operationLogService,
             AdminQueryService queryService
     ) {
-        this.superAdminService = superAdminService;
         this.userService = userService;
         this.workspaceService = workspaceService;
         this.operationLogService = operationLogService;
@@ -36,7 +33,6 @@ public class AdminGovernanceTransactionService {
 
     @Transactional
     public AdminUserDetailResponseVO disableUser(Long actorUserId, Long targetUserId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         if (actorUserId.equals(targetUserId)) {
             throw new BusinessException(ErrorCode.SUPER_ADMIN_CANNOT_DISABLE_SELF);
         }
@@ -53,7 +49,6 @@ public class AdminGovernanceTransactionService {
 
     @Transactional
     public AdminUserDetailResponseVO restoreUser(Long actorUserId, Long targetUserId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         AppUser target = requireUserForUpdate(targetUserId);
         String beforeStatus = target.getStatus();
         if (!"ACTIVE".equals(beforeStatus)) {
@@ -67,7 +62,6 @@ public class AdminGovernanceTransactionService {
 
     @Transactional
     public AdminWorkspaceDetailResponseVO archiveWorkspace(Long actorUserId, Long workspaceId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         WorkspaceStateChange change = workspaceService.archiveBySuperAdmin(workspaceId);
         operationLogService.recordSuccess(
                 "ARCHIVE_WORKSPACE", workspaceId, change.beforeStatus(), change.afterStatus());
@@ -76,7 +70,6 @@ public class AdminGovernanceTransactionService {
 
     @Transactional
     public AdminWorkspaceDetailResponseVO restoreWorkspace(Long actorUserId, Long workspaceId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         WorkspaceStateChange change = workspaceService.restoreBySuperAdmin(workspaceId);
         operationLogService.recordSuccess(
                 "RESTORE_WORKSPACE", workspaceId, change.beforeStatus(), change.afterStatus());

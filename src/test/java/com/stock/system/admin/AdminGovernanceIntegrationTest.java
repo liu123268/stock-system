@@ -58,6 +58,7 @@ class AdminGovernanceIntegrationTest extends MySqlIntegrationTest {
         mockMvc.perform(get("/api/admin/users").header("Authorization", bearer(regularToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        assertThat(operationLogMapper.selectCount(null)).isZero();
 
         mockMvc.perform(get("/api/admin/users").header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk())

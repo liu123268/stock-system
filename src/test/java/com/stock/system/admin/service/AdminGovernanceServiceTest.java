@@ -9,19 +9,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AdminGovernanceServiceTest {
 
-    @Mock private SuperAdminService superAdminService;
     @Mock private AdminQueryService queryService;
     @Mock private AdminGovernanceTransactionService transactionService;
     @Mock private AdminOperationLogService operationLogService;
@@ -40,16 +39,11 @@ class AdminGovernanceServiceTest {
     }
 
     @Test
-    void doesNotRecordOrdinaryUserAuthorizationFailureAsGovernanceOperation() {
-        doThrow(new BusinessException(ErrorCode.FORBIDDEN))
-                .when(superAdminService).requireSuperAdmin(9L);
+    void governanceServiceUsesTheCurrentSecurityAuthorityWithoutAnotherDatabaseLookup() {
+        PreAuthorize preAuthorize = AdminGovernanceService.class.getAnnotation(PreAuthorize.class);
 
-        assertThatThrownBy(() -> governanceService.disableUser(9L, 10L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessage("当前账号无权执行该操作");
-
-        verify(transactionService, never()).disableUser(9L, 10L);
-        verify(operationLogService, never()).recordFailure("DISABLE_USER", 10L, "DISABLED");
+        assertThat(preAuthorize).isNotNull();
+        assertThat(preAuthorize.value()).isEqualTo("hasRole('SUPER_ADMIN')");
     }
 
     @Test

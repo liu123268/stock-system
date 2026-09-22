@@ -10,23 +10,22 @@ import com.stock.system.admin.vo.AdminWorkspaceDetailResponseVO;
 import com.stock.system.admin.vo.AdminWorkspaceSummaryResponseVO;
 import com.stock.system.common.api.PageResponseVO;
 import com.stock.system.common.exception.BusinessException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 @Service
+@PreAuthorize("hasRole('SUPER_ADMIN')")
 public class AdminGovernanceService {
 
-    private final SuperAdminService superAdminService;
     private final AdminQueryService queryService;
     private final AdminGovernanceTransactionService transactionService;
     private final AdminOperationLogService operationLogService;
 
     public AdminGovernanceService(
-            SuperAdminService superAdminService,
             AdminQueryService queryService,
             AdminGovernanceTransactionService transactionService,
             AdminOperationLogService operationLogService
     ) {
-        this.superAdminService = superAdminService;
         this.queryService = queryService;
         this.transactionService = transactionService;
         this.operationLogService = operationLogService;
@@ -36,17 +35,14 @@ public class AdminGovernanceService {
             Long actorUserId,
             AdminUserQueryDTO query
     ) {
-        superAdminService.requireSuperAdmin(actorUserId);
         return queryService.users(query);
     }
 
     public AdminUserDetailResponseVO user(Long actorUserId, Long targetUserId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         return queryService.user(targetUserId);
     }
 
     public AdminUserDetailResponseVO disableUser(Long actorUserId, Long targetUserId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         try {
             return transactionService.disableUser(actorUserId, targetUserId);
         } catch (BusinessException exception) {
@@ -56,7 +52,6 @@ public class AdminGovernanceService {
     }
 
     public AdminUserDetailResponseVO restoreUser(Long actorUserId, Long targetUserId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         try {
             return transactionService.restoreUser(actorUserId, targetUserId);
         } catch (BusinessException exception) {
@@ -69,17 +64,14 @@ public class AdminGovernanceService {
             Long actorUserId,
             AdminWorkspaceQueryDTO query
     ) {
-        superAdminService.requireSuperAdmin(actorUserId);
         return queryService.workspaces(query);
     }
 
     public AdminWorkspaceDetailResponseVO workspace(Long actorUserId, Long workspaceId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         return queryService.workspace(workspaceId);
     }
 
     public AdminWorkspaceDetailResponseVO archiveWorkspace(Long actorUserId, Long workspaceId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         try {
             return transactionService.archiveWorkspace(actorUserId, workspaceId);
         } catch (BusinessException exception) {
@@ -90,7 +82,6 @@ public class AdminGovernanceService {
     }
 
     public AdminWorkspaceDetailResponseVO restoreWorkspace(Long actorUserId, Long workspaceId) {
-        superAdminService.requireSuperAdmin(actorUserId);
         try {
             return transactionService.restoreWorkspace(actorUserId, workspaceId);
         } catch (BusinessException exception) {
@@ -103,7 +94,6 @@ public class AdminGovernanceService {
             Long actorUserId,
             OperationLogQueryDTO query
     ) {
-        superAdminService.requireSuperAdmin(actorUserId);
         return queryService.operationLogs(query);
     }
 }

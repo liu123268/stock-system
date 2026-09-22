@@ -4,13 +4,18 @@ import com.stock.system.admin.service.AdminGovernanceService;
 import com.stock.system.admin.service.SuperAdminInitializerService;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
+import com.stock.system.security.LoginUser;
 import com.stock.system.support.MySqlIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,6 +34,7 @@ class AdminFailureLogIntegrationTest extends MySqlIntegrationTest {
 
     @AfterEach
     void cleanupCommittedFailureLogAndAdministrator() {
+        SecurityContextHolder.clearContext();
         Long userId = adminUserId;
         if (userId == null) {
             userId = jdbc.query(
@@ -57,6 +63,13 @@ class AdminFailureLogIntegrationTest extends MySqlIntegrationTest {
     @Test
     void commitsExpectedBusinessFailureLogInAnIndependentTransaction() {
         adminUserId = initializerService.initialize(username, "AdminPass123", "失败日志管理员");
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new LoginUser(adminUserId, username, "SUPER_ADMIN"),
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
+                )
+        );
 
         assertThatThrownBy(() -> governanceService.disableUser(adminUserId, adminUserId))
                 .isInstanceOf(BusinessException.class)

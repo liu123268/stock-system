@@ -32,7 +32,7 @@ Vue 页面
   -> UserService 查询 app_user 当前状态，SuperAdminService 查询当前治理身份
   -> 账号不存在或已禁用时立即返回 401
   -> 把 LoginUser 放入 SecurityContext
-  -> SecurityConfig 确认该请求已经认证
+  -> SecurityConfig 确认该请求已经认证；/api/admin/** 还必须具有 ROLE_SUPER_ADMIN
   -> AuthController 通过 @AuthenticationPrincipal 取得当前用户
   -> AuthService 调用 UserService 按用户 ID 查询数据库中的最新公开资料
   -> Result<CurrentUserResponseVO> 返回 Vue
@@ -53,6 +53,7 @@ Vue 页面
 4. 关闭表单登录和 HTTP Basic，避免出现项目没有使用的默认认证方式。
 5. 把 JWT 过滤器放到用户名密码过滤器之前。
 6. 指定统一的 401 JSON 处理器。
+7. 对 `/api/admin/**` 统一要求 `ROLE_SUPER_ADMIN`，并把角色不足转换为统一的 403 `FORBIDDEN`；治理 Service 使用同一个内存 Authority 做方法级防御，不再次查询数据库。
 
 CSRF 也被关闭。原因不是“CSRF 不重要”，而是当前 API 不依赖浏览器自动携带的 Cookie Session，而是使用请求头中的 Bearer Token。将来如果改为 Cookie 保存认证信息，就必须重新评估 CSRF 防护。
 
@@ -64,8 +65,8 @@ CSRF 也被关闭。原因不是“CSRF 不重要”，而是当前 API 不依�
 2. 没有 Bearer Token 时继续执行，由后面的授权规则判断公开或拒绝。
 3. 有 Token 时验证签名、结构和过期时间。
 4. 读取 `userId`，查询当前 `app_user`；账号不存在或状态不是 `ACTIVE` 时清空上下文并返回 `ACCOUNT_DISABLED` 401。
-5. 查询当前用户是否仍在 `super_admin` 表中，以数据库结果构造带 `REGULAR` 或 `SUPER_ADMIN` 的 `LoginUser`。
-6. 创建 `UsernamePasswordAuthenticationToken` 并写入 `SecurityContextHolder`。
+5. 查询当前用户是否仍在 `super_admin` 表中，以数据库结果构造带 `REGULAR` 或 `SUPER_ADMIN` 的 `LoginUser`，并分别赋予 `ROLE_REGULAR` 或 `ROLE_SUPER_ADMIN` Authority。
+6. 创建 `UsernamePasswordAuthenticationToken` 并写入 `SecurityContextHolder`；后续路由和方法权限复用这次请求内已经确认的 Authority，不重复访问 `app_user` 和 `super_admin`。
 7. Token 非法时清空安全上下文，并交给统一 401 处理器。
 
 `SecurityContext` 可以理解为当前请求线程的“身份卡槽”。过滤器完成 Token 验证和数据库状态确认后才把身份放进去，Controller 才能通过 `@AuthenticationPrincipal` 安全地取得当前用户，而不是相信前端自己提交的 `userId`。这次数据库查询是“禁用立即生效”的代价：没有引入黑名单或新字段，也能让已经签发的旧 JWT 在下一次任意受保护请求时失效。
