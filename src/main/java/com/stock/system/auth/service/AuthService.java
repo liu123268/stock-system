@@ -1,5 +1,6 @@
 package com.stock.system.auth.service;
 
+import com.stock.system.admin.service.SuperAdminService;
 import com.stock.system.auth.dto.LoginRequestDTO;
 import com.stock.system.auth.dto.RegisterRequestDTO;
 import com.stock.system.auth.vo.CurrentUserResponseVO;
@@ -25,11 +26,18 @@ public class AuthService {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final SuperAdminService superAdminService;
 
-    public AuthService(UserService userService, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+    public AuthService(
+            UserService userService,
+            PasswordEncoder passwordEncoder,
+            JwtUtil jwtUtil,
+            SuperAdminService superAdminService
+    ) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.superAdminService = superAdminService;
     }
 
     @Transactional
@@ -79,7 +87,8 @@ public class AuthService {
                 jwtUtil.getExpireSeconds(),
                 user.getId(),
                 user.getUsername(),
-                user.getNickname()
+                user.getNickname(),
+                accountType(user.getId())
         );
     }
 
@@ -92,7 +101,16 @@ public class AuthService {
             throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
         }
 
-        return new CurrentUserResponseVO(user.getId(), user.getUsername(), user.getNickname());
+        return new CurrentUserResponseVO(
+                user.getId(),
+                user.getUsername(),
+                user.getNickname(),
+                accountType(user.getId())
+        );
+    }
+
+    private String accountType(Long userId) {
+        return superAdminService.isSuperAdmin(userId) ? "SUPER_ADMIN" : "REGULAR";
     }
 
     private String normalizeUsername(String username) {

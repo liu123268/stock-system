@@ -61,4 +61,40 @@ describe('authentication route guard', () => {
 
     expect(refreshCurrentUser).toHaveBeenCalledOnce()
   })
+
+  it('routes super administrators away from regular workspaces', async () => {
+    const authStore = useAuthStore()
+    authStore.currentUser = {
+      userId: 1,
+      username: 'root_admin',
+      nickname: '治理管理员',
+      accountType: 'SUPER_ADMIN',
+    }
+    authStore.sessionVerified = true
+
+    await expect(
+      authenticationGuard({
+        fullPath: '/workspaces',
+        meta: { requiresAuth: true, requiresRegular: true },
+      }),
+    ).resolves.toEqual({ name: 'admin-users' })
+  })
+
+  it('routes regular users away from the governance backend', async () => {
+    const authStore = useAuthStore()
+    authStore.currentUser = {
+      userId: 9,
+      username: 'regular_user',
+      nickname: '普通用户',
+      accountType: 'REGULAR',
+    }
+    authStore.sessionVerified = true
+
+    await expect(
+      authenticationGuard({
+        fullPath: '/admin/users',
+        meta: { requiresAuth: true, requiresAdmin: true },
+      }),
+    ).resolves.toEqual({ name: 'workspaces' })
+  })
 })

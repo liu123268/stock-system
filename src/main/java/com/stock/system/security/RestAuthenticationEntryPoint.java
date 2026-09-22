@@ -31,9 +31,13 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
             HttpServletResponse response,
             AuthenticationException authException
     ) throws IOException {
+        write(response, ErrorCode.UNAUTHENTICATED);
+    }
+
+    public void write(HttpServletResponse response, ErrorCode errorCode) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        objectMapper.writeValue(response.getOutputStream(), Result.error(ErrorCode.UNAUTHENTICATED));
+        objectMapper.writeValue(response.getOutputStream(), Result.error(errorCode));
     }
 }

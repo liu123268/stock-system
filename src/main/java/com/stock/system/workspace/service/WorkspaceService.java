@@ -13,6 +13,7 @@ import com.stock.system.workspace.vo.WorkspaceSummaryResponseVO;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -121,6 +122,57 @@ public class WorkspaceService {
         workspace.setArchivedAt(null);
         workspaceMapper.updateArchiveState(workspace.getId(), workspace.getStatus(), null);
         return toDetail(workspace, userId);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public WorkspaceStateChange archiveBySuperAdmin(Long workspaceId) {
+        Workspace workspace = workspaceMapper.selectByIdForUpdate(workspaceId);
+        if (workspace == null) {
+            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
+        }
+        if ("ARCHIVED_BY_SUPER_ADMIN".equals(workspace.getStatus())) {
+            return new WorkspaceStateChange(workspace.getStatus(), workspace.getStatus());
+        }
+        if (!"ACTIVE".equals(workspace.getStatus())) {
+            throw new BusinessException(
+                    ErrorCode.WORKSPACE_ACCESS_DENIED,
+                    "由空间所有者归档的空间只能由所有者恢复"
+            );
+        }
+
+        String beforeStatus = workspace.getStatus();
+        workspace.setStatus("ARCHIVED_BY_SUPER_ADMIN");
+        workspace.setArchivedAt(LocalDateTime.now());
+        workspaceMapper.updateArchiveState(workspaceId, workspace.getStatus(), workspace.getArchivedAt());
+        var currentInvitation = invitationMapper.selectCurrentForUpdate(workspaceId);
+        if (currentInvitation != null) {
+            currentInvitation.setStatus("REVOKED");
+            invitationMapper.updateById(currentInvitation);
+        }
+        return new WorkspaceStateChange(beforeStatus, workspace.getStatus());
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public WorkspaceStateChange restoreBySuperAdmin(Long workspaceId) {
+        Workspace workspace = workspaceMapper.selectByIdForUpdate(workspaceId);
+        if (workspace == null) {
+            throw new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND);
+        }
+        if ("ACTIVE".equals(workspace.getStatus())) {
+            return new WorkspaceStateChange(workspace.getStatus(), workspace.getStatus());
+        }
+        if (!"ARCHIVED_BY_SUPER_ADMIN".equals(workspace.getStatus())) {
+            throw new BusinessException(
+                    ErrorCode.WORKSPACE_ACCESS_DENIED,
+                    "由空间所有者归档的空间只能由所有者恢复"
+            );
+        }
+
+        String beforeStatus = workspace.getStatus();
+        workspace.setStatus("ACTIVE");
+        workspace.setArchivedAt(null);
+        workspaceMapper.updateArchiveState(workspaceId, workspace.getStatus(), null);
+        return new WorkspaceStateChange(beforeStatus, workspace.getStatus());
     }
 
     private Workspace requireOwnerForUpdate(Long userId, Long workspaceId) {

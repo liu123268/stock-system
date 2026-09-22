@@ -22,12 +22,12 @@ const router = createRouter({
       path: '/workspaces',
       name: 'workspaces',
       component: () => import('@/views/workspace/WorkspaceListView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresRegular: true },
     },
     {
       path: '/workspaces/:workspaceId',
       component: () => import('@/components/workspace/WorkspaceLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresRegular: true },
       children: [
         { path: '', redirect: { name: 'workspace-overview' } },
         {
@@ -59,6 +59,29 @@ const router = createRouter({
           path: 'settings',
           name: 'workspace-settings',
           component: () => import('@/views/workspace/WorkspaceSettingsView.vue'),
+        },
+      ],
+    },
+    {
+      path: '/admin',
+      component: () => import('@/components/admin/AdminLayout.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true },
+      children: [
+        { path: '', redirect: { name: 'admin-users' } },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: () => import('@/views/admin/AdminUsersView.vue'),
+        },
+        {
+          path: 'workspaces',
+          name: 'admin-workspaces',
+          component: () => import('@/views/admin/AdminWorkspacesView.vue'),
+        },
+        {
+          path: 'operation-logs',
+          name: 'admin-operation-logs',
+          component: () => import('@/views/admin/AdminOperationLogsView.vue'),
         },
       ],
     },
@@ -106,8 +129,14 @@ export async function authenticationGuard(
       return true
     }
   }
-  if (to.meta.guestOnly && authStore.isAuthenticated) {
+  if (to.meta.requiresAdmin && !authStore.isSuperAdmin) {
     return { name: 'workspaces' }
+  }
+  if (to.meta.requiresRegular && authStore.isSuperAdmin) {
+    return { name: 'admin-users' }
+  }
+  if (to.meta.guestOnly && authStore.isAuthenticated) {
+    return { name: authStore.isSuperAdmin ? 'admin-users' : 'workspaces' }
   }
 
   return true

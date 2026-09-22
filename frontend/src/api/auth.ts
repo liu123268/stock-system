@@ -18,6 +18,7 @@ export interface LoginResponseVO {
   userId: number
   username: string
   nickname: string
+  accountType: 'REGULAR' | 'SUPER_ADMIN'
 }
 
 export interface RegisterRequestDTO {
@@ -36,6 +37,7 @@ export interface CurrentUserResponseVO {
   userId: number
   username: string
   nickname: string
+  accountType: 'REGULAR' | 'SUPER_ADMIN'
 }
 
 export function login(request: LoginRequestDTO) {

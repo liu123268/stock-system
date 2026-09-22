@@ -42,6 +42,7 @@ describe('auth store', () => {
           userId: 9,
           username: 'frontend_user',
           nickname: '前端用户',
+          accountType: 'REGULAR',
         },
       }),
     )
@@ -53,6 +54,7 @@ describe('auth store', () => {
           userId: 9,
           username: 'frontend_user',
           nickname: '数据库最新昵称',
+          accountType: 'REGULAR',
         },
       }),
     )
@@ -75,7 +77,12 @@ describe('auth store', () => {
     window.localStorage.setItem(TOKEN_STORAGE_KEY, 'restored-token')
     window.localStorage.setItem(
       'stock-system-current-user',
-      JSON.stringify({ userId: 9, username: 'frontend_user', nickname: '前端用户' }),
+      JSON.stringify({
+        userId: 9,
+        username: 'frontend_user',
+        nickname: '前端用户',
+        accountType: 'REGULAR',
+      }),
     )
     setActivePinia(createPinia())
 

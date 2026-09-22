@@ -9,6 +9,7 @@ public record LoginResponseVO(
         long expiresInSeconds,
         Long userId,
         String username,
-        String nickname
+        String nickname,
+        String accountType
 ) {
 }

@@ -9,6 +9,7 @@ import {
 } from '@/api/auth'
 import { TOKEN_STORAGE_KEY } from '@/api/http'
 import { useStockStore } from '@/stores/stock'
+import { useAdminStore } from '@/stores/admin'
 
 const USER_STORAGE_KEY = 'stock-system-current-user'
 
@@ -16,6 +17,7 @@ interface CurrentUser {
   userId: number
   username: string
   nickname: string
+  accountType: 'REGULAR' | 'SUPER_ADMIN'
 }
 
 function readStoredUser(): CurrentUser | null {
@@ -35,6 +37,7 @@ export const useAuthStore = defineStore('auth', () => {
   const currentUser = ref<CurrentUser | null>(readStoredUser())
   const sessionVerified = ref(false)
   const isAuthenticated = computed(() => Boolean(accessToken.value))
+  const isSuperAdmin = computed(() => currentUser.value?.accountType === 'SUPER_ADMIN')
 
   async function login(request: LoginRequestDTO) {
     const result = (await loginRequest(request)).data
@@ -61,6 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
       userId: userResponse.userId,
       username: userResponse.username,
       nickname: userResponse.nickname,
+      accountType: userResponse.accountType,
     }
 
     currentUser.value = user
@@ -74,6 +78,7 @@ export const useAuthStore = defineStore('auth', () => {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY)
     window.localStorage.removeItem(USER_STORAGE_KEY)
     useStockStore().clearAll()
+    useAdminStore().clearAll()
   }
 
   return {
@@ -81,6 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     sessionVerified,
     isAuthenticated,
+    isSuperAdmin,
     login,
     refreshCurrentUser,
     logout,

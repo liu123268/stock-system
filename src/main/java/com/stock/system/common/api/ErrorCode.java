@@ -8,9 +8,12 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "请求参数不合法"),
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "未登录或登录已过期"),
+    FORBIDDEN(HttpStatus.FORBIDDEN, "当前账号无权执行该操作"),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "登录账号或密码错误"),
     ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED, "账号当前不可用"),
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "登录账号已存在"),
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "用户不存在"),
+    SUPER_ADMIN_CANNOT_DISABLE_SELF(HttpStatus.CONFLICT, "唯一超级管理员不能禁用自己的账号"),
     WORKSPACE_NAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "空间名称已被使用"),
     WORKSPACE_NOT_FOUND(HttpStatus.NOT_FOUND, "空间不存在"),
     WORKSPACE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "当前用户不能执行该空间操作"),

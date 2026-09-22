@@ -3,6 +3,8 @@ package com.stock.system.config;
 import com.stock.system.security.JwtAuthenticationFilter;
 import com.stock.system.security.JwtUtil;
 import com.stock.system.security.RestAuthenticationEntryPoint;
+import com.stock.system.admin.service.SuperAdminService;
+import com.stock.system.user.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -36,6 +38,12 @@ class TestEnvironmentSecurityConfigWebTest {
 
     @MockBean
     private JwtUtil jwtUtil;
+
+    @MockBean
+    private UserService userService;
+
+    @MockBean
+    private SuperAdminService superAdminService;
 
     @Test
     void testProfileAllowsAnonymousEnvironmentCheckWithoutOpeningARealDatabase() throws Exception {

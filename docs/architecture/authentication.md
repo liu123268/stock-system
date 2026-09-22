@@ -1,6 +1,6 @@
 # Spring Security 与 JWT 认证链路
 
-更新时间：2026-09-17
+更新时间：2026-09-22
 
 这份文档解释项目中的“登录之后，后端如何知道请求是谁发来的”。重点不是背类名，而是理解一次请求经过哪些环节，以及每个类为什么只做一件事。
 
@@ -12,11 +12,11 @@
 Authorization: Bearer <JWT>
 ```
 
-后续每个请求仍然需要认证。认证的含义是：验证 Token 的签名和过期时间，并从中恢复当前用户身份。
+后续每个请求仍然需要认证。认证不只验证 Token 的签名和过期时间，还要确认 Token 对应的账号此刻仍存在且为活动状态，并从数据库读取当前治理身份。
 
 ```text
 登录：用户名 + 密码 -> 校验 BCrypt -> 签发 JWT
-后续请求：JWT -> 验证签名和有效期 -> 建立当前用户身份 -> 访问业务接口
+后续请求：JWT -> 验证签名和有效期 -> 查询账号最新状态与治理身份 -> 建立当前用户身份 -> 访问业务接口
 ```
 
 ## 2. 一次受保护请求的数据流
@@ -29,6 +29,8 @@ Vue 页面
   -> 添加 Authorization: Bearer <JWT>
   -> Vite 把 /api 请求代理到 Spring Boot 8082
   -> JwtAuthenticationFilter 解析并验证 JWT
+  -> UserService 查询 app_user 当前状态，SuperAdminService 查询当前治理身份
+  -> 账号不存在或已禁用时立即返回 401
   -> 把 LoginUser 放入 SecurityContext
   -> SecurityConfig 确认该请求已经认证
   -> AuthController 通过 @AuthenticationPrincipal 取得当前用户
@@ -38,7 +40,7 @@ Vue 页面
 
 这里有两个容易混淆的对象：
 
-- JWT 中的身份只包含用户 ID 和用户名，用于证明请求是谁发出的。
+- JWT 中的身份只包含用户 ID 和用户名，用于证明 Token 最初签发给谁；账号当前状态和 `SUPER_ADMIN` 身份不信任 Token 快照，而是每次从数据库确认。
 - `/api/auth/me` 返回的昵称来自数据库，因为它可能修改，不适合一直使用 Token 中的旧值。V1 已从 Entity、VO 和前端类型中移除头像字段，以后真正实现头像时再新增迁移和接口字段。
 
 ## 3. SecurityConfig 负责什么
@@ -61,11 +63,12 @@ CSRF 也被关闭。原因不是“CSRF 不重要”，而是当前 API 不依�
 1. 读取 `Authorization` 请求头。
 2. 没有 Bearer Token 时继续执行，由后面的授权规则判断公开或拒绝。
 3. 有 Token 时验证签名、结构和过期时间。
-4. 读取 `userId` 和 `username`，构造最小身份对象 `LoginUser`。
-5. 创建 `UsernamePasswordAuthenticationToken` 并写入 `SecurityContextHolder`。
-6. Token 非法时清空安全上下文，并交给统一 401 处理器。
+4. 读取 `userId`，查询当前 `app_user`；账号不存在或状态不是 `ACTIVE` 时清空上下文并返回 `ACCOUNT_DISABLED` 401。
+5. 查询当前用户是否仍在 `super_admin` 表中，以数据库结果构造带 `REGULAR` 或 `SUPER_ADMIN` 的 `LoginUser`。
+6. 创建 `UsernamePasswordAuthenticationToken` 并写入 `SecurityContextHolder`。
+7. Token 非法时清空安全上下文，并交给统一 401 处理器。
 
-`SecurityContext` 可以理解为当前请求线程的“身份卡槽”。过滤器验证成功后把身份放进去，Controller 才能通过 `@AuthenticationPrincipal` 安全地取得当前用户，而不是相信前端自己提交的 `userId`。
+`SecurityContext` 可以理解为当前请求线程的“身份卡槽”。过滤器完成 Token 验证和数据库状态确认后才把身份放进去，Controller 才能通过 `@AuthenticationPrincipal` 安全地取得当前用户，而不是相信前端自己提交的 `userId`。这次数据库查询是“禁用立即生效”的代价：没有引入黑名单或新字段，也能让已经签发的旧 JWT 在下一次任意受保护请求时失效。
 
 不能让页面在请求参数中传“我要查询用户 9 的资料”来代表当前用户，因为攻击者可以把 9 改成其他 ID。当前用户必须来自已经验证签名的 Token。
 
@@ -110,6 +113,7 @@ Axios 请求拦截器只负责自动添加请求头，不负责判断 Token 是�
 - 合法 Token 可以访问 `/api/auth/me`，且响应不暴露密码摘要。
 - 注册账号统一转成小写，大小写不同的重复账号返回 HTTP 409 与 `USERNAME_ALREADY_EXISTS`。
 - 参数错误返回 HTTP 400，错误凭据、账号停用和未认证返回 HTTP 401，并分别携带稳定错误码。
+- 超级管理员禁用普通账号后，该账号已签发的 JWT 访问全局股票搜索也返回 `ACCOUNT_DISABLED` 401；恢复账号后重新具备受保护接口访问资格。
 
 浏览器冒烟脚本使用真实 Chrome，覆盖 Vue 注册表单、登录表单、Vite 代理、JWT localStorage、Axios 请求头、路由守卫、`/api/auth/me` 和工作台跳转。这和后端集成测试互补：前者验证整个用户路径，后者能更快、更精确地定位后端规则错误。
 
@@ -117,7 +121,7 @@ Axios 请求拦截器只负责自动添加请求头，不负责判断 Token 是�
 
 当前实现适合本地第一阶段，但还需要在部署和权限阶段继续完善：
 
-- JWT 有效期内没有服务端黑名单，主动吊销和多设备退出尚未实现。
+- JWT 有效期内没有通用服务端黑名单或凭据版本，所以“退出所有设备”和“修改密码后使所有旧 Token 失效”仍待设计；但账号禁用已通过每次请求读取当前账号状态做到即时全局失效。
 - localStorage 方案需要严格防范 XSS；生产环境可进一步评估 HttpOnly Cookie 的收益与 CSRF 成本。
 - JWT 签名密钥现在由 `JwtUtil` 从 `stock-system.jwt.secret` 注入，运行配置通过 `JWT_SECRET` 提供；数据库密码通过 `DB_PASSWORD` 提供，数据库用户名是非敏感的普通配置，本机沿用 `root`，生产可通过 `SPRING_DATASOURCE_USERNAME` 覆盖为最小权限账号。环境变量可以避免把密码写入 Git 和启动参数，但本身不是加密存储；拥有本机权限的程序仍可能读取它，持久化环境变量也可能以明文保存在系统配置中。旧值仍存在于历史提交的事实不会因本次修改自动消失；如果仓库曾共享，应按已暴露处理并轮换。缺少密钥、密钥少于 32 个 UTF-8 字节或缺少数据库密码时，后端应启动失败。生产环境仍应把密码和 JWT 密钥接到密钥管理服务，不能把普通环境变量文件当作长期密钥库。
 - 当前 JWT 只表示用户身份，最终确认的工作空间角色必须查询成员关系，不能简单长期写死在 Token 中。

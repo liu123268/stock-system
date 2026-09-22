@@ -49,7 +49,12 @@ async function handleLogin() {
 
     await authStore.login(form)
     ElMessage.success('欢迎回来')
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/workspaces'
+    const redirect =
+      typeof route.query.redirect === 'string'
+        ? route.query.redirect
+        : authStore.isSuperAdmin
+          ? '/admin/users'
+          : '/workspaces'
     await router.replace(redirect)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '暂时无法登录，请稍后重试')

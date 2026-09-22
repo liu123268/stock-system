@@ -24,6 +24,10 @@ public class UserService {
         return appUserMapper.selectById(userId);
     }
 
+    public AppUser findByIdForUpdate(Long userId) {
+        return appUserMapper.selectByIdForUpdate(userId);
+    }
+
     public boolean usernameExists(String username) {
         return appUserMapper.selectCount(
                 new LambdaQueryWrapper<AppUser>().eq(AppUser::getUsername, username)
@@ -32,5 +36,9 @@ public class UserService {
 
     public void create(AppUser user) {
         appUserMapper.insert(user);
+    }
+
+    public void update(AppUser user) {
+        appUserMapper.updateById(user);
     }
 }

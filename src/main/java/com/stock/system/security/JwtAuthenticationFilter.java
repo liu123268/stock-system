@@ -1,5 +1,9 @@
 package com.stock.system.security;
 
+import com.stock.system.admin.service.SuperAdminService;
+import com.stock.system.common.api.ErrorCode;
+import com.stock.system.user.entity.AppUser;
+import com.stock.system.user.service.UserService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -25,10 +29,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
     private final JwtUtil jwtUtil;
+    private final UserService userService;
+    private final SuperAdminService superAdminService;
 
-    public JwtAuthenticationFilter(RestAuthenticationEntryPoint authenticationEntryPoint, JwtUtil jwtUtil) {
+    public JwtAuthenticationFilter(
+            RestAuthenticationEntryPoint authenticationEntryPoint,
+            JwtUtil jwtUtil,
+            UserService userService,
+            SuperAdminService superAdminService
+    ) {
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.jwtUtil = jwtUtil;
+        this.userService = userService;
+        this.superAdminService = superAdminService;
     }
 
     @Override
@@ -46,6 +59,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authorization.substring(BEARER_PREFIX.length()).trim();
         try {
             LoginUser principal = parsePrincipal(token);
+            if (principal == null) {
+                authenticationEntryPoint.write(response, ErrorCode.ACCOUNT_DISABLED);
+                return;
+            }
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(principal, null, List.of());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -64,10 +81,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         Claims claims = jwtUtil.parseToken(token);
         Number userIdClaim = claims.get("userId", Number.class);
-        String username = claims.get("username", String.class);
-        if (userIdClaim == null || username == null || username.isBlank()) {
+        if (userIdClaim == null) {
             throw new IllegalArgumentException("Token 缺少用户身份");
         }
-        return new LoginUser(userIdClaim.longValue(), username);
+        AppUser user = userService.findById(userIdClaim.longValue());
+        if (user == null) {
+            throw new IllegalArgumentException("Token 对应用户不存在");
+        }
+        if (!"ACTIVE".equals(user.getStatus())) {
+            return null;
+        }
+        String accountType = superAdminService.isSuperAdmin(user.getId())
+                ? "SUPER_ADMIN"
+                : "REGULAR";
+        return new LoginUser(user.getId(), user.getUsername(), accountType);
     }
 }
