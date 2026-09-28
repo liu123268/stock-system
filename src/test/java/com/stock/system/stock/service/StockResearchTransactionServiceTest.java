@@ -11,6 +11,7 @@ import com.stock.system.stock.mapper.WorkspaceStockMapper;
 import com.stock.system.stock.market.StockQuoteSnapshot;
 import com.stock.system.workspace.service.WorkspaceService;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -32,8 +33,10 @@ class StockResearchTransactionServiceTest {
         WorkspaceStockMapper workspaceStockMapper = mock(WorkspaceStockMapper.class);
         ResearchCycleMapper researchCycleMapper = mock(ResearchCycleMapper.class);
         StockOpinionMapper opinionMapper = mock(StockOpinionMapper.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         StockResearchTransactionService service = new StockResearchTransactionService(
-                workspaceService, stockMapper, workspaceStockMapper, researchCycleMapper, opinionMapper);
+                workspaceService, stockMapper, workspaceStockMapper, researchCycleMapper, opinionMapper,
+                jdbcTemplate);
 
         Stock directoryStock = new Stock();
         directoryStock.setId(1L);

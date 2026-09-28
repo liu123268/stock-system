@@ -6,10 +6,12 @@ import com.stock.system.workspace.dto.CreateWorkspaceRequestDTO;
 import com.stock.system.workspace.dto.JoinWorkspaceRequestDTO;
 import com.stock.system.workspace.dto.RenameWorkspaceRequestDTO;
 import com.stock.system.workspace.service.WorkspaceInvitationService;
+import com.stock.system.workspace.service.WorkspaceOverviewService;
 import com.stock.system.workspace.service.WorkspaceService;
 import com.stock.system.workspace.vo.JoinWorkspaceResponseVO;
 import com.stock.system.workspace.vo.WorkspaceDetailResponseVO;
 import com.stock.system.workspace.vo.WorkspaceSummaryResponseVO;
+import com.stock.system.workspace.vo.WorkspaceOverviewResponseVO;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,13 +32,16 @@ public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
     private final WorkspaceInvitationService invitationService;
+    private final WorkspaceOverviewService overviewService;
 
     public WorkspaceController(
             WorkspaceService workspaceService,
-            WorkspaceInvitationService invitationService
+            WorkspaceInvitationService invitationService,
+            WorkspaceOverviewService overviewService
     ) {
         this.workspaceService = workspaceService;
         this.invitationService = invitationService;
+        this.overviewService = overviewService;
     }
 
     @PostMapping("/join")
@@ -45,6 +50,14 @@ public class WorkspaceController {
             @Valid @RequestBody JoinWorkspaceRequestDTO request
     ) {
         return Result.success(invitationService.join(currentUser.userId(), request.inviteCode()));
+    }
+
+    @GetMapping("/{workspaceId}/overview")
+    public Result<WorkspaceOverviewResponseVO> overview(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId
+    ) {
+        return Result.success(overviewService.get(currentUser.userId(), workspaceId));
     }
 
     @GetMapping

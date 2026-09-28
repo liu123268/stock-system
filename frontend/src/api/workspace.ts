@@ -45,6 +45,33 @@ export interface JoinWorkspaceResponseVO {
   newlyJoined: boolean
 }
 
+export type WorkspaceActivityType =
+  | 'STOCK_ADDED'
+  | 'FOLLOW_RESTARTED'
+  | 'OPINION_POSTED'
+  | 'OPINION_WITHDRAWN'
+  | 'ATTENTION_CHANGED'
+  | 'FOLLOW_ENDED'
+  | 'FOLLOW_CANCELLED'
+
+export interface WorkspaceActivityResponseVO {
+  eventType: WorkspaceActivityType
+  workspaceStockId: number
+  stockCode: string
+  stockName: string
+  actorNickname: string | null
+  occurredAt: string
+  opinionType: 'INITIAL' | 'UPDATE' | 'REVIEW' | null
+  stance: 'BULLISH' | 'NEUTRAL' | 'BEARISH' | null
+  attentionLevel: 'NORMAL' | 'FOCUS' | null
+  opinionWithdrawn: boolean
+}
+
+export interface WorkspaceOverviewResponseVO {
+  activeStockCount: number
+  recentActivities: WorkspaceActivityResponseVO[]
+}
+
 export interface WorkspaceMemberResponseVO {
   userId: number
   username: string
@@ -65,6 +92,10 @@ export function createWorkspace(name: string) {
 
 export function getWorkspace(workspaceId: number) {
   return http.get<ApiResult<WorkspaceDetailResponseVO>>(`/workspaces/${workspaceId}`)
+}
+
+export function getWorkspaceOverview(workspaceId: number) {
+  return http.get<ApiResult<WorkspaceOverviewResponseVO>>(`/workspaces/${workspaceId}/overview`)
 }
 
 export function renameWorkspace(workspaceId: number, name: string) {

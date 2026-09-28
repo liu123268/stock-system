@@ -1,8 +1,8 @@
 # 同研自选 V1 数据模型
 
-更新时间：2026-09-21
+更新时间：2026-09-28
 
-> 结构依据：阶段 1 为 Flyway V1、V2，股票研究首批为 V3，真实股票目录扩展为 V4，研究周期和多人观点扩展为 V5、V6，拼音检索字段为 V7，改密凭据版本为 V8，邀请码试错计数为 V9。下面 ER 图中的 `STOCK_DAILY_QUOTE` 仅表示后续设计，其余表已有迁移；各环境实际应用版本只见 [状态快照](../project/status.md)，执行前核对现场数据库。
+> 结构依据：阶段 1 为 Flyway V1、V2，股票研究首批为 V3，真实股票目录扩展为 V4，研究周期和多人观点扩展为 V5、V6，拼音检索字段为 V7，改密凭据版本为 V8，邀请码试错计数为 V9，关注级别变更事实为 V10。下面 ER 图中的 `STOCK_DAILY_QUOTE` 仅表示后续设计，其余表已有迁移；各环境实际应用版本只见 [状态快照](../project/status.md)，执行前核对现场数据库。
 
 ## 1. 设计目标
 
@@ -31,7 +31,9 @@ erDiagram
     APP_USER ||--o{ WORKSPACE_STOCK : adds
     WORKSPACE_STOCK ||--o{ RESEARCH_CYCLE : contains
     RESEARCH_CYCLE ||--o{ STOCK_OPINION : has
+    RESEARCH_CYCLE ||--o{ RESEARCH_ATTENTION_CHANGE : records_level_changes
     APP_USER ||--o{ STOCK_OPINION : authors
+    APP_USER ||--o{ RESEARCH_ATTENTION_CHANGE : changes_level
     STOCK ||--o{ STOCK_DAILY_QUOTE : has
 ```
 
@@ -206,6 +208,10 @@ UNKNOWN 表示尚未取得可信的交易状态，不代表停牌或退市。目
 
 `stock_daily_quote` 用于后续需要长期保存的日行情、关注以来表现和历史复盘，计划同一股票同一交易日最多一条日行情；它仍未创建。当前 K 线和分时从 Longbridge 按需取得，并可由 Redis 与进程内缓存复用，具体缓存机制见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。动态序列不会写入 `stock` 或 `research_cycle`，首个闭环只把开始时的最新可用报价快照保存在 `research_cycle`。Redis 数据可过期、丢失或重建，不能替代需要长期复盘的数据库事实；真正落库前仍要确认字段、复权口径和幂等写入规则。
 
+### 3.12 `research_attention_change` 关注级别变更表
+
+V10 只保存无法由当前周期状态还原的普通／重点关注切换：`research_cycle_id`、操作人、切换前后级别和时间。外键连到研究周期与账号；检查约束禁止两级相同，重复提交不写入。首次加入、重新关注、观点发表与撤销、周期结束／取消仍由现有周期和观点事实还原为近期动态，不复制观点正文或另建全量活动表。V10 前已发生的级别切换没有历史记录，不能从当前值倒推或伪造。详情见 [SPEC-002 设计](../specs/002-stock-research/design.md#64-已确认-v1-能力的设计入口与落地)。
+
 ## 4. 阶段 1 约束与索引终审
 
 ### 4.1 主键策略
@@ -299,7 +305,7 @@ workspace_invitation.created_by_user_id   -> app_user.id
 
 ## 8. 后续扩展表
 
-以下是候选模型，不是承诺全部建表；产品是否纳入版本以 [V1](../product/requirements-v1.md) 和 [后续候选](../product/backlog.md) 为准。站内近期动态仍属 V1，由 CODE-210 确认事件存储方案：
+以下是候选模型，不是承诺全部建表；产品是否纳入版本以 [V1](../product/requirements-v1.md) 和 [后续候选](../product/backlog.md) 为准。V1 近期动态由 CODE-210 使用现有研究事实和 V10 级别变更表实现；更广泛的成员操作动态仍属候选：
 
 - `opinion_comment`：观点评论；
 - `price_alert`：目标价和止损价提醒；

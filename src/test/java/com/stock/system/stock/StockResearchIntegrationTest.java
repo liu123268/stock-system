@@ -25,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,6 +64,101 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
     private ResearchCycleMapper researchCycleMapper;
     @Autowired
     private StockOpinionMapper stockOpinionMapper;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Test
+    void overviewShowsRecentResearchWithoutLeakingWithdrawnOpinion() throws Exception {
+        String overviewPath = "/api/workspaces/{workspaceId}/overview";
+        mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeStockCount").value(0))
+                .andExpect(jsonPath("$.data.recentActivities.length()").value(0));
+        mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + strangerToken))
+                .andExpect(status().isNotFound());
+
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk()).andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").asLong();
+        long cycleId = added.path("data").path("researchCycleId").asLong();
+        mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeStockCount").value(1))
+                .andExpect(jsonPath("$.data.recentActivities[0].eventType").value("STOCK_ADDED"))
+                .andExpect(jsonPath("$.data.recentActivities[0].stockCode").value("600519.SH"));
+
+        String attentionPath = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/attention";
+        String focusRequest = "{\"researchCycleId\":" + cycleId
+                + ",\"attentionLevel\":\"FOCUS\"}";
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(patch(attentionPath, workspaceId, workspaceStockId)
+                            .header("Authorization", "Bearer " + memberToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(focusRequest))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(patch(attentionPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"researchCycleId\":" + cycleId
+                                + ",\"attentionLevel\":\"NORMAL\"}"))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM research_attention_change WHERE research_cycle_id = ?",
+                Integer.class, cycleId)).isEqualTo(2);
+
+        String opinionPath = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/opinions";
+        String opinionResponse = mockMvc.perform(post(opinionPath, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(opinionBody(cycleId, "UPDATE", "NEUTRAL", "只供测试的观点正文")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long opinionId = objectMapper.readTree(opinionResponse).path("data").path("id").asLong();
+        mockMvc.perform(delete(opinionPath + "/{opinionId}", workspaceId, workspaceStockId, opinionId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk());
+
+        String feed = mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode events = objectMapper.readTree(feed).path("data").path("recentActivities");
+        assertThat(events.toString()).doesNotContain("只供测试的观点正文");
+        assertThat(events.toString()).contains("OPINION_WITHDRAWN", "ATTENTION_CHANGED");
+        for (JsonNode event : events) {
+            if ("OPINION_POSTED".equals(event.path("eventType").asText())) {
+                assertThat(event.path("opinionWithdrawn").asBoolean()).isTrue();
+                assertThat(event.path("stance").isNull()).isTrue();
+            }
+        }
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/end",
+                        workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"researchCycleId\":" + cycleId + "}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeStockCount").value(0))
+                .andExpect(jsonPath("$.data.recentActivities[0].eventType").value("FOLLOW_ENDED"));
+
+        addStock(memberToken, workspaceId, "600519.SH").andExpect(status().isOk());
+        mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeStockCount").value(1))
+                .andExpect(jsonPath("$.data.recentActivities[0].eventType").value("FOLLOW_RESTARTED"));
+
+        workspaceService.archive(ownerId, workspaceId);
+        mockMvc.perform(get(overviewPath, workspaceId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk());
+    }
 
     private Long ownerId;
     private Long memberId;

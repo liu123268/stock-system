@@ -146,6 +146,7 @@ async function cleanupTestUser(stockExistedBefore) {
 
   const sql = [
     `SET @test_workspace_id = (SELECT id FROM workspace WHERE name IN ('${workspaceName}', '${renamedWorkspace}') LIMIT 1)`,
+    `DELETE FROM research_attention_change WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id))`,
     `DELETE FROM stock_opinion WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id))`,
     `DELETE FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)`,
     `DELETE FROM workspace_stock WHERE workspace_id = @test_workspace_id`,
@@ -158,7 +159,7 @@ async function cleanupTestUser(stockExistedBefore) {
     `DELETE FROM workspace_member WHERE workspace_id = @test_workspace_id`,
     `DELETE FROM workspace WHERE id = @test_workspace_id AND name IN ('${workspaceName}', '${renamedWorkspace}')`,
     `DELETE FROM app_user WHERE username IN ('${ownerUsername}', '${memberUsername}')`,
-    `SELECT (SELECT COUNT(*) FROM app_user WHERE username IN ('${ownerUsername}', '${memberUsername}')) + (SELECT COUNT(*) FROM workspace WHERE id = @test_workspace_id) + (SELECT COUNT(*) FROM workspace_stock WHERE workspace_id = @test_workspace_id) + (SELECT COUNT(*) FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)) + (SELECT COUNT(*) FROM stock_opinion WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)))${stockExistedBefore ? '' : ` + (SELECT COUNT(*) FROM stock WHERE code = '${searchedStockCode}')`}`,
+    `SELECT (SELECT COUNT(*) FROM app_user WHERE username IN ('${ownerUsername}', '${memberUsername}')) + (SELECT COUNT(*) FROM workspace WHERE id = @test_workspace_id) + (SELECT COUNT(*) FROM workspace_stock WHERE workspace_id = @test_workspace_id) + (SELECT COUNT(*) FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)) + (SELECT COUNT(*) FROM research_attention_change WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id))) + (SELECT COUNT(*) FROM stock_opinion WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)))${stockExistedBefore ? '' : ` + (SELECT COUNT(*) FROM stock WHERE code = '${searchedStockCode}')`}`,
   ].join('; ')
 
   const output = execFileSync(
@@ -485,7 +486,18 @@ try {
     })
     await page.setViewportSize({ width: 1280, height: 720 })
   }
+  const overviewResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return response.request().method() === 'GET' && /^\/api\/workspaces\/\d+\/overview$/.test(path)
+  })
   await page.getByRole('link', { name: '概览', exact: true }).click()
+  if ((await overviewResponse).status() !== 200) {
+    throw new Error('空间概览近期动态没有成功加载')
+  }
+  await page.locator('.recent-list li').first().waitFor()
+  if (!(await page.locator('.recent-list').innerText()).includes('加入共享关注')) {
+    throw new Error('首次加入的股票没有进入空间近期动态')
+  }
 
   const createInvitationResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname

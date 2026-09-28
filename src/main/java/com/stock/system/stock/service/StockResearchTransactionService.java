@@ -17,6 +17,7 @@ import com.stock.system.stock.vo.AddWorkspaceStockResponseVO;
 import com.stock.system.stock.vo.UpdateAttentionLevelResponseVO;
 import com.stock.system.workspace.service.WorkspaceService;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -29,19 +30,22 @@ public class StockResearchTransactionService {
     private final WorkspaceStockMapper workspaceStockMapper;
     private final ResearchCycleMapper researchCycleMapper;
     private final StockOpinionMapper stockOpinionMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     public StockResearchTransactionService(
             WorkspaceService workspaceService,
             StockMapper stockMapper,
             WorkspaceStockMapper workspaceStockMapper,
             ResearchCycleMapper researchCycleMapper,
-            StockOpinionMapper stockOpinionMapper
+            StockOpinionMapper stockOpinionMapper,
+            JdbcTemplate jdbcTemplate
     ) {
         this.workspaceService = workspaceService;
         this.stockMapper = stockMapper;
         this.workspaceStockMapper = workspaceStockMapper;
         this.researchCycleMapper = researchCycleMapper;
         this.stockOpinionMapper = stockOpinionMapper;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
@@ -129,8 +133,14 @@ public class StockResearchTransactionService {
         }
 
         if (!attentionLevel.equals(cycle.getAttentionLevel())) {
+            String previousLevel = cycle.getAttentionLevel();
             cycle.setAttentionLevel(attentionLevel);
             researchCycleMapper.updateById(cycle);
+            jdbcTemplate.update("""
+                    INSERT INTO research_attention_change
+                        (research_cycle_id, actor_user_id, from_level, to_level, changed_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, cycle.getId(), userId, previousLevel, attentionLevel, LocalDateTime.now());
         }
         return new UpdateAttentionLevelResponseVO(
                 workspaceStockId,

@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  getWorkspaceOverview,
+  type WorkspaceActivityResponseVO,
+  type WorkspaceOverviewResponseVO,
+} from '@/api/workspace'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
 
@@ -11,20 +16,46 @@ const workspaceId = computed(() => Number(route.params.workspaceId))
 const isArchived = computed(() => store.currentWorkspace?.status !== 'ACTIVE')
 const invitationActionLoading = ref(false)
 const invitationMessage = ref('')
+const overviewData = ref<WorkspaceOverviewResponseVO | null>(null)
+const overviewLoading = ref(false)
+const overviewError = ref('')
+
+async function loadOverview() {
+  const requestedId = workspaceId.value
+  overviewLoading.value = true
+  overviewError.value = ''
+  try {
+    const response = (await getWorkspaceOverview(requestedId)).data.data
+    if (workspaceId.value === requestedId) overviewData.value = response
+  } catch (error) {
+    if (workspaceId.value === requestedId) {
+      if (await handleWorkspaceApiError(error, router)) return
+      overviewError.value = error instanceof Error ? error.message : '近期动态加载失败'
+    }
+  } finally {
+    if (workspaceId.value === requestedId) overviewLoading.value = false
+  }
+}
 
 async function load() {
-  if (!Number.isSafeInteger(workspaceId.value) || workspaceId.value <= 0) {
+  const requestedId = workspaceId.value
+  overviewData.value = null
+  overviewError.value = ''
+  if (!Number.isSafeInteger(requestedId) || requestedId <= 0) {
     await router.replace('/workspaces')
     return
   }
   try {
     // 邀请权限可能被另一会话的所有权转让改变，进入治理概览时重新核对。
-    const workspace = await store.loadCurrent(workspaceId.value)
+    const workspace = await store.loadCurrent(requestedId)
+    if (workspaceId.value !== requestedId) return
+    await loadOverview()
+    if (workspaceId.value !== requestedId) return
     if (workspace.role === 'OWNER' && workspace.status === 'ACTIVE') {
-      await store.loadInvitations(workspaceId.value)
+      await store.loadInvitations(requestedId)
     }
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (workspaceId.value === requestedId) await handleWorkspaceApiError(error, router)
   }
 }
 
@@ -86,7 +117,29 @@ function formatTime(value: string) {
   }).format(new Date(value))
 }
 
-onMounted(load)
+function activityText(item: WorkspaceActivityResponseVO) {
+  if (item.eventType === 'STOCK_ADDED') return '加入共享关注'
+  if (item.eventType === 'FOLLOW_RESTARTED') return '开启新一期研究'
+  if (item.eventType === 'FOLLOW_ENDED') return '结束关注'
+  if (item.eventType === 'FOLLOW_CANCELLED') return '撤销初始观点并取消本期关注'
+  if (item.eventType === 'ATTENTION_CHANGED') {
+    return item.attentionLevel === 'FOCUS' ? '切换为重点关注' : '切换为普通关注'
+  }
+  if (item.eventType === 'OPINION_WITHDRAWN') return '撤销观点'
+  if (item.opinionWithdrawn) return '曾发表的观点已撤销'
+  return item.opinionType === 'REVIEW' ? '发表复盘总结' : '发表观点更新'
+}
+
+function stanceText(stance: WorkspaceActivityResponseVO['stance']) {
+  if (!stance) return ''
+  return { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '谨慎' }[stance]
+}
+
+function showStance(item: WorkspaceActivityResponseVO) {
+  return item.stance && ['STOCK_ADDED', 'FOLLOW_RESTARTED', 'OPINION_POSTED'].includes(item.eventType)
+}
+
+watch(workspaceId, () => { void load() }, { immediate: true })
 </script>
 
 <template>
@@ -127,10 +180,44 @@ onMounted(load)
           <dd>{{ store.currentWorkspace.memberCount }} 人</dd>
         </div>
         <div>
+          <dt>正在关注</dt>
+          <dd>{{ overviewData?.activeStockCount ?? '—' }} 只</dd>
+        </div>
+        <div>
           <dt>空间状态</dt>
           <dd>{{ store.currentWorkspace.status === 'ACTIVE' ? '正常使用' : '已归档' }}</dd>
         </div>
       </dl>
+    </section>
+
+    <section class="recent-section" aria-labelledby="recent-title">
+      <div class="recent-heading">
+        <div>
+          <p class="section-label">近期动态</p>
+          <h2 id="recent-title">这个空间最近发生了什么</h2>
+        </div>
+        <RouterLink :to="{ name: 'workspace-stocks', params: { workspaceId } }">
+          查看共享自选 →
+        </RouterLink>
+      </div>
+      <p v-if="overviewLoading" class="recent-state" aria-live="polite">正在读取近期动态</p>
+      <div v-else-if="overviewError" class="recent-state" role="alert">
+        {{ overviewError }} <button type="button" @click="loadOverview">重试</button>
+      </div>
+      <p v-else-if="!overviewData?.recentActivities.length" class="recent-state">
+        还没有研究动态。前往共享自选添加第一只股票。
+      </p>
+      <ol v-else class="recent-list">
+        <li v-for="(item, index) in overviewData.recentActivities" :key="`${item.eventType}-${item.workspaceStockId}-${item.occurredAt}-${index}`">
+          <div>
+            <RouterLink :to="{ name: 'workspace-stock-research', params: { workspaceId, workspaceStockId: item.workspaceStockId } }">
+              {{ item.stockName }} <span>{{ item.stockCode }}</span>
+            </RouterLink>
+            <p>{{ item.actorNickname ? `${item.actorNickname} · ` : '' }}{{ activityText(item) }}<span v-if="showStance(item)"> · {{ stanceText(item.stance) }}</span><span v-else-if="item.opinionWithdrawn && ['STOCK_ADDED', 'FOLLOW_RESTARTED', 'OPINION_POSTED'].includes(item.eventType)"> · 内容已隐藏</span></p>
+          </div>
+          <time :datetime="item.occurredAt">{{ formatTime(item.occurredAt) }}</time>
+        </li>
+      </ol>
     </section>
 
     <section
@@ -267,6 +354,71 @@ onMounted(load)
   margin: 12px 0 0;
   font-size: 18px;
   font-weight: 650;
+}
+.recent-section {
+  max-width: 920px;
+  margin-top: 72px;
+  padding-top: 26px;
+  border-top: 1px solid var(--color-ink);
+}
+.recent-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.recent-heading h2 {
+  margin-top: 14px;
+  font-size: 28px;
+}
+.recent-heading a,
+.recent-list a {
+  color: var(--color-ink);
+  text-decoration: none;
+}
+.recent-heading a:hover,
+.recent-list a:hover {
+  text-decoration: underline;
+}
+.recent-state {
+  margin-top: 24px;
+  color: var(--color-muted);
+}
+.recent-state button {
+  margin-left: 8px;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.recent-list {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.recent-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.recent-list a {
+  font-weight: 650;
+}
+.recent-list a span,
+.recent-list p,
+.recent-list time {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.recent-list p {
+  margin: 7px 0 0;
+}
+.recent-list time {
+  flex-shrink: 0;
 }
 .next-capability {
   max-width: 660px;
@@ -445,6 +597,13 @@ onMounted(load)
   }
   .invitation-section {
     margin-top: 52px;
+  }
+  .recent-section {
+    margin-top: 52px;
+  }
+  .recent-list li {
+    flex-direction: column;
+    gap: 7px;
   }
   .invitation-heading {
     align-items: stretch;

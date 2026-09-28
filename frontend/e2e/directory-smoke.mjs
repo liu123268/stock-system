@@ -100,7 +100,8 @@ try {
   if (browser) await browser.close()
   if (spaceId) {
     assert.ok(Number.isSafeInteger(spaceId))
-    sql(`DELETE so FROM stock_opinion so JOIN research_cycle rc ON rc.id=so.research_cycle_id JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId};
+    sql(`DELETE change_row FROM research_attention_change change_row JOIN research_cycle rc ON rc.id=change_row.research_cycle_id JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId};
+      DELETE so FROM stock_opinion so JOIN research_cycle rc ON rc.id=so.research_cycle_id JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId};
       DELETE rc FROM research_cycle rc JOIN workspace_stock ws ON ws.id=rc.workspace_stock_id WHERE ws.workspace_id=${spaceId};
       DELETE FROM workspace_stock WHERE workspace_id=${spaceId};
       DELETE FROM workspace_invitation WHERE workspace_id=${spaceId};
