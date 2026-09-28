@@ -37,6 +37,7 @@ public class WorkspaceInvitationService {
     private final WorkspaceInvitationMapper invitationMapper;
     private final WorkspaceService workspaceService;
     private final WorkspaceAccessService accessService;
+    private final InvitationAttemptService attemptService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public WorkspaceInvitationService(
@@ -44,13 +45,15 @@ public class WorkspaceInvitationService {
             WorkspaceMemberMapper memberMapper,
             WorkspaceInvitationMapper invitationMapper,
             WorkspaceService workspaceService,
-            WorkspaceAccessService accessService
+            WorkspaceAccessService accessService,
+            InvitationAttemptService attemptService
     ) {
         this.workspaceMapper = workspaceMapper;
         this.memberMapper = memberMapper;
         this.invitationMapper = invitationMapper;
         this.workspaceService = workspaceService;
         this.accessService = accessService;
+        this.attemptService = attemptService;
     }
 
     public CurrentInvitationResponseVO current(Long userId, Long workspaceId) {
@@ -129,23 +132,25 @@ public class WorkspaceInvitationService {
         invitationMapper.updateById(current);
     }
 
-    @Transactional
+    // 只有成员写入前的预期拒绝需要提交失败计数；其他异常仍回滚加入操作。
+    @Transactional(noRollbackFor = InvitationAttemptRejectedException.class)
     public JoinWorkspaceResponseVO join(Long userId, String inviteCode) {
         accessService.requireActiveRegularUser(userId);
+        attemptService.reserve(userId);
         WorkspaceInvitation candidate = invitationMapper.selectOne(
                 new LambdaQueryWrapper<WorkspaceInvitation>()
                         .eq(WorkspaceInvitation::getInviteCode, inviteCode)
         );
         if (candidate == null) {
-            throw new BusinessException(ErrorCode.INVITATION_NOT_FOUND);
+            throw new InvitationAttemptRejectedException(ErrorCode.INVITATION_NOT_FOUND);
         }
 
         Workspace workspace = workspaceMapper.selectByIdForUpdate(candidate.getWorkspaceId());
         if (workspace == null) {
-            throw new BusinessException(ErrorCode.INVITATION_NOT_FOUND);
+            throw new InvitationAttemptRejectedException(ErrorCode.INVITATION_NOT_FOUND);
         }
         if (!"ACTIVE".equals(workspace.getStatus())) {
-            throw new BusinessException(ErrorCode.WORKSPACE_ARCHIVED);
+            throw new InvitationAttemptRejectedException(ErrorCode.WORKSPACE_ARCHIVED);
         }
 
         WorkspaceInvitation invitation = invitationMapper.selectByIdForUpdate(candidate.getId());
@@ -153,12 +158,13 @@ public class WorkspaceInvitationService {
 
         WorkspaceMember member = memberMapper.selectForUpdate(workspace.getId(), userId);
         if (member != null && "ACTIVE".equals(member.getStatus())) {
+            attemptService.clear(userId);
             return new JoinWorkspaceResponseVO(toSummary(userId, workspace.getId()), false);
         }
         if (member != null
                 && "REMOVED".equals(member.getStatus())
                 && !invitation.getCreatedAt().isAfter(member.getLastInactiveAt())) {
-            throw new BusinessException(ErrorCode.REMOVED_MEMBER_REQUIRES_NEW_INVITATION);
+            throw new InvitationAttemptRejectedException(ErrorCode.REMOVED_MEMBER_REQUIRES_NEW_INVITATION);
         }
 
         LocalDateTime joinedAt = LocalDateTime.now();
@@ -178,7 +184,9 @@ public class WorkspaceInvitationService {
 
         invitation.setUsedCount(invitation.getUsedCount() + 1);
         invitationMapper.updateById(invitation);
-        return new JoinWorkspaceResponseVO(toSummary(userId, workspace.getId()), true);
+        JoinWorkspaceResponseVO response = new JoinWorkspaceResponseVO(toSummary(userId, workspace.getId()), true);
+        attemptService.clear(userId);
+        return response;
     }
 
     private WorkspaceInvitation findCurrent(Long workspaceId) {
@@ -195,16 +203,16 @@ public class WorkspaceInvitationService {
             LocalDateTime now
     ) {
         if (invitation == null || !invitation.getInviteCode().equals(inviteCode)) {
-            throw new BusinessException(ErrorCode.INVITATION_NOT_FOUND);
+            throw new InvitationAttemptRejectedException(ErrorCode.INVITATION_NOT_FOUND);
         }
         if (!"ACTIVE".equals(invitation.getStatus())) {
-            throw new BusinessException(ErrorCode.INVITATION_REVOKED);
+            throw new InvitationAttemptRejectedException(ErrorCode.INVITATION_REVOKED);
         }
         if (invitation.getUsedCount() >= MAX_USES) {
-            throw new BusinessException(ErrorCode.INVITATION_EXHAUSTED);
+            throw new InvitationAttemptRejectedException(ErrorCode.INVITATION_EXHAUSTED);
         }
         if (!invitation.getExpiresAt().isAfter(now)) {
-            throw new BusinessException(ErrorCode.INVITATION_EXPIRED);
+            throw new InvitationAttemptRejectedException(ErrorCode.INVITATION_EXPIRED);
         }
     }
 

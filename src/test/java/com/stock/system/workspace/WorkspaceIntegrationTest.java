@@ -59,6 +59,7 @@ class WorkspaceIntegrationTest extends MySqlIntegrationTest {
     @Autowired
     private UserService userService;
 
+
     @Test
     void shouldCreateListAndReadWorkspaceWithOwnerMembership() throws Exception {
         String token = registerAndLogin("workspace_owner");

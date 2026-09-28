@@ -103,7 +103,7 @@ V8 为 `app_user` 增加从 0 开始的 `credential_version`。登录签发 JWT 
 | 账号 | `INVALID_CREDENTIALS`、`ACCOUNT_DISABLED`、`USERNAME_ALREADY_EXISTS`、`USER_NOT_FOUND`、`SUPER_ADMIN_CANNOT_DISABLE_SELF`                                                                                |
 | 空间 | `WORKSPACE_NAME_ALREADY_EXISTS`、`WORKSPACE_NOT_FOUND`、`WORKSPACE_ACCESS_DENIED`、`WORKSPACE_MEMBERSHIP_INACTIVE`、`WORKSPACE_ARCHIVED`、`WORKSPACE_ALREADY_ACTIVE`、`SUPER_ADMIN_CANNOT_USE_WORKSPACE` |
 | 成员 | `MEMBER_NOT_FOUND`、`MEMBER_NOT_ACTIVE`、`OWNER_CANNOT_LEAVE`、`TRANSFER_TARGET_NOT_ACTIVE_MEMBER`、`REMOVED_MEMBER_REQUIRES_NEW_INVITATION`                                                             |
-| 邀请 | `INVITATION_NOT_FOUND`、`INVITATION_CHANGED`、`INVITATION_REVOKED`、`INVITATION_EXPIRED`、`INVITATION_EXHAUSTED`                                                                                         |
+| 邀请 | `INVITATION_NOT_FOUND`、`INVITATION_CHANGED`、`INVITATION_REVOKED`、`INVITATION_EXPIRED`、`INVITATION_EXHAUSTED`、`INVITATION_ATTEMPTS_LIMITED`                         |
 
 已是有效成员再次使用邀请码属于成功结果，不定义重复加入错误码。每个错误码在实现时绑定唯一的默认 HTTP 状态和中文提示；Controller 和前端使用枚举或类型定义，不在各处复制字符串。
 
@@ -159,6 +159,14 @@ V8 为 `app_user` 增加从 0 开始的 `credential_version`。登录签发 JWT 
 8. 任一步失败则全部回滚。
 
 同一邀请码的并发请求通过行锁顺序执行，因此第 6 个新成员不能与第 5 个成员同时读到旧次数后越过上限。锁只作用于当前邀请码的短事务，不影响其他空间。
+
+### 7.3.1 邀请码连续错误尝试
+
+`POST /api/workspaces/join` 只对已经认证的普通账号计数，账号 ID 是唯一维度，不使用 IP（家庭或校园网络可能共用出口），也不按邀请码计数（猜测不存在的代码同样要受限）。第一次失败开启固定 15 分钟窗口；窗口内前 5 次错误照常返回原业务错误，第 6 次起统一返回 HTTP 429 `INVITATION_ATTEMPTS_LIMITED`，不再查询邀请码。到期后的下一次尝试开启新窗口；成功加入或用有效代码确认已有成员关系时清零。参数格式不合规则先由 DTO 返回 400，不进入猜码计数。
+
+V9 增加每账号一行的 `invitation_join_attempt`。Service 在加入事务开头对该行执行唯一键插入或更新，再 `FOR UPDATE` 读取，保证同一账号的并发请求按顺序核对额度。尝试先占一个计数位，成功时在同一事务删除；邀请码不存在、停用、过期、用尽、空间归档或被移除成员使用旧码时，成员写入尚未开始，抛专用预期异常并提交计数。其余运行异常仍回滚整个事务，包括成员关系和邀请使用次数，避免半成品。数据库不可用时不放行加入请求；不依赖 Redis 的可用性。账号被删除时计数行由外键级联删除，过期窗口由下一次请求懒重置，因此最多每个有失败尝试的账号一行。
+
+这是一道按账号的基本防线，不能阻止攻击者注册许多账号分散试错，也不代替注册、登录与网络层的整体防滥用。选择现有 MySQL 保存计数，是为了让多实例共享窗口并在服务重启后保留失败次数；代价是新增一张表、一次账号计数行锁和对预期失败的事务提交规则。若将来已有统一的限流基础设施，再按真实负载和部署方式评估替换，不为这一处提前引入新中间件。
 
 ### 7.4 成员退出、移除与重新加入
 

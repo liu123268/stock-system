@@ -30,6 +30,7 @@ public enum ErrorCode {
     INVITATION_REVOKED(HttpStatus.CONFLICT, "邀请码已停用"),
     INVITATION_EXPIRED(HttpStatus.CONFLICT, "邀请码已过期"),
     INVITATION_EXHAUSTED(HttpStatus.CONFLICT, "邀请码使用次数已达上限"),
+    INVITATION_ATTEMPTS_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "邀请码尝试次数过多，请稍后再试"),
     REMOVED_MEMBER_REQUIRES_NEW_INVITATION(HttpStatus.FORBIDDEN, "被移除成员需要使用移除后生成的新邀请码"),
     MARKET_QUOTE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "当前无法取得该股票的可用行情"),
     MARKET_KLINE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "当前无法取得该股票的 K 线数据"),

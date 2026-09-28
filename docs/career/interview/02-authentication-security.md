@@ -46,3 +46,19 @@
 - 认证失败和权限不足有什么区别？
 - 401 与 403 应怎样区分？
 - 过滤器异常为什么不进入 ControllerAdvice？
+
+## SEC-05：短邀请码为什么还要限制猜测次数？
+
+这是项目安全收尾的补充案例，实习准备优先讲清认证、权限、事务和测试；不需要为它逐行背诵 SQL。复习时先看 [加入入口](../../../src/main/java/com/stock/system/workspace/service/WorkspaceInvitationService.java) 如何决定成功或错误，再看 [计数服务](../../../src/main/java/com/stock/system/workspace/service/InvitationAttemptService.java) 和 [V9 表](../../../src/main/resources/db/migration/V9__add_invitation_join_attempt.sql) 为什么能跨请求保留次数，最后用 [集成测试](../../../src/test/java/com/stock/system/workspace/InvitationRateLimitIntegrationTest.java) 解释失败提交与并发。
+
+### 完整回答
+
+> 邀请码有随机性，但 6 位短码仍是可提交的加入凭证，不能让已登录账号无限试错。项目按账号记录固定 15 分钟窗口内的失败次数；第 6 次起返回 429，窗口到期或成功使用有效邀请码后恢复。MySQL 的唯一键和行锁让同账号并发尝试依次计数；预期邀请码错误提交计数，成功加入清零，其他异常仍回滚成员与邀请次数。数据库不可用时加入接口不放行。具体事务顺序和测试见 [SPEC-001 设计](../../specs/001-workspace/design.md#731-邀请码连续错误尝试)与 [任务证据](../../specs/001-workspace/tasks.md)。
+
+回答边界：这是按账号限制连续错误的补充保护；批量注册不同账号仍可能分散尝试，不能称为完整的反暴力破解体系，也不应把它当作项目最主要的实习亮点。
+
+### 可能追问
+
+- 为什么按账号而不是按 IP 或邀请码限额？
+- 为什么普通 `@Transactional` 回滚会让失败计数失效？
+- 怎样证明并发的第 6 次尝试不能越过额度？

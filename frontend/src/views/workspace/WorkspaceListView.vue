@@ -178,7 +178,7 @@ onMounted(load)
         <div>
           <p class="context-label">加入已有空间</p>
           <h2>输入 OWNER 发给你的邀请码。</h2>
-          <p>邀请码为 6 位大写字母或数字，有效期和剩余次数由后端检查。</p>
+          <p>邀请码为 6 位大写字母或数字。连续输错 5 次后，本账号最多等待 15 分钟才能再试。</p>
         </div>
         <form @submit.prevent="join">
           <label for="invite-code">邀请码</label>

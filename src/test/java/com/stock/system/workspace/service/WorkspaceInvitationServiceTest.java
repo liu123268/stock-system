@@ -27,6 +27,7 @@ class WorkspaceInvitationServiceTest {
         WorkspaceInvitationMapper invitationMapper = mock(WorkspaceInvitationMapper.class);
         WorkspaceService workspaceService = mock(WorkspaceService.class);
         WorkspaceAccessService accessService = mock(WorkspaceAccessService.class);
+        InvitationAttemptService attemptService = mock(InvitationAttemptService.class);
         Workspace workspace = new Workspace();
         workspace.setId(42L);
         when(accessService.requireActiveOwnerForUpdate(7L, 42L)).thenReturn(workspace);
@@ -38,7 +39,8 @@ class WorkspaceInvitationServiceTest {
                 memberMapper,
                 invitationMapper,
                 workspaceService,
-                accessService
+                accessService,
+                attemptService
         );
 
         BusinessException exception = catchThrowableOfType(
