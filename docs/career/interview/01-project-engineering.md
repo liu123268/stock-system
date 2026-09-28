@@ -1,6 +1,6 @@
 # 项目与工程实践面试问答
 
-这里保存项目定位、架构取舍和工程质量相关的完整问答。回答必须建立在真实代码和验证证据上。
+这里保存项目定位、架构取舍和工程质量相关的问答。项目经验题依据真实代码和验证证据；本专题未采用的基础技术若用于知识准备，须明确标注，不能写成项目成果。
 
 ## PROJECT-01：为什么采用前后端分离？
 
@@ -84,3 +84,38 @@ Longbridge 官方 CLI 已经完成账号授权并能读取真实行情，但 Jav
 - sidecar 和微服务有什么区别？
 - 为什么不读取 CLI 的 Token 文件直接构造 Java SDK 客户端？
 - 单账号单长连接下怎样演进到多实例？
+
+## PROJECT-05：为什么行情缓存使用自写 Redis 锁而没有接入 Redisson？
+
+### 项目场景
+
+同一行情 Key 未命中时，并发请求若全部回源，会消耗 Longbridge 的调用额度。
+
+### 完整回答
+
+> 项目先在同一 Java 进程内合并相同 Key 的请求，再用带 TTL 的 Redis 锁协调连接同一 Redis 实例的多个进程。取得锁的请求二次检查缓存，仍未命中才回源；未取得锁的请求最多等待 800 毫秒，超时允许受控回源；解锁用 Lua 比对 owner 后删除，避免旧请求误删新锁。目前只有这一种只读行情的限时协调用途，Spring Data Redis 已覆盖所需操作，因此没有引入 Redisson。代价是自己维护锁协议；锁到期、Redis 故障或等待超时仍可能重复请求，单 Redis 实例也没有多节点仲裁或故障切换保证，不能说成全局严格执行一次，更没有证据说自写锁更快。如果以后锁要保护不可重复的业务写入或任务耗时难预测，我会重新评估 Redisson，并同时设计业务幂等和数据库约束。
+
+### 项目证据
+
+- [缓存网关](../../../src/main/java/com/stock/system/stock/market/CachingLongbridgeMarketGateway.java) 与 [Redis 锁实现](../../../src/main/java/com/stock/system/stock/market/RedisMarketSharedCache.java)；原理和取舍见 [Redis 工程教学](../../engineering/redis.md#8-当前-redis-锁与-redisson-的关系)。
+- [CODE-206E 验收](../../specs/002-stock-research/tasks.md#code-206e-最终验收证据2026-09-18)用两条独立 Lettuce 连接模拟竞争；它不等于多个真实 Longbridge sidecar 已获准并行部署。
+
+### 可能追问
+
+- Redisson 能替代哪些锁细节？哪些回源与降级决策仍要业务代码处理？
+- 固定锁 TTL 到期后，旧请求为什么仍可能继续执行？
+
+## PROJECT-06：请沿一次当天分时请求说明 Redis 缓存的命中与未命中
+
+### 完整回答
+
+> 工作台接口先校验用户对空间和股票的访问，再由分时 Provider 选择当天数据分支，调用缓存网关。网关按前缀、股票代码和市场日期生成 Key，先从 Redis 读 JSON：命中就解析出分时点列表返回；未命中则先合并本进程同 Key 请求，再用带 TTL 的 Redis 锁协调加载。取得锁后二次检查缓存，仍为空才调用 Longbridge 客户端（它也可能命中进程内短缓存），非空结果带 TTL 写回；未取得锁的请求等待别的实例写入，超时可受控回源。Redis 故障会被缓存层当作未命中并短暂冷却，不能把“缓存没取到”和“上游没数据”混为一谈。一次完整分时响应还可能读取交易日与前收盘价，不能声称只查一个 Key。
+
+### 项目证据与复习
+
+- [分时接口](../../../src/main/java/com/stock/system/stock/controller/WorkspaceStockController.java)、[缓存网关](../../../src/main/java/com/stock/system/stock/market/CachingLongbridgeMarketGateway.java)；逐层调用与命中／未命中细节见 [Redis 工程教学](../../engineering/redis.md#31-用当天分时串起一次真实请求)。
+
+### 可能追问
+
+- `cache.get(key)` 返回 `Optional.empty()` 时，怎样区分正常未命中与 Redis 连接故障？
+- 为什么拿到 Redis 锁后还要再读一次数据 Key？

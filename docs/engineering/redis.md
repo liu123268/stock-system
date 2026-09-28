@@ -1,6 +1,6 @@
 # Redis 工程教学
 
-本文用于从零建立 Redis 心智模型，并把基础知识逐步对应到本项目现有行情缓存代码。它记录教学顺序和稳定的代码关系，不把“代码已经存在”写成“学习者已经掌握”，也不替代 [实际技术栈](../architecture/technology-stack.md)、[缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护) 或 [当前状态](../project/status.md)。
+本文是 Redis 专题的复习提纲：按主题保留心智模型、关键代码路径和易错边界，不逐轮记录课堂讲解；代码已经存在不等于学习者已经掌握。实际采用情况、方案和进度分别见 [技术栈](../architecture/technology-stack.md)、[缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护) 和 [当前状态](../project/status.md)。
 
 ## 1. 学习目标与顺序
 
@@ -15,6 +15,7 @@
 7. 区分项目真实使用、面试基础知识和暂时没有真实场景的高级能力，能够形成准确的简历描述。
 
 教学按以下顺序推进：整体系统地图；Redis 基础模型；项目文件关系；一次命中与未命中；Key、JSON 与 TTL；并发和锁；穿透、击穿与雪崩；故障降级；持久化、淘汰和部署边界；测试、简历与面试复述。没有建立前一层心智模型时，不跳到后续代码细节。
+掌握以能自己解释概念、定位项目代码、推演正常和故障流程、讲出方案边界为准；代码存在不等于学习者已经掌握。
 
 ## 2. 第一张整体地图
 
@@ -85,9 +86,19 @@ WorkspaceStockController
 | `CachingLongbridgeMarketGateway` | 编排读取缓存、请求合并、抢锁、回源、写缓存和降级的完整流程 |
 | `LongbridgeJsonRpcClient` | 真正与 Longbridge sidecar 通信，并保留进程内短缓存和访问限制 |
 
+### 3.1 用当天分时串起一次真实请求
+
+以**当天分时点列表**为例；历史分时走一分钟 K 线分支：
+
+1. HTTP 请求 → [`WorkspaceStockController.intraday`](../../src/main/java/com/stock/system/stock/controller/WorkspaceStockController.java) → [`StockIntradayService.get`](../../src/main/java/com/stock/system/stock/service/StockIntradayService.java)（校验空间、查股票）→ [`StockMarketSeriesService.getIntraday`](../../src/main/java/com/stock/system/stock/service/StockMarketSeriesService.java)（确定日期）→ [`LongbridgeMarketIntradayProvider`](../../src/main/java/com/stock/system/stock/market/LongbridgeMarketIntradayProvider.java)（选择当天分支）→ [`CachingLongbridgeMarketGateway`](../../src/main/java/com/stock/system/stock/market/CachingLongbridgeMarketGateway.java)。
+2. 网关用 `MarketCacheKeys.intraday` 生成 Key，`read` 经 `MarketSharedCache`、`RedisMarketSharedCache` 发起 `GET`。命中则解析 `MarketCacheEnvelope` 的来源与分时点列表；Key 不存在时得到 `Optional.empty()`，不是异常。`json` 只是 `Optional<String>` 变量名；连接故障也返回空，但会记录故障并冷却，单看返回值分不出两者。
+3. 未命中：`inFlight` 合并进程内请求 → Redis 锁协调跨进程加载 → 二次检查 → `LongbridgeJsonRpcClient`（可能命中其短缓存）→ 非空结果带 TTL 写入 Redis 并直接返回 → 安全解锁。锁竞争与超时见 [5.2](#52-本项目如何减轻热点-key-击穿)，解锁见 [4.2](#42-为什么解锁必须核对-owner)。
+
+边界：整个分时响应还可能读取交易日和前收盘价，并非只访问这一个 Key；Redis 未命中也不等于一定新发 Longbridge 网络请求。
+
 ## 4. Redis String 的第一组命令
 
-先把 Redis 想成一个由字符串 Key 精确定位数据的共享字典。冒号只是项目采用的命名分隔符，不会建立目录或父子层级；`market:kline:600519:day` 与 `market:kline:600519:day:lock` 是两个彼此独立的普通 Key。
+本项目用 Redis String 保存行情 JSON 和锁 owner。冒号只是 Key 命名分隔符，不会建立目录；`market:kline:600519:day` 与 `market:kline:600519:day:lock` 是两个独立 Key。
 
 第一组命令及项目对应关系如下：
 
@@ -141,7 +152,7 @@ TTL 是异常兜底：如果 Java 进程崩溃、机器断电或执行没有机�
 
 例如某只热门股票的当前分时 Key 到期，同一时刻有 100 个请求到达。若没有保护，100 个请求都会访问 Longbridge，容易耗尽项目设置的并发数和调用频率，真实用户会等待或失败。
 
-项目在一个 Java 进程内用 `inFlight.putIfAbsent` 合并同 Key 请求：第一个请求执行加载，其余请求复用同一个 `CompletableFuture`。它只协调本进程，但速度快且不访问网络，可先把每个进程的大量请求缩成一个候选者；Redis 锁再从多个进程的候选者中选出一个全局加载者。等待者轮询行情数据 Key，加载者取得锁后还会再次检查缓存，避免等待期间数据已经由别人写入却仍重复回源。超时后的受控回源意味着该方案目标是“大幅减少重复行情调用”，不是严格保证全球只调用一次。
+项目在一个 Java 进程内用 `inFlight.putIfAbsent` 合并同 Key 请求：第一个请求执行加载，其余请求复用同一个 `CompletableFuture`。它只协调本进程，但速度快且不访问网络，可先把每个进程的大量请求缩成一个候选者；Redis 锁再从连接同一 Redis 实例的这些候选者中选出一个加载者。等待者轮询行情数据 Key，加载者取得锁后还会再次检查缓存，避免等待期间数据已经由别人写入却仍重复回源。超时后的受控回源意味着该方案目标是“大幅减少重复行情调用”，不是严格保证所有实例只调用一次。
 
 ### 5.3 本项目如何减轻缓存雪崩
 
@@ -187,17 +198,69 @@ TTL 是异常兜底：如果 Java 进程崩溃、机器断电或执行没有机�
 
 Lua 是一门脚本语言。Redis 可以在服务端执行 Lua 脚本，并保证脚本中的多条 Redis 操作执行期间不会插入其他客户端命令。本项目不使用 Lua 编写业务功能，只用它把“读取锁 owner、比较 owner、匹配时删除锁”合成一次原子执行。
 
-若 Java 分两步执行 `GET lock-key` 和 `DEL lock-key`，可能出现：A 读到 `owner-A` 后暂停；A 的锁过期；B 创建同名新锁 `owner-B`；A 恢复后执行 `DEL`，误删 B 的锁。当前 `UNLOCK_SCRIPT` 在 Redis 内一次完成：当前 Value 等于 A 提供的 owner 才删除，否则返回 0。`KEYS[1]` 是待操作的锁 Key，`ARGV[1]` 是调用者保存的 owner，`redis.call('get', ...)` 与 `redis.call('del', ...)` 分别调用 Redis 的 GET 和 DEL。
+接续 4.2 节的 A、B 时间线：Java 通过 `StringRedisTemplate.execute` 发送 `UNLOCK_SCRIPT`，`KEYS[1]` 是锁 Key，`ARGV[1]` 是 A 保存的 owner。脚本调用 `GET` 比较两者，相等才调用 `DEL`；若 B 已接手，返回 0，不删除 B 的锁。
 
 这里的“原子”范围只在 Redis 内：脚本不能把 MySQL 更新、Longbridge 请求或整段 Java 方法一起变成原子操作，也不会延长锁 TTL。它解决的是安全解锁中 GET 与 DEL 之间不能被其他命令插入这一件事。
 
-## 8. 学习进度的判断方式
+## 8. 当前 Redis 锁与 Redisson 的关系
 
-每一层都按四个结果判断，不以“看过代码”代替掌握：
+本项目使用的是**基于单 Redis 实例的跨 JVM 加载协调锁**：连接同一 Redis 的多个 Java 进程用同名锁协调谁加载一份行情。项目的 `inFlight` 只合并一个进程内的请求；跨进程时由 `RedisMarketSharedCache` 用 `setIfAbsent` 创建带 TTL 的锁 Key，并用 Lua 核对 owner 后解锁。它没有多 Redis 节点仲裁或故障切换保证；当前只读行情允许锁超时、Redis 故障等情况下偶发重复回源，因此这一级保证与项目风险相匹配，不能泛化为保护不可重复业务写入的高可用分布式锁。
 
-- 能用自己的话解释概念；
-- 能在项目中指出对应文件和关键语句；
-- 能手工推演正常、未命中、并发和故障流程；
-- 能回答当前方案为什么这样做、有什么边界、还有哪些替代方案。
+Redisson 是另一套 Java Redis 客户端库。其 `RLock` 是供 Java 调用的锁对象；调用者使用 `tryLock` 和 `unlock`，库在内部与 Redis 通信，也会用 Lua 脚本。它替调用者管理获取与释放锁的细节，可用发布订阅通知等待者；不指定固定 `leaseTime` 时可用 watchdog 在持有者仍活跃时续期，指定固定租期时按该租期释放。当前项目自己用 `StringRedisTemplate` 写了加锁和 Lua 解锁，并由业务代码每 40 毫秒轮询行情结果、最多等待 800 毫秒。Redisson 不替业务决定等锁超时或 Redis 故障后是否继续访问 Longbridge，也不保证外部接口严格只调用一次。
 
-当前只确认学习路线开始，不在本文标记任何知识点已经掌握。实际实现和验收状态继续以技术栈、SPEC tasks 与状态文档为准。
+可直接复述的项目回答见 [项目工程面试问答](../career/interview/01-project-engineering.md)。
+
+## 9. Redis 重启后，行情缓存怎样恢复
+
+Redis 主要在内存中提供数据。RDB 记成“快照”：定时把某一时刻的数据整体保存到磁盘；重启可加载最后一份快照，快照之后的变更可能丢失。AOF 记成“追加操作记录”：把修改数据的命令继续写到文件末尾，重启时重放；能恢复到什么程度取决于同步到磁盘的策略，也不是无条件零丢失。两者可组合使用，或都关闭。
+
+当前本机学习实例的启动参数为 `--save "" --appendonly no`，即关闭 RDB 和 AOF。Redis 重启后行情 Key 和锁 Key 都不从磁盘恢复；后续 HTTP 请求读取不到缓存，会沿原有 Longbridge 网关重新获取并写入。Redis 暂时不可用时，Java 的故障冷却跳过 Redis，走旧客户端的进程内缓存或受限回源。MySQL 中的用户、空间和研究事实不依赖 Redis 恢复。开发环境允许这样做，是因为 Redis 当前只保存可重建的行情副本；生产环境的持久化、容量和高可用策略须另外按恢复时间和回源能力验证。
+
+## 10. TTL 与内存淘汰：两种不同的删除原因
+
+TTL 是应用写入某个 Key 时指定的有效期限；到期后它不再是可用缓存。内存淘汰发生在 Redis 配置了 `maxmemory`、内存达到上限并要容纳新数据时；尚未过期的 Key 也可能被提前删掉，具体看 `maxmemory-policy`。例如本项目的历史 K 线基础 TTL 为 12 小时，但不同股票、周期、数量和 `before` 边界会生成不同 Key；即使所有 Key 都有 TTL，也不能仅凭 TTL 证明内存足够。
+
+`noeviction` 表示达到上限后拒绝增加数据的写命令，已有读取仍可用；`allkeys-lru` 表示从所有 Key 中近似挑选近期较少使用的淘汰，新请求如果再次查到被淘汰的行情，就重新回源。当前缓存写入失败会进入 Redis 故障冷却并走原有行情链路，但回源量可能增加。淘汰策略也可能影响锁 Key：若锁被提前淘汰，另一个请求可能获得同名锁，因此不能把“设置内存淘汰”当作与并发保护完全无关的配置。
+
+本机学习实例此前记录 `maxmemory=0`，表示未配置 Redis 自身的数据集内存上限；这不表示机器内存无限，也不能预测当前占用。`maxmemory` 没有通用数字：本机练习暂可保持现状，128 MiB 只能作为将来观察 `INFO memory` 时的实验起点，不能作为生产标准。部署前应根据典型 JSON 大小、同时存活的 Key 数量、命中率、`used_memory`、`evicted_keys` 和上游回源额度决定容量和淘汰策略，并为系统与 Redis 进程留内存余量。项目 Java 进程内的 LRU 上限与 Redis 的 `maxmemory-policy` 是两套机制。
+
+## 11. 热点 Key 与大 Key：访问次数和单条体积
+
+热点 Key 是同一个 Key 被大量请求反复访问，关注单位时间的访问次数；大 Key 是一条 Key 对应的 Value 很大，关注单次读取、写入和内存占用。两者可以分别出现，也可以同时出现：一只热门股票的当天分时可能因频繁访问成为热点；包含很多根 K 线的完整批次会序列化成同一个 Redis String，可能较大，但没有实测字节数前不能称它已是“大 Key”。
+
+项目的 `inFlight` 与 Redis 锁主要减轻热点 Key **失效时**的重复 Longbridge 回源；如果 Key 一直命中却被极高频 `GET`，请求仍到 Redis，这不是同一个问题。大 Key 则会增加一次读取或写入的数据量，占用更多内存和网络；当前历史 K 线按不同股票、周期、数量与 `before` 生成 Key，再按完整结果缓存。具体风险要用 Key 的 `MEMORY USAGE`、Redis 命中与请求指标以及页面响应时间判断；出现实际瓶颈再考虑缩小批次、调整缓存粒度或对只读热点增加短时进程内复用。
+
+## 12. 常用数据结构与非缓存用途
+
+Redis 的 Value 不只是一整段字符串。选择数据结构的依据是“需要对 Value 做什么操作”，不是看到多个字段就一定换类型：
+
+| 类型 | Redis 能直接完成的核心操作 | 常见场景 | 本项目 |
+| --- | --- | --- | --- |
+| String | 整体读写一个值；数字字符串还能原子增减 | JSON 缓存、计数器、锁 owner、会话值 | 行情 JSON 和锁 owner |
+| Hash | 按 field 单独读写一个对象的部分字段 | 用户资料、对象属性 | 未采用 |
+| List | 按顺序从两端加入、读取或弹出独立元素 | 简单待处理队列 | 未采用 |
+| Set | 保存不重复成员并判断成员关系 | 标签、去重、共同成员 | 未采用 |
+| ZSet | 每个不重复成员带 score，并按 score 排序 | 排行榜、优先级 | 未采用 |
+
+String 中即使保存了 JSON 数组，对 Redis 来说仍是一个整体；`GET` 读取后不会自动删除。List 的每项则是 Redis 能单独操作的元素，`POP` 会取出并删除其中一项，其他项仍保留。多个待领取任务才构成 List 队列；只有一个独立任务时 String 也能表达。简单 List 在元素弹出后若处理者崩溃，任务可能丢失，因此不能未经可靠性设计就把它包装成生产级消息队列。
+
+缓存只是 Redis 的一种使用方式。共享会话、原子计数、排行榜、简单队列和分布式协调，分别利用了 Redis 的共享访问、数据结构和原子命令；当前项目有真实场景的只有行情缓存与跨进程加载协调，不能把其余用途写进项目成果。
+
+## 13. 持久化、复制与集群解决不同问题
+
+RDB/AOF 解决“Redis 重启后怎样从磁盘恢复”；它们不等于服务不会中断。主从复制是主节点把数据复制给副本，可分担读请求或准备备用数据，但只有复制还不能自动决定主节点故障后由谁接管。Sentinel 在非分片部署中监控节点并在主节点故障时选举副本接管，重点是自动故障转移；Cluster 则把不同 Key 分片到多个节点，同时提供容量扩展和节点故障转移，客户端还要处理 Key 属于哪个分片。
+
+当前项目没有部署 Redis 主从、Sentinel 或 Cluster，也没有多节点故障切换证据。Redis 只保存可重建行情副本，当前规模和部署环境不足以证明需要这些复杂度；生产化时应根据可接受中断时间、数据量、吞吐和运维能力选择，不能为了简历直接接入。
+
+## 14. 怎样用测试证明缓存行为
+
+测试不是证明“Redis 这个软件正确”，而是证明项目围绕 Redis 写出的规则正确：
+
+| 测试 | 不需要什么外部环境 | 主要证明什么 |
+| --- | --- | --- |
+| `CachingLongbridgeMarketGatewayTest` | 不连接真实 Redis 和 Longbridge | 命中复用、Key 完整性、进程内合并、模拟跨实例竞争、过期重载、故障与等待超时降级、TTL 选择 |
+| `RedisMarketSharedCacheTest` | Mockito 模拟 `StringRedisTemplate` | 连接失败进入冷却、后续快速跳过；只有 owner 匹配才安全解锁 |
+| `MarketCacheWiringTest` | Spring 测试上下文 | Redis 开关关闭时注入 `NoOpMarketSharedCache`，开启时替换成 `RedisMarketSharedCache`，上层网关不变 |
+| `RedisMarketSharedCacheIntegrationTest` | 需要显式启用的真实 Redis | 两条独立连接共享锁和结果；真实写入、读取、过期与测试 Key 清理 |
+
+单元测试用替身快速覆盖分支，但不能证明 Redis 命令、连接和 TTL 在真实服务中一定正常；集成测试补这一层证据。反过来，一条真实 Redis 成功用例也不能替代各种异常分支的单元测试。现有双连接竞争能证明两个缓存客户端经同一 Redis 协调，不等于多个真实 Longbridge sidecar 已获准水平部署。项目简历证据见 [项目亮点](../career/highlights.md#5-股票研究首个纵向闭环)，项目实战回答见 [项目工程面试问答](../career/interview/01-project-engineering.md#project-05为什么行情缓存使用自写-redis-锁而没有接入-redisson)，通用高频题见 [Redis 与缓存面试问答](../career/interview/05-redis-cache.md)。
