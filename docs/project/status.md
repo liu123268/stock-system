@@ -1,12 +1,12 @@
 # 当前项目状态
 
-状态核对：2026-09-28。SPEC-001 CODE-008 空间改名接口和页面闭环已完成；SPEC-002 CODE-208 拼音首字母搜索、V7 迁移、现有可信目录回填、CODE-211A 未关注股票行情页和 CODE-212 共享列表研究摘要已经完成；证据见对应 tasks。
+状态核对：2026-09-28。SPEC-001 CODE-009 个人资料、昵称与改密旧 JWT 失效闭环已完成；SPEC-002 CODE-208 拼音首字母搜索、V7 迁移、现有可信目录回填、CODE-211A 未关注股票行情页和 CODE-212 共享列表研究摘要已经完成；证据见对应 tasks。
 
 ## 当前阶段与下一步
 
-认证、普通空间基础边界、超级管理员治理与空间改名完成至 [SPEC-001 CODE-008](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-211A 未关注行情页和 CODE-212 共享列表研究摘要均已关闭。
+认证、普通空间基础边界、超级管理员治理、空间改名与个人资料完成至 [SPEC-001 CODE-009](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-211A 未关注行情页和 CODE-212 共享列表研究摘要均已关闭。
 
-**下一步处理 [SPEC-001 CODE-009](../specs/001-workspace/tasks.md)，补齐个人资料入口、昵称和改密闭环。** 随后处理邀请安全；近期动态、时间线规模与研究详情最新行情／价格变化分别由 CODE-210、CODE-209 与 CODE-211B 承接，跨阶段关系见 [路线](roadmap.md)。
+**下一步处理 [SPEC-001 CODE-010](../specs/001-workspace/tasks.md)，明确邀请码连续错误尝试的限额和窗口，再完成防猜测闭环。** 近期动态、时间线规模与研究详情最新行情／价格变化分别由 CODE-210、CODE-209 与 CODE-211B 承接，跨阶段关系见 [路线](roadmap.md)。
 
 数据库目录现在支持代码、简体、繁体、英文和连续拼音首字母前缀搜索；拼音只召回可信身份，候选仍最多 30 条并在确定后一次批量补报价。业务正文见 [SPEC-002 需求](../specs/002-stock-research/requirements.md)，实现与证据见对应 design／tasks。
 
@@ -22,9 +22,11 @@
 
 开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。本轮临时 test 服务已关闭并释放 18082／18083，不据此推断用户当前是否另有开发服务运行。
 
-2026-09-21 已通过实际 JDBC 核对并把开发库 `stock_system` 从 V6 升至 V7，对现有 8318 条可信目录完成拼音回填；股票总数、四市场分布和既有 ID 保持。测试库 `stock_system_test` 也为 V7，整批 8318 条验证后回滚为 0。以后执行数据库操作仍须重新核对现场。
+2026-09-28 测试库 `stock_system_test` 和开发库 `stock_system` 已按顺序经 Flyway 从 V7 升至 V8，并核对 `app_user.credential_version` 存在。此前 V7 对 8318 条可信目录的拼音回填和测试库整批验证证据见 SPEC-002 tasks；以后执行数据库操作仍须重新核对现场。
 
 ## 最近验证
+
+- 2026-09-28 CODE-009：后端完整 143 项中 136 项通过、7 项外部探测按条件跳过；前端 48 项单元测试、类型检查、两套 lint 和生产构建通过。Mock Chrome 双账号流程覆盖昵称、改密、旧 JWT 401、新密码登录及 390×844 手机视口；两次浏览器数据核对剩余 0，临时服务关闭、18082／18083 释放。详见 SPEC-001 tasks。
 
 - 2026-09-28 CODE-008：后端空间集成测试 10 项、前端单元测试 47 项、类型检查、两套 lint、生产构建和 Mock Chrome 双账号改名／归档／恢复流程通过；首次浏览器脚本清理旧名称失败后已精确清理并修复，复测数据剩余 0，临时测试服务关闭且 18082／18083 释放。详细证据见 SPEC-001 tasks。
 

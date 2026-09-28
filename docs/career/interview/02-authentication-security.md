@@ -16,7 +16,7 @@
 
 ### 完整回答
 
-> 登录成功后，后端签发包含用户 ID、用户名、签发时间和过期时间的 JWT。前端 Pinia 保存登录状态，Axios 拦截器自动添加 `Authorization: Bearer <token>`。后端 `JwtAuthenticationFilter` 验证签名、结构和过期时间，再把最小用户身份写入 Spring Security 上下文。进入受保护路由时，前端调用 `/api/auth/me` 验证会话并查询数据库中的最新用户资料。JWT负载只是编码而不是加密，因此不保存密码和敏感信息，也不保存容易变化的空间角色。
+> 登录成功后，后端签发包含用户 ID、用户名、凭据版本、签发时间和过期时间的 JWT。前端 Pinia 保存登录状态，Axios 拦截器自动添加 `Authorization: Bearer <token>`。后端 `JwtAuthenticationFilter` 验证签名和有效期，并查询数据库确认账号状态、凭据版本与治理身份，再把当前身份写入 Spring Security 上下文。改密事务核对原密码并递增凭据版本，因此当前和其他设备旧 JWT 在下一次请求时返回 401；昵称修改不改变版本。JWT 负载只是编码，不保存密码或空间角色。
 
 ### 可能追问
 
@@ -27,13 +27,13 @@
 
 ### 当前边界
 
-项目尚未实现 Refresh Token、主动吊销和多设备会话管理。
+项目尚未实现 Refresh Token、指定设备的独立吊销和多设备会话管理；改密后整体吊销已由凭据版本实现。
 
 ## SEC-03：为什么使用无状态会话？
 
 ### 完整回答
 
-> Spring Security 会话策略设置为 `STATELESS`，后端不创建或读取登录 Session。每个受保护请求携带 JWT 并独立验证，服务实例不需要共享 Session。代价是 Token 签发后不能像 Session 一样直接从服务端删除，主动吊销需要短期 Access Token、Refresh Token、黑名单或版本号等额外机制。项目使用带有效期的访问 Token；这只解决认证凭据的传递，不代表密钥管理和会话治理已经达到生产要求，具体边界见 [认证设计](../../architecture/authentication.md)。
+> Spring Security 会话策略设置为 `STATELESS`，后端不创建或读取登录 Session。每个受保护请求携带 JWT 并独立验证，服务实例不需要共享 Session。项目在账号表增加凭据版本：改密后版本递增，旧 JWT 虽然签名仍有效，但与数据库版本不符而被拒绝。代价是每次请求要查当前账号，且该机制只能整体失效旧 Token，不能单独管理某台设备。具体边界见 [认证设计](../../architecture/authentication.md)。
 
 ## SEC-04：为什么统一401不能只用全局异常处理器？
 

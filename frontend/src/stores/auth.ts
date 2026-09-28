@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   getCurrentUser,
   login as loginRequest,
+  updateNickname as updateNicknameRequest,
   type CurrentUserResponseVO,
   type LoginRequestDTO,
   type LoginResponseVO,
@@ -52,6 +53,12 @@ export const useAuthStore = defineStore('auth', () => {
     sessionVerified.value = true
   }
 
+  async function updateNickname(nickname: string) {
+    const result = (await updateNicknameRequest(nickname)).data
+    saveCurrentUser(result.data)
+    return result.data
+  }
+
   function saveSession(loginResponse: LoginResponseVO) {
     accessToken.value = loginResponse.accessToken
     window.localStorage.setItem(TOKEN_STORAGE_KEY, loginResponse.accessToken)
@@ -89,6 +96,7 @@ export const useAuthStore = defineStore('auth', () => {
     isSuperAdmin,
     login,
     refreshCurrentUser,
+    updateNickname,
     logout,
   }
 })

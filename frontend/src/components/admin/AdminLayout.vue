@@ -30,6 +30,7 @@ function logout() {
         <RouterLink to="/admin/users" active-class="active">用户治理</RouterLink>
         <RouterLink to="/admin/workspaces" active-class="active">空间治理</RouterLink>
         <RouterLink to="/admin/operation-logs" active-class="active">操作记录</RouterLink>
+        <RouterLink to="/profile" active-class="active">个人资料</RouterLink>
       </nav>
 
       <div class="admin-account">

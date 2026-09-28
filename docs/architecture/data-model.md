@@ -2,7 +2,7 @@
 
 更新时间：2026-09-21
 
-> 结构依据：阶段 1 为 Flyway V1、V2，股票研究首批为 V3，真实股票目录扩展为 V4，研究周期和多人观点扩展为 V5、V6，拼音检索字段为 V7。下面 ER 图中的 `STOCK_DAILY_QUOTE` 仅表示后续设计，其余表已有迁移；各环境实际应用版本只见 [状态快照](../project/status.md)，执行前核对现场数据库。
+> 结构依据：阶段 1 为 Flyway V1、V2，股票研究首批为 V3，真实股票目录扩展为 V4，研究周期和多人观点扩展为 V5、V6，拼音检索字段为 V7，改密凭据版本为 V8。下面 ER 图中的 `STOCK_DAILY_QUOTE` 仅表示后续设计，其余表已有迁移；各环境实际应用版本只见 [状态快照](../project/status.md)，执行前核对现场数据库。
 
 ## 1. 设计目标
 
@@ -51,12 +51,13 @@ erDiagram
 | `id`            | bigint       | 主键，系统生成                             |
 | `username`      | varchar(20)  | 登录账号，清理首尾空白并转为小写，全局唯一 |
 | `password_hash` | varchar(100) | 密码摘要                                   |
+| `credential_version` | bigint | V8 新增，改密时递增以使旧 JWT 失效 |
 | `nickname`      | varchar(20)  | 页面展示名称                               |
 | `status`        | varchar(20)  | ACTIVE、DISABLED                           |
 | `created_at`    | datetime     | 系统创建时间                               |
 | `updated_at`    | datetime     | 系统更新时间                               |
 
-`app_user` 的 V1 最终字段就是以上 7 个。登录账号注册时清理首尾空白并统一转成小写，只允许 4～20 个英文字母、数字或下划线，使用 `unique(username)` 防止重复，V1 不允许修改。昵称负责页面展示，可以修改；密码只保存摘要，不保存明文。
+`app_user` 的 V1 原始结构为 7 个字段；V8 因改密后的旧 JWT 失效需求新增 `credential_version`，默认 0。登录账号注册时清理首尾空白并统一转成小写，只允许 4～20 个英文字母、数字或下划线，使用 `unique(username)` 防止重复，V1 不允许修改。昵称负责页面展示，可以修改；密码只保存摘要，不保存明文。
 
 V1 不实现头像，因此不预留 `avatar_url`；以后真正实现头像时再通过新迁移增加。账号停用与恢复只改变 `status`，治理过程由 `super_admin_operation_log` 保存，不在用户表重复增加停用时间、执行人或原因字段。
 

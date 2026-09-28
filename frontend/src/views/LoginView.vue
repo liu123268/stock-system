@@ -66,6 +66,9 @@ async function handleLogin() {
 
 <template>
   <AuthLayout>
+    <p v-if="route.query.reason === 'password-changed'" class="login-notice" role="status">
+      密码已更新，请使用新密码重新登录。
+    </p>
     <div class="auth-form-heading">
       <p>欢迎回来</p>
       <h2>登录你的研究空间</h2>
@@ -113,3 +116,14 @@ async function handleLogin() {
     </div>
   </AuthLayout>
 </template>
+
+<style scoped>
+.login-notice {
+  margin-bottom: 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-focus);
+  line-height: 1.5;
+}
+</style>

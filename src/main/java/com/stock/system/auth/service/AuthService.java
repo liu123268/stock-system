@@ -79,6 +79,7 @@ public class AuthService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", user.getId());
         claims.put("username", user.getUsername());
+        claims.put("credentialVersion", user.getCredentialVersion());
         String accessToken = jwtUtil.createToken(claims);
 
         return new LoginResponseVO(
@@ -107,6 +108,40 @@ public class AuthService {
                 user.getNickname(),
                 accountType(user.getId())
         );
+    }
+
+    @Transactional
+    public CurrentUserResponseVO updateNickname(Long userId, String rawNickname) {
+        AppUser user = requireActiveUserForUpdate(userId);
+        String nickname = rawNickname.trim();
+        if (nickname.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        user.setNickname(nickname);
+        userService.update(user);
+        return new CurrentUserResponseVO(user.getId(), user.getUsername(), nickname, accountType(userId));
+    }
+
+    @Transactional
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        AppUser user = requireActiveUserForUpdate(userId);
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.CURRENT_PASSWORD_INCORRECT);
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setCredentialVersion(user.getCredentialVersion() + 1);
+        userService.update(user);
+    }
+
+    private AppUser requireActiveUserForUpdate(Long userId) {
+        AppUser user = userService.findByIdForUpdate(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
+        }
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
+        }
+        return user;
     }
 
     private String accountType(Long userId) {

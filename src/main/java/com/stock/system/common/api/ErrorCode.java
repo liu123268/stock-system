@@ -10,6 +10,7 @@ public enum ErrorCode {
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "未登录或登录已过期"),
     FORBIDDEN(HttpStatus.FORBIDDEN, "当前账号无权执行该操作"),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "登录账号或密码错误"),
+    CURRENT_PASSWORD_INCORRECT(HttpStatus.BAD_REQUEST, "原密码不正确"),
     ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED, "账号当前不可用"),
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "登录账号已存在"),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "用户不存在"),

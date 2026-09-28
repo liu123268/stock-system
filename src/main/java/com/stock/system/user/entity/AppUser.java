@@ -21,6 +21,8 @@ public class AppUser {
 
     private String passwordHash;
 
+    private Long credentialVersion;
+
     private String nickname;
 
     private String status;

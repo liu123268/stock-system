@@ -4,6 +4,7 @@ import { AxiosHeaders, type AxiosResponse } from 'axios'
 import {
   getCurrentUser,
   login,
+  updateNickname,
   type ApiResult,
   type CurrentUserResponseVO,
   type LoginResponseVO,
@@ -90,5 +91,19 @@ describe('auth store', () => {
 
     expect(authStore.isAuthenticated).toBe(true)
     expect(authStore.sessionVerified).toBe(false)
+  })
+
+  it('updates the shared current user after a nickname change', async () => {
+    vi.mocked(updateNickname).mockResolvedValue(
+      axiosResponse<ApiResult<CurrentUserResponseVO>>({
+        code: 'SUCCESS', message: '成功',
+        data: { userId: 9, username: 'frontend_user', nickname: '新昵称', accountType: 'REGULAR' },
+      }),
+    )
+    const store = useAuthStore()
+    await store.updateNickname(' 新昵称 ')
+    expect(updateNickname).toHaveBeenCalledWith(' 新昵称 ')
+    expect(store.currentUser?.nickname).toBe('新昵称')
+    expect(JSON.parse(window.localStorage.getItem('stock-system-current-user') ?? '{}').nickname).toBe('新昵称')
   })
 })

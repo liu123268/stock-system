@@ -91,6 +91,7 @@ onMounted(load)
     <header class="picker-header">
       <button class="brand logout-btn" type="button" @click="logout">退出登录</button>
       <span>选择研究空间</span>
+      <RouterLink to="/profile">个人资料</RouterLink>
     </header>
 
     <p v-if="route.query.reason === 'left'" class="page-feedback" aria-live="polite">

@@ -798,6 +798,35 @@ try {
     throw new Error('新OWNER没有成功恢复自己归档的空间')
   }
 
+  const memberOldToken = await memberPage.evaluate(() => localStorage.getItem('stock-system-access-token'))
+  if (!memberOldToken) throw new Error('改密前没有取得成员会话')
+  await memberPage.getByRole('link', { name: '个人资料' }).first().click()
+  await memberPage.waitForURL((url) => url.pathname === '/profile')
+  await memberPage.setViewportSize({ width: 390, height: 844 })
+  if (await memberPage.evaluate(() => document.documentElement.scrollWidth > innerWidth)) {
+    throw new Error('手机视口的个人资料页出现横向溢出')
+  }
+  await memberPage.locator('#profile-nickname').fill('更新后的成员昵称')
+  await memberPage.getByRole('button', { name: '保存昵称' }).click()
+  await memberPage.getByText('昵称已更新。', { exact: true }).waitFor()
+  await memberPage.locator('#current-password').fill(password)
+  await memberPage.locator('#new-password').fill('NewBrowserPass456')
+  await memberPage.locator('#confirm-password').fill('NewBrowserPass456')
+  await memberPage.getByRole('button', { name: '修改密码并重新登录' }).click()
+  await memberPage.waitForURL((url) => url.pathname === '/login')
+  await memberPage.getByText('密码已更新，请使用新密码重新登录。', { exact: true }).waitFor()
+  const oldTokenResponse = await fetch(`${backendUrl}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${memberOldToken}` },
+  })
+  if (oldTokenResponse.status !== 401) throw new Error('改密后旧 JWT 未立即失效')
+  if (await memberPage.evaluate(() => localStorage.getItem('stock-system-access-token'))) {
+    throw new Error('改密成功后前端没有清除当前 JWT')
+  }
+  await memberPage.locator('input').nth(0).fill(memberUsername)
+  await memberPage.locator('input').nth(1).fill('NewBrowserPass456')
+  await memberPage.getByRole('button', { name: '进入空间' }).click()
+  await memberPage.waitForURL((url) => url.pathname.startsWith('/workspaces'))
+
   await memberPage.getByRole('button', { name: '退出登录', exact: true }).click()
   await memberPage.waitForURL((url) => url.pathname === '/')
   const logoutClearedSession = await memberPage.evaluate(
@@ -851,6 +880,7 @@ try {
     sharedStockAndInitialOpinionCompleted: true,
     realMarketChartsCompleted,
     workspaceArchivedAndRestored: true,
+    profileAndPasswordChanged: true,
     logoutClearedSession,
     jwtSaved: tokenSaved,
     apiResponses,

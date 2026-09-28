@@ -51,3 +51,11 @@ export function register(request: RegisterRequestDTO) {
 export function getCurrentUser() {
   return http.get<ApiResult<CurrentUserResponseVO>>('/auth/me')
 }
+
+export function updateNickname(nickname: string) {
+  return http.patch<ApiResult<CurrentUserResponseVO>>('/auth/me', { nickname })
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return http.post<ApiResult<null>>('/auth/password', { currentPassword, newPassword })
+}

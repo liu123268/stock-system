@@ -96,6 +96,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (!"ACTIVE".equals(user.getStatus())) {
             return null;
         }
+        Number credentialVersionClaim = claims.get("credentialVersion", Number.class);
+        long tokenVersion = credentialVersionClaim == null ? 0 : credentialVersionClaim.longValue();
+        if (tokenVersion != user.getCredentialVersion()) {
+            throw new IllegalArgumentException("Token 凭据版本已失效");
+        }
         String accountType = superAdminService.isSuperAdmin(user.getId())
                 ? "SUPER_ADMIN"
                 : "REGULAR";

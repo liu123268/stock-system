@@ -46,12 +46,13 @@ function logout() {
         <RouterLink :to="`/workspaces/${workspaceId}/settings`" exact-active-class="active">
           设置
         </RouterLink>
+        <RouterLink to="/profile">个人资料</RouterLink>
       </nav>
     </aside>
 
     <main class="workspace-main">
       <header>
-        <span>{{ authStore.currentUser?.nickname }}</span>
+        <RouterLink to="/profile">{{ authStore.currentUser?.nickname }} · 个人资料</RouterLink>
         <button type="button" @click="switchWorkspace">返回空间选择</button>
       </header>
       <RouterView />

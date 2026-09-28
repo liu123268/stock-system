@@ -2,6 +2,8 @@ package com.stock.system.auth.controller;
 
 import com.stock.system.auth.dto.LoginRequestDTO;
 import com.stock.system.auth.dto.RegisterRequestDTO;
+import com.stock.system.auth.dto.UpdateNicknameRequestDTO;
+import com.stock.system.auth.dto.ChangePasswordRequestDTO;
 import com.stock.system.auth.service.AuthService;
 import com.stock.system.auth.vo.CurrentUserResponseVO;
 import com.stock.system.auth.vo.LoginResponseVO;
@@ -12,6 +14,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,5 +45,22 @@ public class AuthController {
     @GetMapping("/me")
     public Result<CurrentUserResponseVO> me(@AuthenticationPrincipal LoginUser currentUser) {
         return Result.success(authService.getCurrentUser(currentUser.userId()));
+    }
+
+    @PatchMapping("/me")
+    public Result<CurrentUserResponseVO> updateNickname(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @Valid @RequestBody UpdateNicknameRequestDTO request
+    ) {
+        return Result.success(authService.updateNickname(currentUser.userId(), request.nickname()));
+    }
+
+    @PostMapping("/password")
+    public Result<Void> changePassword(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @Valid @RequestBody ChangePasswordRequestDTO request
+    ) {
+        authService.changePassword(currentUser.userId(), request.currentPassword(), request.newPassword());
+        return Result.success(null);
     }
 }
