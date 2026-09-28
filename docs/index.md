@@ -9,7 +9,7 @@ AI 从 [AGENTS.md](../AGENTS.md) 进入，由 [场景路由](project/project-rul
 | specs | 阶段内做什么、怎么实现、完成证据 | SPEC-001 [需求](specs/001-workspace/requirements.md)／[设计](specs/001-workspace/design.md)／[任务](specs/001-workspace/tasks.md)；SPEC-002 [需求](specs/002-stock-research/requirements.md)／[设计](specs/002-stock-research/design.md)／[任务](specs/002-stock-research/tasks.md) |
 | architecture | 跨阶段结构、数据模型、技术与视觉 | [总览](architecture/overview.md)、[技术栈](architecture/technology-stack.md)、[数据模型](architecture/data-model.md)、[认证](architecture/authentication.md)、[视觉规范与迭代](architecture/ui-design-system.md)、[模块化单体决策](architecture/decisions/ADR-001-modular-monolith.md)、[Longbridge sidecar 决策](architecture/decisions/ADR-002-longbridge-cli-sidecar.md) |
 | engineering | 环境、代码职责、教学、测试与问题根因 | [启动](engineering/development.md)、[部署](engineering/deployment.md)、[目录与分层](engineering/project-structure.md)、[前端教学](engineering/frontend.md)、[Redis 教学](engineering/redis.md)、[测试](engineering/testing.md)、[Bug 复盘目录](engineering/bugs/) |
-| career | 有证据的亮点和领域面试回答 | [亮点](career/highlights.md)、[工程](career/interview/01-project-engineering.md)、[安全](career/interview/02-authentication-security.md)、[数据库](career/interview/03-database-persistence.md)、[前端](career/interview/04-frontend-engineering.md) |
+| career | 有证据的亮点和领域面试回答 | [亮点](career/highlights.md)、[工程](career/interview/01-project-engineering.md)、[安全](career/interview/02-authentication-security.md)、[数据库](career/interview/03-database-persistence.md)、[前端](career/interview/04-frontend-engineering.md)、[Redis 与缓存](career/interview/05-redis-cache.md) |
 
 [功能地图](system-capabilities.html) 是展示快照；[PRODUCT](../PRODUCT.md) 是设计工具摘要；它们不保存新规则。新增长期要求的落点与替换方式见场景路由，不需要用户手工选择。
 

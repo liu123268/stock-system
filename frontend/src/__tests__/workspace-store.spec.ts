@@ -13,6 +13,7 @@ import {
   listWorkspaceMembers,
   listWorkspaces,
   removeWorkspaceMember,
+  renameWorkspace,
   restoreWorkspace,
   transferWorkspaceOwnership,
 } from '@/api/workspace'
@@ -208,6 +209,26 @@ describe('workspace store', () => {
     expect(createWorkspace).toHaveBeenCalledWith('家庭研究组')
     expect(created.workspaceId).toBe(12)
     expect(store.workspaces).toHaveLength(1)
+  })
+
+  it('uses the renamed detail for the current space and selector', async () => {
+    const renamed = { ...detail, name: '新名称' }
+    vi.mocked(renameWorkspace).mockResolvedValue(
+      response<ApiResult<WorkspaceDetailResponseVO>>({ code: 'SUCCESS', message: '成功', data: renamed }),
+    )
+    vi.mocked(listWorkspaces).mockResolvedValue(
+      response<ApiResult<WorkspaceSummaryResponseVO[]>>({ code: 'SUCCESS', message: '成功', data: [summary] }),
+    )
+    vi.mocked(getWorkspace).mockResolvedValue(
+      response<ApiResult<WorkspaceDetailResponseVO>>({ code: 'SUCCESS', message: '成功', data: detail }),
+    )
+    const store = useWorkspaceStore()
+    await store.loadWorkspaces()
+    await store.loadCurrent(12)
+    await store.rename(12, '新 名称')
+    expect(renameWorkspace).toHaveBeenCalledWith(12, '新 名称')
+    expect(store.currentWorkspace?.name).toBe('新名称')
+    expect(store.workspaces[0]?.name).toBe('新名称')
   })
 
   it('joins with an invitation and refreshes the selectable list', async () => {

@@ -17,6 +17,10 @@ const pendingAction = ref<'archive' | 'restore' | null>(null)
 const actionLoading = ref(false)
 const actionMessage = ref('')
 const actionError = ref('')
+const renameName = ref('')
+const renameLoading = ref(false)
+const renameMessage = ref('')
+const renameError = ref('')
 
 async function load() {
   if (!Number.isSafeInteger(workspaceId.value) || workspaceId.value <= 0) {
@@ -25,9 +29,30 @@ async function load() {
   }
   try {
     // 归档/恢复依赖最新 OWNER 与空间状态，不能复用另一页面留下的旧详情。
-    await store.loadCurrent(workspaceId.value)
+    const workspace = await store.loadCurrent(workspaceId.value)
+    renameName.value = workspace.name
   } catch (error) {
     await handleWorkspaceApiError(error, router)
+  }
+}
+
+async function submitRename() {
+  renameMessage.value = ''
+  renameError.value = ''
+  if (!renameName.value.replace(/[\p{White_Space}]/gu, '')) {
+    renameError.value = '请输入空间名称'
+    return
+  }
+  renameLoading.value = true
+  try {
+    const workspace = await store.rename(workspaceId.value, renameName.value)
+    renameName.value = workspace.name
+    renameMessage.value = '空间名称已更新。'
+  } catch (error) {
+    if (await handleWorkspaceApiError(error, router)) return
+    renameError.value = error instanceof Error ? error.message : '空间改名失败'
+  } finally {
+    renameLoading.value = false
   }
 }
 
@@ -92,6 +117,23 @@ onMounted(load)
         <p v-else>该空间由超级管理员治理归档，现在只读，只能从治理后台恢复。</p>
       </div>
       <strong>{{ isActive ? '正常使用' : '已归档' }}</strong>
+    </section>
+
+    <section class="rename-section" aria-labelledby="workspace-rename-title">
+      <div>
+        <h2 id="workspace-rename-title">空间名称</h2>
+        <p>名称在所有空间中唯一，保存时会移除空白字符，最多 30 个字符。</p>
+      </div>
+      <form v-if="isActive && isOwner" class="rename-form" @submit.prevent="submitRename">
+        <label for="rename-workspace-name">新名称</label>
+        <input id="rename-workspace-name" v-model="renameName" maxlength="120" :disabled="renameLoading" />
+        <button class="primary-action" type="submit" :disabled="renameLoading">
+          {{ renameLoading ? '正在保存…' : '保存名称' }}
+        </button>
+        <p v-if="renameError" class="feedback error" role="alert">{{ renameError }}</p>
+        <p v-if="renameMessage" class="feedback" aria-live="polite">{{ renameMessage }}</p>
+      </form>
+      <span v-else>{{ isActive ? '只有当前 OWNER 可以改名。' : '已归档空间不能改名。' }}</span>
     </section>
 
     <section v-if="pendingAction" class="confirmation" aria-live="polite">
@@ -177,7 +219,8 @@ onMounted(load)
   line-height: 1.7;
 }
 .status-section,
-.governance-section {
+.governance-section,
+.rename-section {
   display: flex;
   max-width: 920px;
   align-items: center;
@@ -189,11 +232,13 @@ onMounted(load)
 }
 .status-section h2,
 .governance-section h2,
+.rename-section h2,
 .confirmation h2 {
   font-size: 18px;
 }
 .status-section p,
 .governance-section p,
+.rename-section p,
 .confirmation p {
   max-width: 65ch;
   margin-top: 8px;
@@ -203,9 +248,35 @@ onMounted(load)
 .status-section > strong {
   flex-shrink: 0;
 }
-.governance-section > span {
+.governance-section > span,
+.rename-section > span {
   color: var(--color-muted);
   font-size: 13px;
+}
+.rename-form {
+  display: flex;
+  width: min(100%, 420px);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.rename-form label {
+  width: 100%;
+  font-size: 13px;
+}
+.rename-form input {
+  min-width: 0;
+  flex: 1;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-action);
+  background: transparent;
+  color: var(--color-ink);
+}
+.rename-form .feedback {
+  width: 100%;
+  margin-top: 0;
 }
 .confirmation {
   display: flex;
@@ -285,6 +356,7 @@ button:disabled {
   }
   .status-section,
   .governance-section,
+  .rename-section,
   .confirmation {
     align-items: flex-start;
     flex-direction: column;

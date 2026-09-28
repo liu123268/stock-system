@@ -19,6 +19,7 @@ const runId = Date.now().toString(36)
 const ownerUsername = `browser_o_${runId}`.slice(0, 20)
 const memberUsername = `browser_m_${runId}`.slice(0, 20)
 const workspaceName = `浏览器空间${runId}`
+const renamedWorkspace = `${workspaceName}改名`
 const password = 'BrowserPass123'
 const ownerNickname = '浏览器 OWNER'
 const memberNickname = '浏览器 MEMBER'
@@ -144,7 +145,7 @@ async function cleanupTestUser(stockExistedBefore) {
   }
 
   const sql = [
-    `SET @test_workspace_id = (SELECT id FROM workspace WHERE name = '${workspaceName}' LIMIT 1)`,
+    `SET @test_workspace_id = (SELECT id FROM workspace WHERE name IN ('${workspaceName}', '${renamedWorkspace}') LIMIT 1)`,
     `DELETE FROM stock_opinion WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id))`,
     `DELETE FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)`,
     `DELETE FROM workspace_stock WHERE workspace_id = @test_workspace_id`,
@@ -155,7 +156,7 @@ async function cleanupTestUser(stockExistedBefore) {
         ]),
     `DELETE FROM workspace_invitation WHERE workspace_id = @test_workspace_id`,
     `DELETE FROM workspace_member WHERE workspace_id = @test_workspace_id`,
-    `DELETE FROM workspace WHERE id = @test_workspace_id AND name = '${workspaceName}'`,
+    `DELETE FROM workspace WHERE id = @test_workspace_id AND name IN ('${workspaceName}', '${renamedWorkspace}')`,
     `DELETE FROM app_user WHERE username IN ('${ownerUsername}', '${memberUsername}')`,
     `SELECT (SELECT COUNT(*) FROM app_user WHERE username IN ('${ownerUsername}', '${memberUsername}')) + (SELECT COUNT(*) FROM workspace WHERE id = @test_workspace_id) + (SELECT COUNT(*) FROM workspace_stock WHERE workspace_id = @test_workspace_id) + (SELECT COUNT(*) FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)) + (SELECT COUNT(*) FROM stock_opinion WHERE research_cycle_id IN (SELECT id FROM research_cycle WHERE workspace_stock_id IN (SELECT id FROM workspace_stock WHERE workspace_id = @test_workspace_id)))${stockExistedBefore ? '' : ` + (SELECT COUNT(*) FROM stock WHERE code = '${searchedStockCode}')`}`,
   ].join('; ')
@@ -753,6 +754,17 @@ try {
   }
 
   await memberPage.getByRole('link', { name: '设置', exact: true }).click()
+  await memberPage.locator('#rename-workspace-name').fill(renamedWorkspace)
+  const renameResponse = waitForResponseSafely(memberPage, (response) => {
+    const path = new URL(response.url()).pathname
+    return response.request().method() === 'PATCH' && /^\/api\/workspaces\/\d+$/.test(path)
+  })
+  await memberPage.getByRole('button', { name: '保存名称' }).click()
+  if ((await renameResponse).status() !== 200) {
+    throw new Error('新 OWNER 没有成功修改空间名称')
+  }
+  await memberPage.getByRole('heading', { name: renamedWorkspace }).waitFor()
+  await memberPage.getByText('空间名称已更新。', { exact: true }).waitFor()
   const archiveResponse = waitForResponseSafely(memberPage, (response) => {
     const path = new URL(response.url()).pathname
     return response.request().method() === 'POST' && /^\/api\/workspaces\/\d+\/archive$/.test(path)

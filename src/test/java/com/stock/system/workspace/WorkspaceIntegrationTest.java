@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,6 +116,57 @@ class WorkspaceIntegrationTest extends MySqlIntegrationTest {
                         .header("Authorization", "Bearer " + strangerToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_NOT_FOUND"));
+    }
+
+    @Test
+    void shouldRenameOnlyActiveOwnedWorkspaceAndKeepNameUnique() throws Exception {
+        String ownerToken = registerAndLogin("rename_owner");
+        String memberToken = registerAndLogin("rename_member");
+        String strangerToken = registerAndLogin("rename_stranger");
+        long workspaceId = createWorkspace(ownerToken, "改名前空间");
+        createWorkspace(strangerToken, "已有空间");
+        JsonNode invitation = createInvitation(ownerToken, workspaceId, null);
+        joinWorkspace(memberToken, invitation.path("inviteCode").asText());
+
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"成员不能改\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + strangerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"陌生人不能改\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"已 有 空 间\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_NAME_ALREADY_EXISTS"));
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"　\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"新 名　称\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("新名称"));
+        assertThat(workspaceMapper.selectById(workspaceId).getName()).isEqualTo("新名称");
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/archive", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"归档后名称\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ARCHIVED"));
+        assertThat(workspaceMapper.selectById(workspaceId).getName()).isEqualTo("新名称");
     }
 
     @Test

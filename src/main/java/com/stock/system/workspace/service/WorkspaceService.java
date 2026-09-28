@@ -78,6 +78,27 @@ public class WorkspaceService {
         return toDetail(accessService.requireMember(userId, workspaceId), userId);
     }
 
+    @Transactional
+    public WorkspaceDetailResponseVO rename(Long userId, Long workspaceId, String rawName) {
+        Workspace workspace = accessService.requireActiveOwnerForUpdate(userId, workspaceId);
+        String name = normalizeName(rawName);
+        if (workspace.getName().equals(name)) {
+            return toDetail(workspace, userId);
+        }
+        if (workspaceMapper.selectCount(
+                new LambdaQueryWrapper<Workspace>().eq(Workspace::getName, name)
+        ) > 0) {
+            throw new BusinessException(ErrorCode.WORKSPACE_NAME_ALREADY_EXISTS);
+        }
+        try {
+            workspaceMapper.updateName(workspaceId, name);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException(ErrorCode.WORKSPACE_NAME_ALREADY_EXISTS);
+        }
+        workspace.setName(name);
+        return toDetail(workspace, userId);
+    }
+
     public void requireActiveMemberForUpdate(Long userId, Long workspaceId) {
         accessService.requireActiveMemberForUpdate(userId, workspaceId);
     }

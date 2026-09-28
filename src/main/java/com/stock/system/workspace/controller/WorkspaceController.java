@@ -4,6 +4,7 @@ import com.stock.system.common.api.Result;
 import com.stock.system.security.LoginUser;
 import com.stock.system.workspace.dto.CreateWorkspaceRequestDTO;
 import com.stock.system.workspace.dto.JoinWorkspaceRequestDTO;
+import com.stock.system.workspace.dto.RenameWorkspaceRequestDTO;
 import com.stock.system.workspace.service.WorkspaceInvitationService;
 import com.stock.system.workspace.service.WorkspaceService;
 import com.stock.system.workspace.vo.JoinWorkspaceResponseVO;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -67,6 +69,15 @@ public class WorkspaceController {
             @PathVariable Long workspaceId
     ) {
         return Result.success(workspaceService.detail(currentUser.userId(), workspaceId));
+    }
+
+    @PatchMapping("/{workspaceId}")
+    public Result<WorkspaceDetailResponseVO> rename(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody RenameWorkspaceRequestDTO request
+    ) {
+        return Result.success(workspaceService.rename(currentUser.userId(), workspaceId, request.name()));
     }
 
     @PostMapping("/{workspaceId}/archive")

@@ -53,7 +53,7 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 | `POST /api/workspaces`                                            | `CreateWorkspaceRequestDTO(name)`                 | `WorkspaceDetailResponseVO`         | 创建空间                                     |
 | `POST /api/workspaces/join`                                       | `JoinWorkspaceRequestDTO(inviteCode)`             | `JoinWorkspaceResponseVO`           | 使用邀请码加入或返回已有空间                 |
 | `GET /api/workspaces/{workspaceId}`                               | 无                                                | `WorkspaceDetailResponseVO`         | 查看空间详情                                 |
-| `PATCH /api/workspaces/{workspaceId}`                             | `RenameWorkspaceRequestDTO(name)`                 | `WorkspaceDetailResponseVO`         | 修改空间名称（规划，待 CODE-008 实现）       |
+| `PATCH /api/workspaces/{workspaceId}`                             | `RenameWorkspaceRequestDTO(name)`                 | `WorkspaceDetailResponseVO`         | OWNER 修改活动空间名称                       |
 | `POST /api/workspaces/{workspaceId}/archive`                      | 无                                                | `WorkspaceDetailResponseVO`         | OWNER 归档空间                               |
 | `POST /api/workspaces/{workspaceId}/restore`                      | 无                                                | `WorkspaceDetailResponseVO`         | OWNER 恢复自己归档的空间                     |
 | `GET /api/workspaces/{workspaceId}/members`                       | 无                                                | `List<WorkspaceMemberResponseVO>`   | 查看成员                                     |
@@ -65,7 +65,7 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 | `POST /api/workspaces/{workspaceId}/invitations`                  | `CreateInvitationRequestDTO(currentInvitationId)` | `CurrentInvitationResponseVO`       | OWNER 首次生成或基于页面当前版本重新生成邀请 |
 | `DELETE /api/workspaces/{workspaceId}/invitations/{invitationId}` | 无                                                | `Void`                              | OWNER 停用指定且仍为当前的邀请               |
 
-创建、改名、归档、恢复和转让返回后端计算后的最新空间 VO，前端不自行猜测状态。当前代码已实现创建、归档和恢复；改名接口仍是已确认的设计项，待 `CODE-008` 补齐后再进行接口和浏览器验收。`JoinWorkspaceResponseVO` 包含空间摘要和 `newlyJoined`，已经是有效成员时返回 `false` 且不消耗邀请次数。
+创建、改名、归档、恢复和转让返回后端计算后的最新空间 VO，前端不自行猜测状态。改名在事务内锁定空间，核对当前 OWNER 与活动状态，复用创建时的名称清理和全平台唯一约束；同名返回原详情，其他重名返回冲突。`JoinWorkspaceResponseVO` 包含空间摘要和 `newlyJoined`，已经是有效成员时返回 `false` 且不消耗邀请次数。
 
 ### 5.3 超级管理员 API
 
@@ -216,7 +216,7 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 ### 10.2 后端测试
 
-以下是阶段验收目标；超级管理员治理已在 `CODE-007` 验收，空间改名仍待 `CODE-008`，不能把未完成设计当成已通过结果。
+以下是阶段验收目标；超级管理员治理和空间改名分别已在 `CODE-007`、`CODE-008` 验收，其余范围以 tasks 为准，不能把未完成设计当成已通过结果。
 
 - MockMvc 集成测试覆盖创建、加入、改名、成员、邀请、转让、归档恢复、超级管理员治理、HTTP 状态与业务错误码；
 - 权限测试覆盖 OWNER、MEMBER、非成员、失效成员、SUPER_ADMIN、禁用账号和跨空间访问；
@@ -236,6 +236,6 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 ## 11. 编码顺序与失败处理
 
-唯一任务顺序和授权证据见 [任务清单](tasks.md)，跨阶段调整见 [路线](../../project/roadmap.md)。不在 design 复制一份编码清单。空间基础边界与治理模块的完成证据分别见任务清单，剩余空间改名、个人资料和邀请安全仍按独立任务验收。
+唯一任务顺序和授权证据见 [任务清单](tasks.md)，跨阶段调整见 [路线](../../project/roadmap.md)。不在 design 复制一份编码清单。空间基础边界、治理与改名的完成证据见任务清单，剩余个人资料和邀请安全仍按独立任务验收。
 
 失败时不进入依赖步骤；修复迁移遵守数据模型要求，进程和测试数据处理遵守测试规则，Git 保护遵守项目入口。Spring Boot 升级与业务编码分开验证兼容性，不在一个小闭环混做。

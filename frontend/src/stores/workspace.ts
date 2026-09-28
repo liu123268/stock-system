@@ -12,6 +12,7 @@ import {
   listWorkspaceMembers,
   listWorkspaces,
   removeWorkspaceMember,
+  renameWorkspace,
   restoreWorkspace,
   revokeInvitation,
   transferWorkspaceOwnership,
@@ -193,6 +194,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return workspace
   }
 
+  async function rename(workspaceId: number, name: string) {
+    const workspace = (await renameWorkspace(workspaceId, name)).data.data
+    if (currentWorkspace.value?.workspaceId === workspaceId) {
+      currentWorkspace.value = workspace
+    }
+    workspaces.value = workspaces.value.map((item) =>
+      item.workspaceId === workspaceId ? { ...item, name: workspace.name } : item,
+    )
+    return workspace
+  }
+
   async function restore(workspaceId: number) {
     const workspace = (await restoreWorkspace(workspaceId)).data.data
     currentWorkspace.value = workspace
@@ -244,6 +256,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     removeMember,
     transferOwnership,
     archive,
+    rename,
     restore,
     clearCurrent,
     clearAll,

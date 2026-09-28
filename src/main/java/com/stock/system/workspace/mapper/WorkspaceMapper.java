@@ -17,6 +17,9 @@ public interface WorkspaceMapper extends BaseMapper<Workspace> {
     @Select("SELECT * FROM workspace WHERE id = #{workspaceId} FOR UPDATE")
     Workspace selectByIdForUpdate(@Param("workspaceId") Long workspaceId);
 
+    @Update("UPDATE workspace SET name = #{name} WHERE id = #{workspaceId}")
+    int updateName(@Param("workspaceId") Long workspaceId, @Param("name") String name);
+
     @Select("""
             SELECT w.id AS workspaceId,
                    w.name,

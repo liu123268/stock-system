@@ -67,6 +67,10 @@ export function getWorkspace(workspaceId: number) {
   return http.get<ApiResult<WorkspaceDetailResponseVO>>(`/workspaces/${workspaceId}`)
 }
 
+export function renameWorkspace(workspaceId: number, name: string) {
+  return http.patch<ApiResult<WorkspaceDetailResponseVO>>(`/workspaces/${workspaceId}`, { name })
+}
+
 export function archiveWorkspace(workspaceId: number) {
   return http.post<ApiResult<WorkspaceDetailResponseVO>>(`/workspaces/${workspaceId}/archive`)
 }
