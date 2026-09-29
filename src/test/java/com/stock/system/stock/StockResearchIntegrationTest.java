@@ -30,6 +30,9 @@ import org.springframework.test.annotation.Rollback;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -562,9 +565,15 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                         workspaceStockId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentCycle.id").value(secondCycleId))
+                .andExpect(jsonPath("$.data.currentCycle.opinions.length()").value(0));
+        mockMvc.perform(get(
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/timeline",
+                        workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cycles.length()").value(2))
                 .andExpect(jsonPath("$.data.cycles[0].id").value(secondCycleId))
-                .andExpect(jsonPath("$.data.cycles[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.cycles[1].id").value(firstCycleId))
                 .andExpect(jsonPath("$.data.cycles[1].status").value("ENDED"))
                 .andExpect(jsonPath("$.data.cycles[1].opinions.length()").value(3))
@@ -575,6 +584,80 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
         assertThat(countWorkspaceStocks(workspaceId)).isEqualTo(1);
         assertThat(researchCycleMapper.selectCount(null)).isEqualTo(2);
         assertThat(stockOpinionMapper.selectCount(null)).isEqualTo(4);
+    }
+
+    @Test
+    void timelineFiltersAllHistoryBeforeStableCursorPages() throws Exception {
+        JsonNode added = addStock(ownerToken, workspaceId, "600519.SH")
+                .andExpect(status().isOk()).andReturnJson();
+        long workspaceStockId = added.path("data").path("workspaceStockId").asLong();
+        long cycleId = added.path("data").path("researchCycleId").asLong();
+        for (int index = 0; index < 45; index++) {
+            StockOpinion opinion = new StockOpinion();
+            opinion.setResearchCycleId(cycleId);
+            opinion.setAuthorUserId(index % 2 == 0 ? memberId : ownerId);
+            opinion.setType(index % 3 == 0 ? "REVIEW" : "UPDATE");
+            opinion.setStance(index % 3 == 0 ? "BULLISH" : "NEUTRAL");
+            opinion.setReason("第 " + index + " 条研究观点");
+            opinion.setHorizon("MEDIUM");
+            opinion.setCreatedAt(java.time.LocalDateTime.now());
+            stockOpinionMapper.insert(opinion);
+        }
+        String path = "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/timeline";
+        mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + strangerToken))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("cursor", "bad-value"))
+                .andExpect(status().isBadRequest());
+
+        JsonNode first = new ResultActionsJson(mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)), objectMapper).andReturnJson();
+        assertThat(first.path("data").path("cycles").get(0).path("opinions").size()).isEqualTo(20);
+        String firstCursor = first.path("data").path("nextCursor").asText();
+        JsonNode second = new ResultActionsJson(mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("cursor", firstCursor)), objectMapper).andReturnJson();
+        assertThat(second.path("data").path("cycles").get(0).path("opinions").size()).isEqualTo(20);
+        String secondCursor = second.path("data").path("nextCursor").asText();
+        JsonNode last = new ResultActionsJson(mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .param("cursor", secondCursor)), objectMapper).andReturnJson();
+        assertThat(last.path("data").path("cycles").get(0).path("opinions").size()).isEqualTo(6);
+        assertThat(last.path("data").path("nextCursor").isNull()).isTrue();
+        var seenOpinionIds = new HashSet<Long>();
+        for (JsonNode page : List.of(first, second, last)) {
+            for (JsonNode cycle : page.path("data").path("cycles")) {
+                for (JsonNode opinion : cycle.path("opinions")) {
+                    assertThat(seenOpinionIds.add(opinion.path("id").asLong())).isTrue();
+                }
+            }
+        }
+        assertThat(seenOpinionIds).hasSize(46);
+
+        JsonNode memberPage = new ResultActionsJson(mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("author", memberId.toString())), objectMapper).andReturnJson();
+        assertThat(memberPage.path("data").path("cycles").get(0).path("opinions").size()).isEqualTo(20);
+        assertThat(memberPage.path("data").path("nextCursor").isNull()).isFalse();
+        JsonNode memberLast = new ResultActionsJson(mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("author", memberId.toString())
+                        .param("cursor", memberPage.path("data").path("nextCursor").asText())),
+                objectMapper).andReturnJson();
+        assertThat(memberLast.path("data").path("cycles").get(0).path("opinions").size()).isEqualTo(3);
+        assertThat(memberLast.path("data").path("nextCursor").isNull()).isTrue();
+        for (JsonNode page : List.of(memberPage, memberLast)) {
+            for (JsonNode opinion : page.path("data").path("cycles").get(0).path("opinions")) {
+                assertThat(opinion.path("authorUserId").asLong()).isEqualTo(memberId);
+            }
+        }
+        mockMvc.perform(get(path, workspaceId, workspaceStockId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("type", "REVIEW").param("stance", "NEUTRAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cycles.length()").value(0));
     }
 
     @Test
@@ -610,7 +693,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
                 .andExpect(jsonPath("$.data[0].status").value("CANCELLED"));
 
         mockMvc.perform(get(
-                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/timeline",
                         workspaceId,
                         workspaceStockId)
                         .header("Authorization", "Bearer " + ownerToken))
@@ -642,7 +725,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
         stockOpinionMapper.updateById(initial);
 
         mockMvc.perform(get(
-                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/timeline",
                         workspaceId,
                         workspaceStockId)
                         .header("Authorization", "Bearer " + ownerToken))
@@ -672,7 +755,7 @@ class StockResearchIntegrationTest extends MySqlIntegrationTest {
         workspaceService.archive(ownerId, workspaceId);
 
         mockMvc.perform(get(
-                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research",
+                        "/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/timeline",
                         workspaceId,
                         workspaceStockId)
                         .header("Authorization", "Bearer " + ownerToken))

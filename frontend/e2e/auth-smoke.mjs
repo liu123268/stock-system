@@ -619,9 +619,17 @@ try {
       /^\/api\/workspaces\/\d+\/stocks\/\d+\/research$/.test(path)
     )
   })
+  const ownerTimelineResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return response.request().method() === 'GET' &&
+      /^\/api\/workspaces\/\d+\/stocks\/\d+\/research\/timeline$/.test(path)
+  })
   await page.getByRole('link', { name: '查看全部观点', exact: true }).click()
   if ((await ownerResearchResponse).status() !== 200) {
     throw new Error('OWNER没有成功进入股票研究详情')
+  }
+  if ((await ownerTimelineResponse).status() !== 200) {
+    throw new Error('OWNER没有成功读取研究时间线首批观点')
   }
   await page.waitForURL((url) => url.hash === '#research-timeline')
   await page.getByRole('heading', { name: '研究周期与观点时间线', exact: true }).waitFor()
@@ -633,6 +641,22 @@ try {
     throw new Error('从“查看全部观点”进入时不应先展开观点表单')
   }
   await page.getByText('MEMBER补充了估值观察观点', { exact: true }).waitFor()
+  const memberFilterResponse = waitForResponseSafely(page, (response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' &&
+      url.pathname.endsWith('/research/timeline') && url.searchParams.has('author')
+  })
+  await page.getByLabel('按成员筛选').selectOption({ label: memberNickname })
+  if ((await memberFilterResponse).status() !== 200) {
+    throw new Error('按成员筛选没有从服务端取得观点')
+  }
+  await page.getByText('品牌优势和现金流仍需持续验证', { exact: true })
+    .waitFor({ state: 'detached' })
+  if (await page.getByText('品牌优势和现金流仍需持续验证', { exact: true }).count()) {
+    throw new Error('成员筛选仍显示其他作者的观点')
+  }
+  await page.getByLabel('按成员筛选').selectOption('ALL')
+  await page.getByText('品牌优势和现金流仍需持续验证', { exact: true }).waitFor()
   await page.getByRole('button', { name: '结束本轮关注', exact: true }).click()
   const endCycleResponse = waitForResponseSafely(page, (response) => {
     const path = new URL(response.url()).pathname
@@ -662,7 +686,8 @@ try {
     throw new Error('OWNER没有成功重新开启研究周期')
   }
   await page.getByText('新的研究周期已经开启，旧周期仍保留在下方。', { exact: true }).waitFor()
-  if ((await page.getByText(/第 \d+ 期/).count()) !== 2) {
+  await page.locator('.cycle-card').nth(1).waitFor()
+  if ((await page.locator('.cycle-card').count()) !== 2) {
     throw new Error('重新关注后没有同时显示新旧两个研究周期')
   }
 

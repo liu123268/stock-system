@@ -302,7 +302,7 @@ export const useStockStore = defineStore('stock', () => {
     try {
       await loadResearch(workspaceId, workspaceStockId)
     } catch {
-      refreshWarning.value = '观点已经保存，但研究时间线刷新失败，请重新加载。'
+      refreshWarning.value = '观点已经保存，但研究详情刷新失败，请重新加载。'
     }
     researchSubmitting.value = false
     return result

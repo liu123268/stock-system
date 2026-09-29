@@ -17,6 +17,7 @@ import com.stock.system.stock.vo.StockIntradaySeriesVO;
 import com.stock.system.stock.vo.UpdateAttentionLevelResponseVO;
 import com.stock.system.stock.vo.EndedWorkspaceStockResponseVO;
 import com.stock.system.stock.vo.ResearchCycleStateResponseVO;
+import com.stock.system.stock.vo.ResearchTimelinePageResponseVO;
 import com.stock.system.stock.vo.StockOpinionResponseVO;
 import com.stock.system.stock.vo.WorkspaceStockResearchResponseVO;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -89,6 +90,21 @@ public class WorkspaceStockController {
     ) {
         return Result.success(lifecycleService.detail(
                 currentUser.userId(), workspaceId, workspaceStockId));
+    }
+
+    @GetMapping("/{workspaceStockId}/research/timeline")
+    public Result<ResearchTimelinePageResponseVO> researchTimeline(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId,
+            @RequestParam(required = false) String author,
+            @RequestParam(required = false) String stance,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String cursor
+    ) {
+        return Result.success(lifecycleService.timeline(
+                currentUser.userId(), workspaceId, workspaceStockId,
+                author, stance, type, cursor));
     }
 
     @PostMapping("/{workspaceStockId}/end")

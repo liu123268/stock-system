@@ -6,21 +6,9 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
-import java.util.List;
 
 @Mapper
 public interface StockOpinionMapper extends BaseMapper<StockOpinion> {
-
-    @Select("""
-            SELECT
-                opinion.*,
-                author.nickname AS author_nickname
-            FROM stock_opinion opinion
-            JOIN app_user author ON author.id = opinion.author_user_id
-            WHERE opinion.research_cycle_id = #{researchCycleId}
-            ORDER BY opinion.created_at ASC, opinion.id ASC
-            """)
-    List<StockOpinionTimelineRow> selectTimeline(Long researchCycleId);
 
     @Select("""
             SELECT opinion.*

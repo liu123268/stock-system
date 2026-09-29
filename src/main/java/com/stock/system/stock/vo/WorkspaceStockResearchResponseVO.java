@@ -9,6 +9,7 @@ public record WorkspaceStockResearchResponseVO(
         String exchange,
         String currency,
         String listingStatus,
-        List<ResearchCycleDetailResponseVO> cycles
+        ResearchCycleDetailResponseVO currentCycle,
+        List<ResearchAuthorResponseVO> authors
 ) {
 }

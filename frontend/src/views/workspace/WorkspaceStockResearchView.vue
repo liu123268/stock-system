@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
   OpinionHorizon,
   OpinionType,
+  ResearchCycleDetailResponseVO,
   StockOpinionResponseVO,
   StockStance,
 } from '@/api/stock'
+import { getWorkspaceStockResearchTimeline } from '@/api/stock'
 import { useStockStore } from '@/stores/stock'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
@@ -19,9 +21,7 @@ const workspaceStore = useWorkspaceStore()
 const workspaceId = computed(() => Number(route.params.workspaceId))
 const workspaceStockId = computed(() => Number(route.params.workspaceStockId))
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
-const currentCycle = computed(() =>
-  stockStore.researchDetail?.cycles.find((cycle) => cycle.status === 'ACTIVE'),
-)
+const currentCycle = computed(() => stockStore.researchDetail?.currentCycle)
 const endConfirming = ref(false)
 const composeExpanded = ref(false)
 const formError = ref('')
@@ -30,6 +30,12 @@ const pageRefreshWarning = ref('')
 const authorFilter = ref('ALL')
 const stanceFilter = ref('ALL')
 const typeFilter = ref('ALL')
+const timelineCycles = ref<ResearchCycleDetailResponseVO[]>([])
+const timelineNextCursor = ref<string | null>(null)
+const timelineLoading = ref(false)
+const timelineError = ref('')
+let timelineRequestVersion = 0
+let loadedTimelineTarget = ''
 const currentTime = ref(Date.now())
 let withdrawClock: number | undefined
 
@@ -71,30 +77,58 @@ async function toggleCompose() {
   document.querySelector<HTMLElement>('[data-opinion-first-control]')?.focus()
 }
 
-const authors = computed(() => {
-  const values = new Map<number, string>()
-  for (const cycle of stockStore.researchDetail?.cycles ?? []) {
-    for (const item of cycle.opinions) values.set(item.authorUserId, item.authorNickname)
+async function loadTimeline(reset: boolean) {
+  if (!reset && (!timelineNextCursor.value || timelineLoading.value)) return
+  const requestVersion = reset ? ++timelineRequestVersion : timelineRequestVersion
+  if (reset) {
+    timelineCycles.value = []
+    timelineNextCursor.value = null
   }
-  return [...values.entries()].map(([id, nickname]) => ({ id, nickname }))
-})
-
-function visibleOpinions(cycleId: number) {
-  const cycle = stockStore.researchDetail?.cycles.find((item) => item.id === cycleId)
-  return (cycle?.opinions ?? []).filter(
-    (item) =>
-      (authorFilter.value === 'ALL' || item.authorUserId === Number(authorFilter.value)) &&
-      (stanceFilter.value === 'ALL' || item.stance === stanceFilter.value) &&
-      (typeFilter.value === 'ALL' || item.type === typeFilter.value),
-  )
+  timelineLoading.value = true
+  timelineError.value = ''
+  try {
+    const page = (await getWorkspaceStockResearchTimeline(
+      workspaceId.value,
+      workspaceStockId.value,
+      {
+        ...(authorFilter.value !== 'ALL' ? { author: Number(authorFilter.value) } : {}),
+        ...(stanceFilter.value !== 'ALL' ? { stance: stanceFilter.value as StockStance } : {}),
+        ...(typeFilter.value !== 'ALL' ? { type: typeFilter.value as OpinionType } : {}),
+      },
+      reset ? undefined : timelineNextCursor.value ?? undefined,
+    )).data.data
+    if (requestVersion !== timelineRequestVersion) return
+    const cycles = reset ? [] : [...timelineCycles.value]
+    for (const cycle of page.cycles) {
+      const existing = cycles.find((item) => item.id === cycle.id)
+      if (existing) existing.opinions.push(...cycle.opinions)
+      else cycles.push(cycle)
+    }
+    timelineCycles.value = cycles
+    timelineNextCursor.value = page.nextCursor
+  } catch (error) {
+    if (requestVersion !== timelineRequestVersion) return
+    if (await handleWorkspaceApiError(error, router)) return
+    timelineError.value = error instanceof Error ? error.message : '研究时间线加载失败'
+  } finally {
+    if (requestVersion === timelineRequestVersion) timelineLoading.value = false
+  }
 }
 
+watch([authorFilter, stanceFilter, typeFilter], () => {
+  if (loadedTimelineTarget === `${workspaceId.value}:${workspaceStockId.value}`) {
+    void loadTimeline(true)
+  }
+})
+
 async function load() {
+  const requestedWorkspaceId = workspaceId.value
+  const requestedStockId = workspaceStockId.value
   if (
-    !Number.isSafeInteger(workspaceId.value) ||
-    workspaceId.value <= 0 ||
-    !Number.isSafeInteger(workspaceStockId.value) ||
-    workspaceStockId.value <= 0
+    !Number.isSafeInteger(requestedWorkspaceId) ||
+    requestedWorkspaceId <= 0 ||
+    !Number.isSafeInteger(requestedStockId) ||
+    requestedStockId <= 0
   ) {
     await router.replace('/workspaces')
     return
@@ -102,8 +136,12 @@ async function load() {
   stockStore.clearRefreshWarning()
   pageRefreshWarning.value = ''
   try {
-    await workspaceStore.ensureCurrent(workspaceId.value)
-    await stockStore.loadResearch(workspaceId.value, workspaceStockId.value)
+    await workspaceStore.ensureCurrent(requestedWorkspaceId)
+    if (workspaceId.value !== requestedWorkspaceId || workspaceStockId.value !== requestedStockId) return
+    await stockStore.loadResearch(requestedWorkspaceId, requestedStockId)
+    if (workspaceId.value !== requestedWorkspaceId || workspaceStockId.value !== requestedStockId) return
+    loadedTimelineTarget = `${requestedWorkspaceId}:${requestedStockId}`
+    await loadTimeline(true)
     restorePendingDraft()
     if (route.hash === '#research-timeline') await scrollToTimeline()
   } catch (error) {
@@ -155,6 +193,7 @@ async function submitOpinion(reopen: boolean) {
       })
       try {
         await stockStore.loadResearch(workspaceId.value, workspaceStockId.value)
+        await loadTimeline(true)
       } catch {
         pageRefreshWarning.value = result.alreadyActive
           ? '其他成员已经开启研究周期，但详情刷新失败；你的草稿仍然保留，请重新加载。'
@@ -182,6 +221,7 @@ async function submitOpinion(reopen: boolean) {
         targetPrice,
         stopLossPrice,
       })
+      await loadTimeline(true)
       successMessage.value = '观点已经加入当前研究时间线。'
     }
     resetForm()
@@ -197,6 +237,7 @@ async function retryResearchData() {
   try {
     await Promise.all([
       stockStore.loadResearch(workspaceId.value, workspaceStockId.value),
+      loadTimeline(true),
       stockStore.loadList(workspaceId.value),
       stockStore.loadEnded(workspaceId.value),
     ])
@@ -214,6 +255,7 @@ async function endResearch() {
   if (!cycle) return
   try {
     await stockStore.endResearch(workspaceId.value, workspaceStockId.value, cycle.id)
+    await loadTimeline(true)
     endConfirming.value = false
     composeExpanded.value = false
     resetForm()
@@ -236,6 +278,7 @@ async function withdrawOpinion(item: StockOpinionResponseVO) {
   successMessage.value = ''
   try {
     await stockStore.withdrawOpinion(workspaceId.value, workspaceStockId.value, item.id)
+    await loadTimeline(true)
     successMessage.value = initial
       ? '初始观点已撤销，本期研究已取消并移出正在关注，历史记录仍然保留。'
       : '误发内容已撤销：正文已经隐藏，时间线仍保留发表和撤销记录。'
@@ -271,14 +314,27 @@ const stanceLabels = { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '看空' }
 const typeLabels = { INITIAL: '初始观点', UPDATE: '观点更新', REVIEW: '复盘总结' }
 const horizonLabels = { SHORT: '短期', MEDIUM: '中期', LONG: '长期' }
 
-onMounted(() => {
+watch([workspaceId, workspaceStockId], () => {
+  timelineRequestVersion += 1
+  loadedTimelineTarget = ''
+  timelineCycles.value = []
+  timelineNextCursor.value = null
+  timelineLoading.value = false
+  timelineError.value = ''
+  authorFilter.value = 'ALL'
+  stanceFilter.value = 'ALL'
+  typeFilter.value = 'ALL'
   void load()
+}, { immediate: true })
+
+onMounted(() => {
   withdrawClock = window.setInterval(() => {
     currentTime.value = Date.now()
   }, 1000)
 })
 
 onBeforeUnmount(() => {
+  timelineRequestVersion += 1
   if (withdrawClock !== undefined) window.clearInterval(withdrawClock)
   stockStore.clearResearchView()
 })
@@ -427,7 +483,7 @@ onBeforeUnmount(() => {
         <div class="filters" aria-label="观点筛选">
           <select v-model="authorFilter" aria-label="按成员筛选">
             <option value="ALL">全部成员</option>
-            <option v-for="author in authors" :key="author.id" :value="String(author.id)">{{ author.nickname }}</option>
+            <option v-for="author in stockStore.researchDetail.authors" :key="author.userId" :value="String(author.userId)">{{ author.nickname }}</option>
           </select>
           <select v-model="stanceFilter" aria-label="按倾向筛选">
             <option value="ALL">全部倾向</option><option value="BULLISH">看多</option><option value="NEUTRAL">中性</option><option value="BEARISH">看空</option>
@@ -438,10 +494,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <article v-for="(cycle, index) in stockStore.researchDetail.cycles" :key="cycle.id" class="cycle-card">
+      <p v-if="timelineLoading && !timelineCycles.length" class="empty-filter">正在读取研究时间线…</p>
+      <p v-else-if="timelineError && !timelineCycles.length" class="empty-filter" role="alert">{{ timelineError }} <button type="button" @click="loadTimeline(true)">重试</button></p>
+      <p v-else-if="!timelineCycles.length" class="empty-filter">当前筛选条件下没有观点。</p>
+      <article v-for="cycle in timelineCycles" :key="cycle.id" class="cycle-card">
         <header>
           <div>
-            <span class="cycle-number">第 {{ stockStore.researchDetail.cycles.length - index }} 期</span>
+            <span class="cycle-number">开始于 {{ formatTime(cycle.startedAt) }} · {{ cycle.startedByNickname }}</span>
             <h3>{{ cycle.status === 'ACTIVE' ? '正在关注' : cycle.status === 'CANCELLED' ? '已取消' : '已结束' }} · {{ cycle.attentionLevel === 'FOCUS' ? '重点关注' : '普通关注' }}</h3>
           </div>
           <dl>
@@ -451,8 +510,8 @@ onBeforeUnmount(() => {
           </dl>
         </header>
 
-        <div v-if="visibleOpinions(cycle.id).length" class="timeline">
-          <section v-for="item in visibleOpinions(cycle.id)" :key="item.id" class="opinion-item">
+        <div class="timeline">
+          <section v-for="item in cycle.opinions" :key="item.id" class="opinion-item">
             <div class="opinion-meta">
               <strong>{{ item.authorNickname }}</strong>
               <span>{{ typeLabels[item.type] }} · {{ formatTime(item.createdAt) }}</span>
@@ -471,8 +530,11 @@ onBeforeUnmount(() => {
             </template>
           </section>
         </div>
-        <p v-else class="empty-filter">当前筛选条件下没有观点。</p>
       </article>
+      <p v-if="timelineError && timelineCycles.length" class="empty-filter" role="alert">{{ timelineError }} <button type="button" @click="loadTimeline(false)">重试</button></p>
+      <button v-if="timelineNextCursor" type="button" class="load-more" :disabled="timelineLoading" @click="loadTimeline(false)">
+        {{ timelineLoading ? '正在读取…' : '加载更早的观点' }}
+      </button>
     </section>
   </template>
 </template>

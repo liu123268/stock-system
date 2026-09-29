@@ -157,7 +157,8 @@ function researchDetail(
     exchange: workspaceStockId === 21 ? 'SSE' : 'HKEX',
     currency: workspaceStockId === 21 ? 'CNY' : 'HKD',
     listingStatus: 'LISTED',
-    cycles: [],
+    currentCycle: null,
+    authors: [],
   }
 }
 
@@ -470,7 +471,7 @@ describe('stock store', () => {
     expect(store.attentionUpdatingStockId).toBeNull()
   })
 
-  it('ends a cycle and refreshes active, ended, and historical research state', async () => {
+  it('ends a cycle and refreshes active, ended, and current research state', async () => {
     const detail: WorkspaceStockResearchResponseVO = {
       workspaceStockId: 21,
       code: '600519.SH',
@@ -478,22 +479,8 @@ describe('stock store', () => {
       exchange: 'SSE',
       currency: 'CNY',
       listingStatus: 'LISTED',
-      cycles: [
-        {
-          id: 31,
-          status: 'ENDED',
-          attentionLevel: 'NORMAL',
-          startedByUserId: 9,
-          startedByNickname: '研究成员',
-          startedAt: '2026-09-07T14:00:00',
-          startPrice: 1488.88,
-          quoteTime: '2026-09-07T13:59:00',
-          quoteSource: 'LOCAL_MOCK',
-          simulated: true,
-          endedAt: '2026-09-18T14:00:00',
-          opinions: [],
-        },
-      ],
+      currentCycle: null,
+      authors: [],
     }
     vi.mocked(endWorkspaceStockResearch).mockResolvedValue(
       response({ code: 'SUCCESS', message: '成功', data: null }),
@@ -530,7 +517,7 @@ describe('stock store', () => {
     expect(endWorkspaceStockResearch).toHaveBeenCalledWith(12, 21, 31)
     expect(store.items).toEqual([])
     expect(store.endedItems).toHaveLength(1)
-    expect(store.researchDetail?.cycles[0]?.status).toBe('ENDED')
+    expect(store.researchDetail?.currentCycle).toBeNull()
     expect(store.researchSubmitting).toBe(false)
   })
 

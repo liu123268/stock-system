@@ -110,7 +110,19 @@ export interface WorkspaceStockResearchResponseVO {
   exchange: 'SSE' | 'SZSE' | 'BSE' | 'HKEX'
   currency: 'CNY' | 'HKD'
   listingStatus: 'LISTED' | 'SUSPENDED' | 'DELISTED' | 'UNKNOWN'
+  currentCycle: ResearchCycleDetailResponseVO | null
+  authors: { userId: number; nickname: string }[]
+}
+
+export interface ResearchTimelinePageResponseVO {
   cycles: ResearchCycleDetailResponseVO[]
+  nextCursor: string | null
+}
+
+export interface ResearchTimelineFilters {
+  author?: number
+  stance?: StockStance
+  type?: OpinionType
 }
 
 export interface EndedWorkspaceStockResponseVO {
@@ -247,6 +259,18 @@ export function listEndedWorkspaceStocks(workspaceId: number) {
 export function getWorkspaceStockResearch(workspaceId: number, workspaceStockId: number) {
   return http.get<ApiResult<WorkspaceStockResearchResponseVO>>(
     `/workspaces/${workspaceId}/stocks/${workspaceStockId}/research`,
+  )
+}
+
+export function getWorkspaceStockResearchTimeline(
+  workspaceId: number,
+  workspaceStockId: number,
+  filters: ResearchTimelineFilters,
+  cursor?: string,
+) {
+  return http.get<ApiResult<ResearchTimelinePageResponseVO>>(
+    `/workspaces/${workspaceId}/stocks/${workspaceStockId}/research/timeline`,
+    { params: { ...filters, ...(cursor ? { cursor } : {}) } },
   )
 }
 
