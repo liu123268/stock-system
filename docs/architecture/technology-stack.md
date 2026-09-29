@@ -1,6 +1,6 @@
 # 项目实际技术栈
 
-更新时间：2026-09-18
+更新时间：2026-09-29
 
 本文档记录项目技术的真实状态。用户最初提供的学习目标和候选技术清单保存在 [技术目标与选型参考](../project/technology-reference.md)，两者不得混淆。
 
@@ -19,7 +19,7 @@
 | Spring Boot        | 3.2.0                | 已使用，待评估升级 | Web 应用、配置和测试基础；升级必须单独验证兼容性                       |
 | Spring MVC         | Spring Boot 管理     | 已使用             | REST Controller 和统一 JSON API                                        |
 | Spring Security    | Spring Boot 管理     | 已使用             | 无状态认证过滤链、受保护接口和统一 401                                 |
-| JWT / JJWT         | 0.12.3               | 已使用             | 24 小时访问 Token，包含用户 ID 和用户名                                |
+| JWT / JJWT         | 0.12.3               | 已使用             | 24 小时访问 Token，包含用户 ID、用户名和凭据版本；改密后校验版本使旧 Token 失效 |
 | BCrypt             | Spring Security 提供 | 已使用             | 密码摘要和匹配                                                         |
 | Jakarta Validation | Spring Boot 管理     | 已使用             | 注册、登录请求参数校验                                                 |
 | MyBatis-Plus       | 3.5.5                | 已使用             | BaseMapper 持久化；当前尚无自定义 SQL XML                              |

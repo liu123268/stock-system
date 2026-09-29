@@ -7,8 +7,10 @@ import type {
   ResearchCycleDetailResponseVO,
   StockOpinionResponseVO,
   StockStance,
+  WorkspaceStockMarketDetailResponseVO,
 } from '@/api/stock'
-import { getWorkspaceStockResearchTimeline } from '@/api/stock'
+import { getWorkspaceStockMarketDetail, getWorkspaceStockResearchTimeline } from '@/api/stock'
+import StockMarketPanel from '@/components/stock/StockMarketPanel.vue'
 import { useStockStore } from '@/stores/stock'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
@@ -22,6 +24,24 @@ const workspaceId = computed(() => Number(route.params.workspaceId))
 const workspaceStockId = computed(() => Number(route.params.workspaceStockId))
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
 const currentCycle = computed(() => stockStore.researchDetail?.currentCycle)
+const market = ref<WorkspaceStockMarketDetailResponseVO | null>(null)
+const marketLoading = ref(false)
+const marketError = ref('')
+const chartExpanded = ref(route.hash !== '#research-timeline')
+let marketRequestVersion = 0
+const priceChange = computed(() => {
+  const cycle = currentCycle.value
+  const quote = market.value
+  const detail = stockStore.researchDetail
+  const latestTime = quote?.quoteTime ? new Date(quote.quoteTime).getTime() : Number.NaN
+  const startTime = cycle ? new Date(cycle.quoteTime).getTime() : Number.NaN
+  if (!cycle || !quote || !detail || quote.price === null || !quote.quoteTime ||
+      quote.code !== detail.code || quote.currency !== detail.currency ||
+      quote.simulated !== cycle.simulated || quote.price <= 0 || cycle.startPrice <= 0 ||
+      !Number.isFinite(latestTime) || !Number.isFinite(startTime) || latestTime < startTime) return null
+  const difference = quote.price - cycle.startPrice
+  return { difference, percent: difference / cycle.startPrice * 100 }
+})
 const endConfirming = ref(false)
 const composeExpanded = ref(false)
 const formError = ref('')
@@ -121,6 +141,33 @@ watch([authorFilter, stanceFilter, typeFilter], () => {
   }
 })
 
+async function loadMarket(workspace: number, stock: number, code: string) {
+  const requestVersion = ++marketRequestVersion
+  market.value = null
+  marketLoading.value = true
+  marketError.value = ''
+  try {
+    const quote = (await getWorkspaceStockMarketDetail(workspace, code)).data.data
+    if (requestVersion !== marketRequestVersion ||
+        workspaceId.value !== workspace || workspaceStockId.value !== stock) return
+    if (quote.code !== code || quote.workspaceStockId !== stock) {
+      throw new Error('行情与当前研究股票不一致，请重新加载')
+    }
+    market.value = quote
+  } catch (error) {
+    if (requestVersion !== marketRequestVersion) return
+    if (await handleWorkspaceApiError(error, router)) return
+    marketError.value = error instanceof Error ? error.message : '行情读取失败'
+  } finally {
+    if (requestVersion === marketRequestVersion) marketLoading.value = false
+  }
+}
+
+function retryMarket() {
+  const detail = stockStore.researchDetail
+  if (detail) void loadMarket(workspaceId.value, workspaceStockId.value, detail.code)
+}
+
 async function load() {
   const requestedWorkspaceId = workspaceId.value
   const requestedStockId = workspaceStockId.value
@@ -138,8 +185,9 @@ async function load() {
   try {
     await workspaceStore.ensureCurrent(requestedWorkspaceId)
     if (workspaceId.value !== requestedWorkspaceId || workspaceStockId.value !== requestedStockId) return
-    await stockStore.loadResearch(requestedWorkspaceId, requestedStockId)
+    const detail = await stockStore.loadResearch(requestedWorkspaceId, requestedStockId)
     if (workspaceId.value !== requestedWorkspaceId || workspaceStockId.value !== requestedStockId) return
+    void loadMarket(requestedWorkspaceId, requestedStockId, detail.code)
     loadedTimelineTarget = `${requestedWorkspaceId}:${requestedStockId}`
     await loadTimeline(true)
     restorePendingDraft()
@@ -193,6 +241,7 @@ async function submitOpinion(reopen: boolean) {
       })
       try {
         await stockStore.loadResearch(workspaceId.value, workspaceStockId.value)
+        retryMarket()
         await loadTimeline(true)
       } catch {
         pageRefreshWarning.value = result.alreadyActive
@@ -241,6 +290,7 @@ async function retryResearchData() {
       stockStore.loadList(workspaceId.value),
       stockStore.loadEnded(workspaceId.value),
     ])
+    retryMarket()
     restorePendingDraft()
     stockStore.clearRefreshWarning()
     pageRefreshWarning.value = ''
@@ -306,6 +356,10 @@ function formatPrice(value: number | null, currency: string) {
   })}`
 }
 
+function formatSignedPrice(value: number, currency: string) {
+  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatPrice(Math.abs(value), currency)}`
+}
+
 function canWithdrawNow(item: StockOpinionResponseVO) {
   return item.canWithdraw && new Date(item.createdAt).getTime() + 5 * 60 * 1000 >= currentTime.value
 }
@@ -315,6 +369,12 @@ const typeLabels = { INITIAL: '初始观点', UPDATE: '观点更新', REVIEW: '�
 const horizonLabels = { SHORT: '短期', MEDIUM: '中期', LONG: '长期' }
 
 watch([workspaceId, workspaceStockId], () => {
+  stockStore.clearResearchView()
+  chartExpanded.value = route.hash !== '#research-timeline'
+  marketRequestVersion += 1
+  market.value = null
+  marketLoading.value = false
+  marketError.value = ''
   timelineRequestVersion += 1
   loadedTimelineTarget = ''
   timelineCycles.value = []
@@ -334,6 +394,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  marketRequestVersion += 1
   timelineRequestVersion += 1
   if (withdrawClock !== undefined) window.clearInterval(withdrawClock)
   stockStore.clearResearchView()
@@ -365,6 +426,44 @@ onBeforeUnmount(() => {
       {{ stockStore.refreshWarning }}
       <button type="button" @click="retryResearchData">只重新加载页面数据</button>
     </p>
+
+    <section class="research-market" aria-labelledby="research-market-title">
+      <div class="market-summary">
+        <div>
+          <p class="eyebrow">当前可用行情</p>
+          <h2 id="research-market-title">最新报价与价格变化</h2>
+          <p v-if="marketLoading">正在读取行情…</p>
+          <p v-else-if="marketError" role="alert">{{ marketError }} <button type="button" @click="retryMarket">重试行情</button></p>
+          <template v-else-if="market">
+            <strong class="latest-price">{{ market.price === null ? '暂无可用报价' : formatPrice(market.price, market.currency) }}</strong>
+            <p>报价时间：{{ formatTime(market.quoteTime) }} · 来源：{{ market.source }}{{ market.simulated ? '（本地模拟）' : '' }}</p>
+            <p v-if="priceChange && currentCycle" class="price-change">
+              较本期关注价 {{ formatPrice(currentCycle.startPrice, market.currency) }}：
+              {{ formatSignedPrice(priceChange.difference, market.currency) }}
+              （{{ priceChange.percent > 0 ? '+' : '' }}{{ priceChange.percent.toFixed(2) }}%）
+            </p>
+            <p v-else-if="currentCycle">当前报价缺失、早于关注时的报价，或模拟状态不同，暂不计算价格变化。</p>
+            <p v-else>当前没有进行中的周期；历史周期不使用今天的报价计算结束时的价格变化。</p>
+            <p v-if="currentCycle" class="market-note">比较的是两次未复权报价，不包含分红、除权等因素，不代表投资收益。关注价来源：{{ currentCycle.quoteSource }}{{ currentCycle.simulated ? '（本地模拟）' : '' }}，时间：{{ formatTime(currentCycle.quoteTime) }}。</p>
+          </template>
+        </div>
+        <div class="market-controls">
+          <button type="button" :disabled="marketLoading" @click="retryMarket">刷新行情</button>
+          <button type="button" :aria-expanded="chartExpanded" aria-controls="research-market-chart" @click="chartExpanded = !chartExpanded">
+            {{ chartExpanded ? '收起行情图' : '查看行情图' }}
+          </button>
+        </div>
+      </div>
+      <div v-if="chartExpanded" id="research-market-chart">
+        <StockMarketPanel
+          :key="`${workspaceId}:${workspaceStockId}`"
+          :workspace-id="workspaceId"
+          :workspace-stock-id="workspaceStockId"
+          :code="stockStore.researchDetail.code"
+          :name="stockStore.researchDetail.name"
+        />
+      </div>
+    </section>
 
     <section v-if="!isArchived" class="current-actions">
       <div v-if="currentCycle">
@@ -547,6 +646,15 @@ onBeforeUnmount(() => {
 .research-header .eyebrow { margin-top: 42px; }
 .research-header h1 { margin-top: 8px; font-size: 46px; letter-spacing: -0.04em; }
 .research-header > p:last-child, .current-actions p { margin-top: 10px; color: var(--color-muted); }
+.research-market { padding: 36px 0; border-bottom: 1px solid var(--color-border); }
+.market-summary { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 24px; }
+.market-summary h2 { margin: 7px 0 16px; font-size: 25px; }
+.market-summary p { margin-top: 8px; color: var(--color-muted); font-size: 13px; }
+.market-summary .latest-price { font-size: 30px; }
+.market-summary .price-change { color: var(--color-ink); font-weight: 700; }
+.market-summary .market-note { max-width: 750px; line-height: 1.6; }
+.market-controls { display: flex; flex: none; flex-wrap: wrap; gap: 8px; }
+.market-controls button { min-height: 40px; padding: 0 14px; border: 1px solid var(--color-border); border-radius: var(--radius-action); background: var(--color-canvas); cursor: pointer; }
 .success-message, .error-message { margin-top: 20px; padding: 14px 16px; }
 .success-message { background: color-mix(in oklab, var(--color-focus) 9%, var(--color-surface)); color: var(--color-focus); }
 .error-message { color: var(--color-danger); }
@@ -589,6 +697,7 @@ dd { margin: 4px 0 0; font-size: 13px; }
 .withdraw-link { margin-top: 10px; padding: 0; font-size: 12px; }
 .empty-filter { padding: 24px 0; }
 @media (max-width: 760px) {
+  .market-summary { flex-direction: column; }
   .current-actions, .timeline-heading, .cycle-card > header { align-items: flex-start; flex-direction: column; }
   .current-action-controls { width: 100%; }
   .form-grid, .text-grid, .opinion-copy { grid-template-columns: 1fr; }

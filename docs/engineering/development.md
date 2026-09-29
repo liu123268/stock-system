@@ -52,6 +52,8 @@ Redis（WSL2）：6380
 - IntelliJ运行窗口显示Spring Boot处于运行状态，说明后端正在运行。
 - 浏览器能打开8083不等于后端一定运行；登录还需要8082也正常。
 
+如果新启动的 Spring Boot 报 `Port 8082 was already in use`，先读日志末尾的 `APPLICATION FAILED TO START` 和 `Description`：失败的是**这次新启动的进程**，不代表 8082 上没有旧进程。在项目根目录或任意终端执行 `netstat -ano | findstr :8082`，找到 `LISTENING` 行末尾的 PID，再核对它是否属于本项目；只停止确认的旧后端，然后重新启动。若浏览器仍能登录，说明请求可能正由这个旧后端处理，不能据此判断刚修改的 Java 代码已经生效。Vite 的 8083 页面可以继续显示，且前端热更新不会替换运行中的 Java 后端；后端重启成功应看到 `Tomcat started on port 8082` 和 `Started StockSystemApplication`。
+
 ## 4. 一键启动
 
 数据库环境不靠手工改配置切换，而是由启动入口选择：

@@ -11,6 +11,6 @@ AI 从 [AGENTS.md](../AGENTS.md) 进入，由 [场景路由](project/project-rul
 | engineering | 环境、代码职责、教学、测试与问题根因 | [启动](engineering/development.md)、[部署](engineering/deployment.md)、[目录与分层](engineering/project-structure.md)、[前端教学](engineering/frontend.md)、[Redis 教学](engineering/redis.md)、[测试](engineering/testing.md)、[Bug 复盘目录](engineering/bugs/) |
 | career | 有证据的亮点和领域面试回答 | [亮点](career/highlights.md)、[工程](career/interview/01-project-engineering.md)、[安全](career/interview/02-authentication-security.md)、[数据库](career/interview/03-database-persistence.md)、[前端](career/interview/04-frontend-engineering.md)、[Redis 与缓存](career/interview/05-redis-cache.md) |
 
-[功能地图](system-capabilities.html) 是展示快照；[PRODUCT](../PRODUCT.md) 是设计工具摘要；它们不保存新规则。新增长期要求的落点与替换方式见场景路由，不需要用户手工选择。
+[功能地图](system-capabilities.html) 是历史展示快照，不代表当前完成度；[PRODUCT](../PRODUCT.md) 是设计工具摘要；它们不保存新规则。新增长期要求的落点与替换方式见场景路由，不需要用户手工选择。
 
 requirements 是需求，design 是技术设计，tasks 是实施任务，status 是当前快照，roadmap 是阶段路线，ADR 是架构决策及取舍，bugs 是重要问题复盘，interview 是领域问答。

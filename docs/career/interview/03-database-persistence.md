@@ -16,12 +16,13 @@
 
 ### 完整回答
 
-> 邀请码最多允许 5 名新成员加入。如果两个请求都先读到 `used_count = 4`，再各自写成 5，就可能出现成员已经增加两人但计数只增加一次的丢失更新。项目在 Spring Service 中声明事务，并按“空间、邀请、成员”顺序执行 `SELECT ... FOR UPDATE`；真正阻止其他数据库事务同时修改同一行的是 MySQL/InnoDB 行锁。Java 的 `synchronized` 只约束当前 JVM，应用部署多个实例后无法保护另一台机器上的请求。统一锁顺序还能降低不同业务互相反向等待形成死锁的概率。
+> 邀请码最多允许 5 名新成员加入。如果两个请求都先读到 `used_count = 4`，再各自写成 5，就可能出现成员已经增加两人但计数只增加一次的丢失更新。项目在 Spring Service 中声明事务，并按“空间、邀请、成员”顺序执行 `SELECT ... FOR UPDATE`；真正阻止其他数据库事务同时修改同一行的是 MySQL/InnoDB 行锁。InnoDB 的行锁落在索引记录上，合适的索引能精确定位待锁数据；缺少索引时，锁定查询可能因扫描更多记录而扩大锁影响范围。Java 的 `synchronized` 只约束当前 JVM，应用部署多个实例后无法保护另一台机器上的请求。统一锁顺序还能降低不同业务互相反向等待形成死锁的概率。
 
 ### 项目证据
 
 - `WorkspaceInvitationService.join` 在同一事务内重新校验邀请、写成员并增加次数；
 - Mapper 的 `selectByIdForUpdate`、`selectForUpdate` 使用 `FOR UPDATE`；
+- `workspace_member` 的唯一索引 `(workspace_id, user_id)` 支持精确定位某个空间中的成员关系；
 - 6 个线程通过 `CyclicBarrier` 同时竞争 5 次额度，结果为 5 次成功、1 次 `INVITATION_EXHAUSTED`，数据库最终计数为 5。
 
 ### 可能追问
@@ -127,3 +128,15 @@
 - `LIMIT 20 OFFSET 20` 在前面有新数据写入时可能发生什么？
 - 为什么排序字段需要唯一的辅助键？
 - 游标分页是否意味着数据库完全不用扫描或排序候选记录？
+
+## DB-09：MySQL 有哪些事务隔离级别？
+
+### 完整回答
+
+> 四种事务隔离级别从低到高是：`READ UNCOMMITTED`（读未提交），可能发生脏读、不可重复读和幻读；`READ COMMITTED`（读已提交），避免脏读；`REPEATABLE READ`（可重复读），避免脏读和普通快照读中的不可重复读，MySQL/InnoDB 通常默认使用该级别，并结合 MVCC 与锁处理并发读取；`SERIALIZABLE`（串行化）隔离最强，但等待和并发成本也最高。隔离级别属于数据库连接或事务的运行设置，不写在建表语句中。项目的 `@Transactional` 没有显式指定 `isolation`，因此使用 `Isolation.DEFAULT`，即继承当前 MySQL 连接的隔离级别；实际值应使用 `SELECT @@SESSION.transaction_isolation` 核对。
+
+### 可能追问
+
+- 脏读、不可重复读和幻读分别是什么？
+- `READ COMMITTED` 与 `REPEATABLE READ` 的 Read View 有什么区别？
+- 已经使用 `REPEATABLE READ`，为什么检查后修改仍可能需要 `SELECT ... FOR UPDATE`？

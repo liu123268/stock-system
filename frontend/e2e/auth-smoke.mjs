@@ -624,6 +624,11 @@ try {
     return response.request().method() === 'GET' &&
       /^\/api\/workspaces\/\d+\/stocks\/\d+\/research\/timeline$/.test(path)
   })
+  const ownerQuoteResponse = waitForResponseSafely(page, (response) => {
+    const path = new URL(response.url()).pathname
+    return response.request().method() === 'GET' &&
+      /\/api\/workspaces\/\d+\/market\/stocks\/600519\.SH$/.test(path)
+  })
   await page.getByRole('link', { name: '查看全部观点', exact: true }).click()
   if ((await ownerResearchResponse).status() !== 200) {
     throw new Error('OWNER没有成功进入股票研究详情')
@@ -631,12 +636,34 @@ try {
   if ((await ownerTimelineResponse).status() !== 200) {
     throw new Error('OWNER没有成功读取研究时间线首批观点')
   }
+  if ((await ownerQuoteResponse).status() !== 200) {
+    throw new Error('研究详情没有成功读取最新可用报价')
+  }
+  await page.getByRole('heading', { name: '最新报价与价格变化', exact: true }).waitFor()
+  await page.getByText('较本期关注价', { exact: false }).waitFor()
   await page.waitForURL((url) => url.hash === '#research-timeline')
   await page.getByRole('heading', { name: '研究周期与观点时间线', exact: true }).waitFor()
   await page.waitForFunction(() => {
     const timeline = document.querySelector('#research-timeline')
     return timeline instanceof HTMLElement && Math.abs(timeline.getBoundingClientRect().top) < 180
   })
+  const quotePattern = '**/market/stocks/600519.SH'
+  await page.route(quotePattern, async (route) => {
+    const response = await route.fetch()
+    const result = await response.json()
+    await route.fulfill({
+      response,
+      json: { ...result, data: { ...result.data, price: null, quoteTime: null } },
+    })
+  })
+  await page.getByRole('button', { name: '刷新行情', exact: true }).click()
+  await page.getByText('暂无可用报价', { exact: true }).waitFor()
+  await page.getByText('当前报价缺失、早于关注时的报价，或模拟状态不同，暂不计算价格变化。', { exact: true }).waitFor()
+  await page.unroute(quotePattern)
+  await page.getByRole('button', { name: '刷新行情', exact: true }).click()
+  await page.getByText('较本期关注价', { exact: false }).waitFor()
+  await page.getByRole('button', { name: '查看行情图', exact: true }).click()
+  await page.getByLabel('贵州茅台 K 线与分时图').waitFor()
   if ((await page.locator('.opinion-compose').count()) !== 0) {
     throw new Error('从“查看全部观点”进入时不应先展开观点表单')
   }
@@ -670,6 +697,7 @@ try {
     throw new Error('OWNER没有成功结束研究周期')
   }
   await page.getByText('本轮关注已经结束，研究记录已转为只读历史。', { exact: true }).waitFor()
+  await page.getByText('当前没有进行中的周期；历史周期不使用今天的报价计算结束时的价格变化。', { exact: true }).waitFor()
 
   await page.getByRole('button', { name: '开启新一期研究', exact: true }).click()
   await page.locator('.opinion-compose').waitFor()
