@@ -6,9 +6,7 @@
 
 认证、普通空间基础边界、超级管理员治理、空间改名、个人资料和邀请码防猜测完成至 [SPEC-001 CODE-010](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-209 时间线分批读取、CODE-210 空间概览动态、CODE-211A 未关注行情页、CODE-211B 研究详情行情和 CODE-212 共享列表研究摘要均已关闭。
 
-**当前状态：原 V2 保留，已在新副本中补齐现有字段与按钮。** 审阅文件为工作区 `ui-preview/stock-workspace-demo-v2-content-aligned.html`，保留原首页排版、样式与动效、空间选择及预览设置。正式前端未迁移；下次以副本核对内容，再按 UI-01 起逐块实施。字段对应与本轮证据见 [SPEC-003](../specs/003-ui-migration/tasks.md)。
-
-2026-09-30 已追加开工前源码复核，补齐样式继承、共享图表、异步生命周期、写后刷新失败及测试定位等风险场景；顺序不变，未启动 UI 实施。具体处理与验证边界见 SPEC-003 design／tasks。
+**当前状态：UI-01 已完成，下一块为 UI-02 共享自选。** 正式前端已接入基点的公共视觉、空间外壳与选择页；六个子页保留原排版并通过兼容巡查。参考仍是工作区 `ui-preview/stock-workspace-demo-v2-content-aligned.html`；按原 10 块顺序推进，不提前重做研究页或清除仍被使用的旧组件。实施、异步边界修复与截图证据见 [SPEC-003 UI-01](../specs/003-ui-migration/tasks.md#ui-01-正式迁移2026-09-30)。
 
 原业务待办 [SPEC-002 CODE-206G](../specs/002-stock-research/tasks.md)（北交所与港股目录覆盖、每日幂等同步和失败追溯）及 CODE-206H（部署环境 sidecar 与行情权限验收）仍未完成，UI 改版不自动实施或关闭它们；之后按 V1 演示标准做跨模块收口，不能只凭逐项勾选宣称 Java 核心 V1 完成。跨阶段关系见 [路线](roadmap.md)。
 
@@ -30,13 +28,13 @@
 
 ## 环境快照
 
-开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。2026-09-29 CODE-211B 的临时 test 前后端已关闭，18082／18083 已释放；没有启动 dev 服务，也不据此推断用户当前是否另有开发服务运行。
+开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。本轮 UI-01 临时 test 服务的关闭与端口核对只见对应任务证据；没有启动或改动 dev 服务。
 
 2026-09-28 测试库 `stock_system_test` 和开发库 `stock_system` 已按顺序经 Flyway 升至 V10；开发库原有 2 个账号仍为 2 个，测试库本轮浏览器账号与 `research_attention_change` 均为 0 行。V10 只新增关注级别历史表；V9 邀请计数、V8 凭据版本及此前 V7 目录回填证据见对应 tasks；以后执行数据库操作仍须重新核对现场。
 
 ## 最近验证
 
-2026-09-30：UI-00B 内容补齐副本经 53 个浏览器页面／视口组合与主要本地演示交互检查通过，原 V2 与设计备份哈希未变；详细范围见 SPEC-003 tasks。先前 UI-00A 的浏览器检查属于已撤回实验；正式前端未改动。
+2026-09-30：UI-01 的前端单元、类型、只读 lint、构建、auth smoke 与定向浏览器验收通过；创建／加入、归档入口、跨空间／账号、键盘和六个子页兼容性已检查。详细数值、截图、清理及未执行边界见 [任务证据](../specs/003-ui-migration/tasks.md#ui-01-正式迁移2026-09-30)。UI-00B 的副本检查及已撤回的 UI-00A 实验仍以历史身份留在 tasks。
 
 以下保留已完成业务实施的最近验收记录：
 

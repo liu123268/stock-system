@@ -36,32 +36,51 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const membersLoading = ref(false)
   const membersError = ref('')
   let currentRequestVersion = 0
+  let listRequestVersion = 0
+  let invitationRequestVersion = 0
+  let membersRequestVersion = 0
+  let sessionVersion = 0
 
   async function loadWorkspaces() {
+    const requestVersion = ++listRequestVersion
     loading.value = true
     errorMessage.value = ''
     try {
       const result = (await listWorkspaces()).data
-      workspaces.value = result.data
+      if (requestVersion === listRequestVersion) workspaces.value = result.data
       return result.data
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : '空间列表加载失败'
+      if (requestVersion === listRequestVersion) {
+        errorMessage.value = error instanceof Error ? error.message : '空间列表加载失败'
+      }
       throw error
     } finally {
-      loading.value = false
+      if (requestVersion === listRequestVersion) loading.value = false
     }
   }
 
   async function create(name: string) {
+    const requestSession = sessionVersion
     const result = (await createWorkspace(name)).data
+    if (requestSession !== sessionVersion) return result.data
     currentWorkspace.value = result.data
-    await loadWorkspaces()
+    try {
+      await loadWorkspaces()
+    } catch {
+      // 写入已成功，继续进入后端返回的空间，不让列表刷新失败诱发重复创建。
+    }
     return result.data
   }
 
   async function join(inviteCode: string) {
+    const requestSession = sessionVersion
     const result = (await joinWorkspace(inviteCode)).data.data
-    await loadWorkspaces()
+    if (requestSession !== sessionVersion) return result
+    try {
+      await loadWorkspaces()
+    } catch {
+      // 成员关系已保存，继续进入已加入空间；不重复提交邀请码。
+    }
     return result
   }
 
@@ -97,17 +116,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function clearCurrent() {
     currentRequestVersion += 1
+    invitationRequestVersion += 1
+    membersRequestVersion += 1
     currentWorkspace.value = null
     loading.value = false
     errorMessage.value = ''
     currentInvitation.value = null
     invitationHistory.value = []
     invitationError.value = ''
+    invitationLoading.value = false
     members.value = []
     membersError.value = ''
+    membersLoading.value = false
   }
 
   async function loadInvitations(workspaceId: number) {
+    const requestVersion = ++invitationRequestVersion
     invitationLoading.value = true
     invitationError.value = ''
     try {
@@ -115,13 +139,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         getCurrentInvitation(workspaceId),
         listInvitationHistory(workspaceId),
       ])
-      currentInvitation.value = currentResult.data.data
-      invitationHistory.value = historyResult.data.data
+      if (requestVersion === invitationRequestVersion) {
+        currentInvitation.value = currentResult.data.data
+        invitationHistory.value = historyResult.data.data
+      }
     } catch (error) {
-      invitationError.value = error instanceof Error ? error.message : '邀请码加载失败'
+      if (requestVersion === invitationRequestVersion) {
+        invitationError.value = error instanceof Error ? error.message : '邀请码加载失败'
+      }
       throw error
     } finally {
-      invitationLoading.value = false
+      if (requestVersion === invitationRequestVersion) invitationLoading.value = false
     }
   }
 
@@ -150,17 +178,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function loadMembers(workspaceId: number) {
+    const requestVersion = ++membersRequestVersion
     membersLoading.value = true
     membersError.value = ''
     try {
       const result = (await listWorkspaceMembers(workspaceId)).data.data
-      members.value = result
+      if (requestVersion === membersRequestVersion) members.value = result
       return result
     } catch (error) {
-      membersError.value = error instanceof Error ? error.message : '成员列表加载失败'
+      if (requestVersion === membersRequestVersion) {
+        membersError.value = error instanceof Error ? error.message : '成员列表加载失败'
+      }
       throw error
     } finally {
-      membersLoading.value = false
+      if (requestVersion === membersRequestVersion) membersLoading.value = false
     }
   }
 
@@ -217,6 +248,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearAll() {
+    sessionVersion += 1
+    listRequestVersion += 1
+    invitationRequestVersion += 1
+    membersRequestVersion += 1
     currentRequestVersion += 1
     workspaces.value = []
     currentWorkspace.value = null

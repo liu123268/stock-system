@@ -13,6 +13,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly status?: number,
+    public readonly staleSession = false,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -31,8 +32,17 @@ http.interceptors.response.use(
     if (isAxiosError(error)) {
       const responseData = error.response?.data as { code?: unknown; message?: unknown } | undefined
       if (typeof responseData?.code === 'string' && typeof responseData.message === 'string') {
+        const currentToken = window.localStorage.getItem(TOKEN_STORAGE_KEY)
+        const requestAuthorization = error.config?.headers.get('Authorization') ?? null
+        const staleSession =
+          requestAuthorization !== (currentToken ? `Bearer ${currentToken}` : null)
         return Promise.reject(
-          new ApiError(responseData.code, responseData.message, error.response?.status),
+          new ApiError(
+            responseData.code,
+            responseData.message,
+            error.response?.status,
+            staleSession,
+          ),
         )
       }
     }

@@ -110,6 +110,85 @@ const members: WorkspaceMemberResponseVO[] = [
 ]
 
 describe('workspace store', () => {
+  it('keeps the newest list and ignores a delayed list after logout', async () => {
+    const older = deferred<AxiosResponse<ApiResult<WorkspaceSummaryResponseVO[]>>>()
+    vi.mocked(listWorkspaces)
+      .mockReturnValueOnce(older.promise)
+      .mockResolvedValueOnce(
+        response({ code: 'SUCCESS', message: '成功', data: [{ ...summary, workspaceId: 13 }] }),
+      )
+    const store = useWorkspaceStore()
+    const oldLoad = store.loadWorkspaces()
+    await store.loadWorkspaces()
+    older.resolve(response({ code: 'SUCCESS', message: '成功', data: [summary] }))
+    await oldLoad
+    expect(store.workspaces[0]?.workspaceId).toBe(13)
+
+    const pending = deferred<AxiosResponse<ApiResult<WorkspaceSummaryResponseVO[]>>>()
+    vi.mocked(listWorkspaces).mockReturnValueOnce(pending.promise)
+    const loading = store.loadWorkspaces()
+    store.clearAll()
+    pending.resolve(response({ code: 'SUCCESS', message: '成功', data: [summary] }))
+    await loading
+    expect(store.workspaces).toEqual([])
+    expect(store.loading).toBe(false)
+  })
+
+  it('does not refill invitations or members after switching away', async () => {
+    const invitation = deferred<AxiosResponse<ApiResult<CurrentInvitationResponseVO | null>>>()
+    const member = deferred<AxiosResponse<ApiResult<WorkspaceMemberResponseVO[]>>>()
+    vi.mocked(getCurrentInvitation).mockReturnValueOnce(invitation.promise)
+    vi.mocked(listInvitationHistory).mockResolvedValueOnce(
+      response({ code: 'SUCCESS', message: '成功', data: invitationHistory }),
+    )
+    vi.mocked(listWorkspaceMembers).mockReturnValueOnce(member.promise)
+    const store = useWorkspaceStore()
+    const requests = [store.loadInvitations(12), store.loadMembers(12)]
+    store.clearCurrent()
+    invitation.resolve(response({ code: 'SUCCESS', message: '成功', data: currentInvitation }))
+    member.resolve(response({ code: 'SUCCESS', message: '成功', data: members }))
+    await Promise.all(requests)
+    expect(store.currentInvitation).toBeNull()
+    expect(store.invitationHistory).toEqual([])
+    expect(store.members).toEqual([])
+    expect(store.invitationLoading).toBe(false)
+    expect(store.membersLoading).toBe(false)
+  })
+
+  it('preserves successful creation and joining when the list refresh fails', async () => {
+    vi.mocked(createWorkspace).mockResolvedValueOnce(
+      response({ code: 'SUCCESS', message: '成功', data: detail }),
+    )
+    vi.mocked(joinWorkspace).mockResolvedValueOnce(
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: { workspace: summary, newlyJoined: true },
+      }),
+    )
+    vi.mocked(listWorkspaces).mockRejectedValue(new Error('列表暂时不可用'))
+    const store = useWorkspaceStore()
+    await expect(store.create('家庭研究组')).resolves.toEqual(detail)
+    expect(store.currentWorkspace).toEqual(detail)
+    await expect(store.join('A1B2C3')).resolves.toEqual({ workspace: summary, newlyJoined: true })
+    expect(createWorkspace).toHaveBeenCalledTimes(1)
+    expect(joinWorkspace).toHaveBeenCalledTimes(1)
+    expect(store.errorMessage).toBe('列表暂时不可用')
+  })
+
+  it('does not restore a previous account from a delayed successful creation', async () => {
+    const pending = deferred<AxiosResponse<ApiResult<WorkspaceDetailResponseVO>>>()
+    vi.mocked(createWorkspace).mockReturnValueOnce(pending.promise)
+    const store = useWorkspaceStore()
+    const creating = store.create('家庭研究组')
+    store.clearAll()
+    pending.resolve(response({ code: 'SUCCESS', message: '成功', data: detail }))
+    await creating
+    expect(store.currentWorkspace).toBeNull()
+    expect(store.workspaces).toEqual([])
+    expect(listWorkspaces).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
@@ -150,7 +229,11 @@ describe('workspace store', () => {
     const olderLoad = store.loadCurrent(12)
     const newerLoad = store.loadCurrent(13)
     newerRequest.resolve(
-      response({ code: 'SUCCESS', message: '成功', data: { ...detail, workspaceId: 13, name: '新空间' } }),
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: { ...detail, workspaceId: 13, name: '新空间' },
+      }),
     )
     await newerLoad
     olderRequest.resolve(response({ code: 'SUCCESS', message: '成功', data: detail }))
@@ -214,13 +297,25 @@ describe('workspace store', () => {
   it('uses the renamed detail for the current space and selector', async () => {
     const renamed = { ...detail, name: '新名称' }
     vi.mocked(renameWorkspace).mockResolvedValue(
-      response<ApiResult<WorkspaceDetailResponseVO>>({ code: 'SUCCESS', message: '成功', data: renamed }),
+      response<ApiResult<WorkspaceDetailResponseVO>>({
+        code: 'SUCCESS',
+        message: '成功',
+        data: renamed,
+      }),
     )
     vi.mocked(listWorkspaces).mockResolvedValue(
-      response<ApiResult<WorkspaceSummaryResponseVO[]>>({ code: 'SUCCESS', message: '成功', data: [summary] }),
+      response<ApiResult<WorkspaceSummaryResponseVO[]>>({
+        code: 'SUCCESS',
+        message: '成功',
+        data: [summary],
+      }),
     )
     vi.mocked(getWorkspace).mockResolvedValue(
-      response<ApiResult<WorkspaceDetailResponseVO>>({ code: 'SUCCESS', message: '成功', data: detail }),
+      response<ApiResult<WorkspaceDetailResponseVO>>({
+        code: 'SUCCESS',
+        message: '成功',
+        data: detail,
+      }),
     )
     const store = useWorkspaceStore()
     await store.loadWorkspaces()

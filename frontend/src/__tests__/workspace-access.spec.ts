@@ -39,6 +39,32 @@ describe('workspace access error handling', () => {
     expect(replace).toHaveBeenCalledWith({ name: 'login', query: { reason: 'expired' } })
   })
 
+  it('does not redirect an explicitly logged-out account for a delayed 401', async () => {
+    window.localStorage.setItem('stock-system-access-token', 'old-token')
+    const auth = useAuthStore()
+    auth.logout()
+    const replace = vi.fn<(to: unknown) => Promise<void>>()
+    expect(
+      await handleWorkspaceApiError(new ApiError('UNAUTHENTICATED', '旧请求未登录', 401), {
+        replace,
+      } as unknown as Router),
+    ).toBe(true)
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('keeps the new account when the previous session returns a delayed access error', async () => {
+    window.localStorage.setItem('stock-system-access-token', 'new-token')
+    const auth = useAuthStore()
+    const replace = vi.fn<(to: unknown) => Promise<void>>()
+    expect(
+      await handleWorkspaceApiError(new ApiError('ACCOUNT_DISABLED', '上一账号的响应', 401, true), {
+        replace,
+      } as unknown as Router),
+    ).toBe(true)
+    expect(auth.accessToken).toBe('new-token')
+    expect(replace).not.toHaveBeenCalled()
+  })
+
   it('returns to selection when the current membership is inactive', async () => {
     const workspaceStore = useWorkspaceStore()
     workspaceStore.currentWorkspace = {

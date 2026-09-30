@@ -9,6 +9,10 @@ export async function handleWorkspaceApiError(error: unknown, router: Router) {
 
   const authStore = useAuthStore()
   const workspaceStore = useWorkspaceStore()
+  // 已退出或切换账号的旧请求不能再清除新会话、改变当前导航。
+  if (error.staleSession || (isAuthenticationFailure(error) && !authStore.isAuthenticated)) {
+    return true
+  }
   if (isAuthenticationFailure(error)) {
     authStore.logout()
     workspaceStore.clearAll()

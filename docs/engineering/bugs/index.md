@@ -7,3 +7,4 @@
 - [BUG-003：浏览器测试与数据库边界](BUG-003-browser-test-database-boundary.md)
 - [BUG-004：股票搜索中文字符集问题](BUG-004-stock-search-character-set.md)
 - [BUG-005：邀请时间精度边界](BUG-005-invitation-millisecond-boundary.md)
+- [BUG-006：退出后的旧请求改变导航与会话](BUG-006-stale-session-response.md)

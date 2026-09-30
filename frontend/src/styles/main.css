@@ -74,6 +74,94 @@ a:focus-visible {
   background: color-mix(in oklab, var(--color-focus) 20%, transparent);
 }
 
+/* UI-01：覆盖已迁移入口的语义变量；旧公开、认证及治理页仍使用根令牌。 */
+.research-theme {
+  --color-canvas: #faf8f4;
+  --color-surface: #fffdf9;
+  --color-surface-secondary: #f3efe7;
+  --color-heading: #191510;
+  --color-ink: #191510;
+  --color-text: #373229;
+  --color-muted: #6f6759;
+  --color-faint: #827867;
+  --color-border: #e3ddd1;
+  --color-accent: #6e9fc4;
+  --color-focus: #4e6e88;
+  --color-danger: #b42318;
+  --gutter: clamp(20px, 4vw, 56px);
+  --radius-control: 4px;
+  --font-display: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+  --layer-sticky: 10;
+  position: relative;
+  isolation: isolate;
+  color: var(--color-ink);
+  background-color: var(--color-canvas);
+  background-image:
+    linear-gradient(rgba(25, 21, 16, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(25, 21, 16, 0.025) 1px, transparent 1px);
+  background-size: 64px 64px;
+  font-family: 'Space Grotesk', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.7;
+}
+.research-theme::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  content: '';
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23000' filter='url(%23grain)' d='M0 0h128v128H0z'/%3E%3C/svg%3E");
+}
+.research-theme :focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.ui-brand {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.5;
+}
+.ui-brand > span {
+  color: var(--color-focus);
+}
+.ui-text-action {
+  min-height: 44px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.ui-text-action:hover {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.ui-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ui-skip-link {
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  left: 8px;
+  padding: 8px 16px;
+  transform: translateY(-150%);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+.ui-skip-link:focus {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

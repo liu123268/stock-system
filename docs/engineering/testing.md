@@ -47,6 +47,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - 生产构建：`npm.cmd run build-only` 或完整 `npm.cmd run build`。
 - `lint:check` 依次运行不带 `--fix` 的 Oxlint 和 ESLint，自动验收优先使用该命令，避免静态检查顺带改写任务外文件。
 - 关键全链路使用 `frontend/e2e/auth-smoke.mjs` 和本机真实 Chrome；脚本使用两个隔离浏览器上下文模拟 OWNER 与 MEMBER。
+- UI-01 的公共外壳定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-shell`；它按本文件第 4 节检查后端、前端代理和实际 MySQL catalog，在 finally 精确清理。`E2E_UI_PHASE=before` 只采旧页面基线，默认 `after` 验证创建／加入写后刷新失败、切换及路由复用、归档入口、个人资料、跨账号延迟响应、键盘与六个子页视口。截图和机器结果默认保存到工作区 `ui-preview/ui-01`，不替代 auth smoke 的完整业务断言。
 - 超级管理员闭环使用 `frontend` 目录的 `npm.cmd run test:e2e:admin`：写入前同时核对测试后端和 Vite 代理的环境探针，并要求测试库没有既有 `super_admin`；脚本只把本轮随机账号直接提升为测试管理员，随后从真实登录与管理页面验证禁用／恢复、旧 Token 401、空间治理归档／恢复和操作记录，最后精确删除本轮日志、管理员、空间与账号并核对剩余为 0。直接 SQL 提升只属于隔离测试搭建，不是产品公开接口。
 - 修改股票目录导入、搜索别名、北交所识别、“目录存在但报价不可用”降级或未关注行情页后，使用 `frontend` 目录的 `npm.cmd run test:e2e:directory` 手动运行 `frontend/e2e/directory-smoke.mjs`；它专门验证简体、繁体、英文、标准代码、BSE、无报价候选进入独立只读行情页以及三类研究业务表零写入，不替代覆盖完整成员与研究流程的 `test:e2e`。
 - 当前空间 Store 单元测试覆盖列表、创建、加入、邀请读取、重新生成、成员加载、移除、转让、归档恢复、退出状态清理和快速切换时旧响应不得覆盖新空间；股票 Store 同样覆盖快速搜索竞态。访问错误测试分别验证 401 清除账号会话、成员关系失效清除当前空间；认证路由守卫另行验证 `/api/auth/me` 网络失败保留会话与目标路由、401 清除会话并跳转登录页。后续继续补齐更多页面组件测试。
