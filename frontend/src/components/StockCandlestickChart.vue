@@ -9,6 +9,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 import { init, use, type ECharts } from 'echarts/core'
 import type { StockCandlestickVO } from '@/api/stock'
+import { marketTooltip, readMarketChartTheme } from '@/utils/market-chart-theme'
 
 const props = defineProps<{
   candlesticks: StockCandlestickVO[]
@@ -39,6 +40,7 @@ function dateLabel(value: string) {
 function renderChart() {
   if (!chartHost.value) return
   chart ??= init(chartHost.value)
+  const theme = readMarketChartTheme(chartHost.value)
   const times = props.candlesticks.map((item) => item.time)
   const values = props.candlesticks.map((item) => [
     item.open,
@@ -59,17 +61,18 @@ function renderChart() {
   chart.setOption(
     {
       animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      textStyle: { color: theme.muted, fontFamily: theme.mono, fontSize: 11 },
       grid: [
         { left: 70, right: 20, top: 18, height: '57%' },
         { left: 70, right: 20, top: '69%', height: '13%' },
       ],
-      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      tooltip: marketTooltip(theme),
       xAxis: [
         {
           type: 'category',
           data: times,
           boundaryGap: true,
-          axisLine: { lineStyle: { color: '#AEB3B6' } },
+          axisLine: { lineStyle: { color: theme.line } },
           axisLabel: { show: false },
         },
         {
@@ -77,22 +80,22 @@ function renderChart() {
           gridIndex: 1,
           data: times,
           boundaryGap: true,
-          axisLine: { lineStyle: { color: '#AEB3B6' } },
-          axisLabel: { color: '#62676B', hideOverlap: true, formatter: dateLabel },
+          axisLine: { lineStyle: { color: theme.line } },
+          axisLabel: { color: theme.muted, hideOverlap: true, formatter: dateLabel },
         },
       ],
       yAxis: [
         {
           scale: true,
-          splitLine: { lineStyle: { color: '#E7E9EA' } },
-          axisLabel: { color: '#62676B' },
+          splitLine: { lineStyle: { color: theme.line } },
+          axisLabel: { color: theme.muted },
         },
         {
           type: 'value',
           gridIndex: 1,
           min: 0,
           name: '成交量',
-          nameTextStyle: { color: '#62676B', fontSize: 11 },
+          nameTextStyle: { color: theme.muted, fontSize: 11 },
           splitLine: { show: false },
           axisLabel: { show: false },
         },
@@ -104,11 +107,13 @@ function renderChart() {
           xAxisIndex: [0, 1],
           height: 24,
           bottom: 10,
-          borderColor: '#D5D8DA',
-          backgroundColor: '#FCFCFC',
-          fillerColor: 'rgba(22, 109, 103, 0.12)',
-          handleStyle: { color: '#166D67', borderColor: '#166D67' },
-          textStyle: { color: '#62676B' },
+          borderColor: theme.line,
+          backgroundColor: theme.surface,
+          fillerColor: theme.secondary,
+          dataBackground: { lineStyle: { color: theme.muted }, areaStyle: { color: theme.line } },
+          selectedDataBackground: { lineStyle: { color: theme.focus }, areaStyle: { color: theme.accent } },
+          handleStyle: { color: theme.focus, borderColor: theme.focus },
+          textStyle: { color: theme.muted, fontFamily: theme.mono },
           startValue,
           endValue,
         },
@@ -119,10 +124,10 @@ function renderChart() {
           type: 'candlestick',
           data: values,
           itemStyle: {
-            color: '#B42318',
-            color0: '#166D67',
-            borderColor: '#B42318',
-            borderColor0: '#166D67',
+            color: theme.rise,
+            color0: theme.fall,
+            borderColor: theme.rise,
+            borderColor0: theme.fall,
           },
         },
         {
@@ -131,8 +136,15 @@ function renderChart() {
           xAxisIndex: 1,
           yAxisIndex: 1,
           data: volumes,
-          itemStyle: { color: 'rgba(98, 103, 107, 0.38)' },
+          itemStyle: { color: theme.volume },
         },
+      ],
+      media: [
+        {
+          query: { maxWidth: 480 },
+          option: { grid: [{ left: 54, right: 14 }, { left: 54, right: 14 }] },
+        },
+        { option: { grid: [{ left: 70, right: 20 }, { left: 70, right: 20 }] } },
       ],
     },
     true,

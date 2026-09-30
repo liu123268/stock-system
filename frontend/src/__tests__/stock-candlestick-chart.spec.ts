@@ -89,7 +89,7 @@ describe('StockCandlestickChart display contract', () => {
       data: [1200, 1800],
       xAxisIndex: 1,
       yAxisIndex: 1,
-      itemStyle: { color: 'rgba(98, 103, 107, 0.38)' },
+      itemStyle: { color: '#a69e8d' },
     })
     expect(wrapper.get('.candlestick-chart').attributes('aria-label')).toContain('K 线及成交量图')
   })

@@ -54,6 +54,7 @@ export const useStockStore = defineStore('stock', () => {
   let marketDetailTargetKey = ''
   const submitLoading = ref(false)
   const submitError = ref('')
+  let submitRequestVersion = 0
   const refreshWarning = ref('')
   const attentionUpdatingStockId = ref<number | null>(null)
   const attentionError = ref('')
@@ -163,6 +164,7 @@ export const useStockStore = defineStore('stock', () => {
   }
 
   async function add(workspaceId: number, request: AddWorkspaceStockRequestDTO) {
+    const version = ++submitRequestVersion
     submitLoading.value = true
     submitError.value = ''
     refreshWarning.value = ''
@@ -170,11 +172,15 @@ export const useStockStore = defineStore('stock', () => {
     try {
       result = (await addWorkspaceStock(workspaceId, request)).data.data
     } catch (error) {
-      submitError.value = error instanceof Error ? error.message : '添加股票失败'
-      submitLoading.value = false
+      if (version === submitRequestVersion) {
+        submitError.value = error instanceof Error ? error.message : '添加股票失败'
+        submitLoading.value = false
+      }
       throw error
     }
+    if (version !== submitRequestVersion) return result
     const refreshResults = await Promise.allSettled([loadList(workspaceId), loadEnded(workspaceId)])
+    if (version !== submitRequestVersion) return result
     if (refreshResults.some((item) => item.status === 'rejected')) {
       refreshWarning.value = '研究已经保存，但共享自选或历史列表刷新失败，请重新加载页面数据。'
     }
@@ -601,6 +607,9 @@ export const useStockStore = defineStore('stock', () => {
   }
 
   function clearMarketDetail() {
+    submitRequestVersion += 1
+    submitLoading.value = false
+    submitError.value = ''
     marketDetailRequestVersion += 1
     marketDetailTargetKey = ''
     marketDetail.value = null

@@ -56,6 +56,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - `application-dev.properties` 与 `application-test.properties` 都位于主运行时资源目录，不再依赖 `src/test/resources` 是否进入 `spring-boot:run` 类路径。日常开发和浏览器测试分别使用 `scripts/start-dev.cmd`、`scripts/start-test.cmd`，不用来回修改配置文件。
 - 写入前的后端启动检查和浏览器环境检查统一执行第 4 节。
 
+- UI-03 的行情／初始观点定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-market`，需要默认 test mock 后端。脚本在写入前检查前后端探针与实际 MySQL catalog；实施前可用 `E2E_UI_PHASE=before` 留旧页面对照，默认 `after` 验证九种周期、当天／历史分时、历史读取失败及分页合并、body 提示框、路由参数复用、表单校验／草稿／提交禁用、保存后 GET 失败只读重试、迟到 POST、双成员已有周期、共享图表与归档。四种宽度还读取真实 ECharts 坐标边距，防止宽屏恢复后仍使用手机配置。输出默认在工作区 `ui-preview/ui-03`，可由 `E2E_UI_OUTPUT` 更改；所有本轮账号／空间／研究数据及本轮新建的无引用 mock 股票在 finally 精确清理。目录无报价场景仍单独使用上文的 directory 模式脚本，不能以 mock 代替。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：

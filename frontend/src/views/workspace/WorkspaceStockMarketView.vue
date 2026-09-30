@@ -16,7 +16,11 @@ const workspaceStore = useWorkspaceStore()
 const stockStore = useStockStore()
 
 const workspaceId = computed(() => Number(route.params.workspaceId))
-const code = computed(() => String(route.params.code ?? '').trim().toUpperCase())
+const code = computed(() =>
+  String(route.params.code ?? '')
+    .trim()
+    .toUpperCase(),
+)
 const market = computed(() => stockStore.marketDetail)
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
 const pageLoading = ref(true)
@@ -24,12 +28,16 @@ const showOpinionForm = ref(false)
 const formError = ref('')
 const addButton = ref<HTMLButtonElement | null>(null)
 const opinionForm = ref<{ focusHeading: () => void } | null>(null)
+let disposed = false
+let loadVersion = 0
 
 const searchQuery = computed(() => {
   const value = typeof route.query.q === 'string' ? route.query.q.trim() : ''
   return value ? { q: value } : {}
 })
-const hasSearchQuery = computed(() => typeof route.query.q === 'string' && Boolean(route.query.q.trim()))
+const hasSearchQuery = computed(
+  () => typeof route.query.q === 'string' && Boolean(route.query.q.trim()),
+)
 
 const backToStocks = computed(() => ({
   name: 'workspace-stocks',
@@ -42,7 +50,8 @@ const addBlockedReason = computed(() => {
   if (!detail) return ''
   if (isArchived.value) return '这个空间已经归档，只能查看行情和既有研究记录。'
   if (detail.trackingState === 'ACTIVE') return ''
-  if (detail.listingStatus === 'DELISTED') return '这只股票已经退市，历史行情仍可查看，但不能开启新的研究周期。'
+  if (detail.listingStatus === 'DELISTED')
+    return '这只股票已经退市，历史行情仍可查看，但不能开启新的研究周期。'
   if (detail.listingStatus === 'UNKNOWN') {
     return '这只股票的交易状态暂时无法核实，行情仍可查看，但暂时不能加入关注。'
   }
@@ -55,10 +64,7 @@ const addBlockedReason = computed(() => {
 const canStartResearch = computed(() => {
   const detail = market.value
   return Boolean(
-    detail &&
-      detail.trackingState !== 'ACTIVE' &&
-      !isArchived.value &&
-      !addBlockedReason.value,
+    detail && detail.trackingState !== 'ACTIVE' && !isArchived.value && !addBlockedReason.value,
   )
 })
 
@@ -100,6 +106,9 @@ function formatTime(value: string | null) {
 }
 
 async function load() {
+  const version = ++loadVersion
+  const requestedWorkspace = workspaceId.value
+  const requestedCode = code.value
   if (!Number.isSafeInteger(workspaceId.value) || workspaceId.value <= 0 || !code.value) {
     await router.replace('/workspaces')
     return
@@ -112,12 +121,13 @@ async function load() {
   stockStore.clearCandlesticks()
   stockStore.clearIntraday()
   try {
-    await workspaceStore.ensureCurrent(workspaceId.value)
-    await stockStore.loadMarketDetail(workspaceId.value, code.value)
+    await workspaceStore.ensureCurrent(requestedWorkspace)
+    if (disposed || version !== loadVersion) return
+    await stockStore.loadMarketDetail(requestedWorkspace, requestedCode)
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed && version === loadVersion) await handleWorkspaceApiError(error, router)
   } finally {
-    pageLoading.value = false
+    if (!disposed && version === loadVersion) pageLoading.value = false
   }
 }
 
@@ -138,10 +148,13 @@ async function closeOpinionForm() {
 
 async function submitOpinion(draft: InitialOpinionDraft) {
   const detail = market.value
-  if (!detail || !canStartResearch.value) return
+  if (!detail || !canStartResearch.value || stockStore.submitLoading) return
+  const version = loadVersion
+  const requestedWorkspace = workspaceId.value
   formError.value = ''
   try {
-    const result = await stockStore.add(workspaceId.value, { code: detail.code, ...draft })
+    const result = await stockStore.add(requestedWorkspace, { code: detail.code, ...draft })
+    if (disposed || version !== loadVersion) return
     if (result.alreadyActive) {
       stockStore.keepResearchDraft(workspaceId.value, result.workspaceStockId, draft)
     }
@@ -150,6 +163,7 @@ async function submitOpinion(draft: InitialOpinionDraft) {
       params: { workspaceId: workspaceId.value, workspaceStockId: result.workspaceStockId },
     })
   } catch (error) {
+    if (disposed || version !== loadVersion) return
     if (await handleWorkspaceApiError(error, router)) return
     formError.value = error instanceof Error ? error.message : '添加股票失败'
   }
@@ -163,6 +177,7 @@ watch(
   },
 )
 onBeforeUnmount(() => {
+  disposed = true
   stockStore.clearMarketDetail()
   stockStore.clearCandlesticks()
   stockStore.clearIntraday()
@@ -171,8 +186,6 @@ onBeforeUnmount(() => {
 
 <template>
   <section v-if="pageLoading" class="content-state" aria-live="polite">
-    <span class="loading-line"></span>
-    <span class="loading-line short"></span>
     <p>正在读取股票行情</p>
   </section>
 
@@ -188,7 +201,9 @@ onBeforeUnmount(() => {
 
   <template v-else>
     <nav class="back-nav" aria-label="返回路径">
-      <RouterLink :to="backToStocks">← 返回{{ hasSearchQuery ? '搜索结果' : '共享自选' }}</RouterLink>
+      <RouterLink :to="backToStocks"
+        >← 返回{{ hasSearchQuery ? '搜索结果' : '共享自选' }}</RouterLink
+      >
     </nav>
 
     <header class="market-hero">
@@ -198,7 +213,10 @@ onBeforeUnmount(() => {
           <span>{{ listingStatusLabel(market) }}</span>
         </div>
         <h1>{{ market.name }}</h1>
-        <p>{{ market.code }} · {{ market.exchange }} · {{ market.currency }}</p>
+        <p class="stock-code">
+          {{ market.code }} · {{ market.exchange }} ·
+          {{ market.currency === 'HKD' ? '港币' : '人民币' }}
+        </p>
         <dl>
           <div>
             <dt>行情来源</dt>
@@ -272,21 +290,26 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .back-nav {
-  padding-top: 28px;
+  padding: 24px 0 4px;
 }
 .back-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--color-focus);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 12px;
+  text-decoration: none;
+}
+.back-nav a:hover {
   text-decoration: underline;
-  text-underline-offset: 4px;
+  text-underline-offset: 5px;
 }
 .market-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, auto);
-  gap: 48px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  padding: 38px 0 34px;
+  gap: 32px;
+  padding: 20px 0 30px;
   border-bottom: 1px solid var(--color-ink);
 }
 .status-row {
@@ -295,153 +318,155 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 .status-row span {
-  padding: 5px 9px;
+  padding: 3px 10px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-action);
+  border-radius: 999px;
   color: var(--color-muted);
+  font-size: 11px;
+}
+.market-hero h1,
+.content-state h1 {
+  margin: 12px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 900;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.stock-code {
+  margin-top: 6px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 650;
 }
-.identity h1 {
-  margin: 16px 0 0;
-  color: var(--color-heading);
-  font-size: 42px;
-  letter-spacing: -0.03em;
-  line-height: 1.12;
-  text-wrap: balance;
-}
-.identity > p {
-  margin-top: 9px;
-  color: var(--color-muted);
-}
-.identity dl {
+.market-hero dl {
   display: flex;
   flex-wrap: wrap;
-  gap: 28px;
-  margin: 24px 0 0;
+  gap: 18px 30px;
+  margin: 20px 0 0;
 }
-.identity dt,
-.quote-action > span {
+.market-hero dt {
   color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
 }
-.identity dd {
+.market-hero dd {
   margin: 5px 0 0;
   font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
 }
 .quote-action {
   display: flex;
-  align-items: flex-end;
   flex-direction: column;
-  text-align: right;
+  align-items: flex-end;
+  gap: 10px;
 }
-.quote-action strong {
-  margin-top: 6px;
-  color: var(--color-heading);
-  font-size: 34px;
-  letter-spacing: -0.025em;
+.quote-action > span {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.quote-action > strong {
+  font-family: var(--font-mono);
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 500;
+  line-height: 1.25;
 }
 .primary {
-  min-height: 48px;
-  margin-top: 22px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: var(--radius-action);
-  background: var(--color-ink);
-  color: white;
-  cursor: pointer;
-  font-weight: 700;
-}
-.primary:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-.action-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 1px solid var(--color-ink);
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-surface);
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.primary:hover {
+  background: var(--color-text);
+}
+.primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .read-only-note {
-  margin: 18px 0 0;
+  margin: 22px 0 0;
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface-secondary);
   color: var(--color-muted);
   font-size: 13px;
 }
-.initial-form {
-  margin-top: 34px;
-}
 .chart-section {
-  padding: 52px 0 64px;
+  margin: 44px 0 52px;
 }
 .chart-copy {
-  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 8px 20px;
+  margin-bottom: 18px;
+}
+.chart-copy h2 {
+  grid-row: 1;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 900;
 }
 .section-label {
-  color: var(--color-focus);
-  font-size: 12px;
-  font-weight: 700;
-}
-.chart-copy h2,
-.content-state h1 {
-  margin: 7px 0 0;
-  color: var(--color-heading);
-  font-size: 28px;
-  letter-spacing: -0.025em;
-}
-.chart-copy > p:last-child,
-.content-state > p:not(.section-label) {
-  margin-top: 9px;
+  grid-column: 2;
+  grid-row: 1;
   color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.chart-copy > p:last-child {
+  grid-column: 1 / -1;
+  max-width: 70ch;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 .content-state {
-  max-width: 720px;
-  padding-top: 120px;
+  padding: 60px 0;
+  color: var(--color-muted);
 }
-.loading-line {
-  display: block;
-  width: min(560px, 75%);
-  height: 18px;
-  margin-bottom: 14px;
-  background: var(--color-border);
-  animation: pulse 1.4s ease-in-out infinite alternate;
+.content-state p {
+  margin: 14px 0;
 }
-.loading-line.short {
-  width: min(360px, 52%);
-}
-.state-actions {
-  display: flex;
+.content-state a {
+  display: inline-flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 24px;
-}
-.state-actions .primary {
-  margin-top: 0;
-}
-.state-actions a {
+  min-height: 44px;
   color: var(--color-focus);
-  font-weight: 650;
 }
-@keyframes pulse {
-  to {
-    opacity: 0.4;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .loading-line {
-    animation: none;
-  }
-}
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .market-hero {
-    grid-template-columns: 1fr;
-    gap: 30px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
   }
   .quote-action {
     align-items: flex-start;
-    text-align: left;
   }
-  .identity h1 {
-    font-size: 36px;
+  .chart-copy {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .section-label {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .chart-copy > p:last-child {
+    grid-row: 3;
+  }
+  .market-hero dl {
+    gap: 18px;
   }
 }
 </style>

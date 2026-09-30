@@ -39,6 +39,7 @@ function currencySymbol() {
 }
 
 function submit() {
+  if (props.loading) return
   const targetPrice = optionalPrice(opinion.targetPrice)
   const stopLossPrice = optionalPrice(opinion.stopLossPrice)
   if (!opinion.reason.trim()) {
@@ -69,7 +70,13 @@ defineExpose({ focusHeading })
 </script>
 
 <template>
-  <form class="opinion-form" novalidate aria-labelledby="initial-opinion-title" @submit.prevent="submit">
+  <form
+    class="opinion-form"
+    novalidate
+    aria-labelledby="initial-opinion-title"
+    :aria-busy="loading"
+    @submit.prevent="submit"
+  >
     <div class="form-heading">
       <div>
         <p class="section-label">{{ restarting ? '重新开启研究' : '加入共享自选' }}</p>
@@ -80,77 +87,81 @@ defineExpose({ focusHeading })
       <button type="button" :disabled="loading" @click="emit('cancel')">取消填写</button>
     </div>
 
-    <div class="field-grid compact-fields">
-      <label>
-        <span>观点倾向（必填）</span>
-        <select v-model="opinion.stance" required>
-          <option value="BULLISH">看多</option>
-          <option value="NEUTRAL">中性</option>
-          <option value="BEARISH">看空</option>
-        </select>
-      </label>
-      <label>
-        <span>关注周期（必填）</span>
-        <select v-model="opinion.horizon" required>
-          <option value="SHORT">短期</option>
-          <option value="MEDIUM">中期</option>
-          <option value="LONG">长期</option>
-        </select>
-      </label>
-    </div>
+    <fieldset class="opinion-fields" :disabled="loading">
+      <div class="field-grid compact-fields">
+        <label>
+          <span>观点倾向（必填）</span>
+          <select v-model="opinion.stance" required>
+            <option value="BULLISH">看多</option>
+            <option value="NEUTRAL">中性</option>
+            <option value="BEARISH">看空</option>
+          </select>
+        </label>
+        <label>
+          <span>关注周期（必填）</span>
+          <select v-model="opinion.horizon" required>
+            <option value="SHORT">短期</option>
+            <option value="MEDIUM">中期</option>
+            <option value="LONG">长期</option>
+          </select>
+        </label>
+      </div>
 
-    <div class="field-grid text-fields">
-      <label>
-        <span>判断理由（必填）</span>
-        <textarea
-          v-model="opinion.reason"
-          maxlength="1000"
-          rows="5"
-          required
-          placeholder="为什么形成当前的看多、中性或看空判断？"
-        ></textarea>
-      </label>
-      <label>
-        <span>关键观察条件（选填）</span>
-        <textarea
-          v-model="opinion.observationNote"
-          maxlength="1000"
-          rows="5"
-          placeholder="哪些变化可能支持、削弱或推翻当前判断？"
-        ></textarea>
-      </label>
-    </div>
+      <div class="field-grid text-fields">
+        <label>
+          <span>判断理由（必填）</span>
+          <textarea
+            v-model="opinion.reason"
+            maxlength="1000"
+            rows="5"
+            required
+            placeholder="为什么形成当前的看多、中性或看空判断？"
+            :aria-describedby="localError || error ? 'initial-opinion-error' : undefined"
+          ></textarea>
+        </label>
+        <label>
+          <span>关键观察条件（选填）</span>
+          <textarea
+            v-model="opinion.observationNote"
+            maxlength="1000"
+            rows="5"
+            placeholder="哪些变化可能支持、削弱或推翻当前判断？"
+          ></textarea>
+        </label>
+      </div>
 
-    <div class="field-grid price-fields">
-      <label>
-        <span>目标价（选填）</span>
-        <div class="price-input">
-          <span>{{ currencySymbol() }}</span>
-          <input
-            v-model="opinion.targetPrice"
-            type="number"
-            min="0.0001"
-            step="0.0001"
-            placeholder="不填写也可以"
-          />
-        </div>
-      </label>
-      <label>
-        <span>止损参考价（选填）</span>
-        <div class="price-input">
-          <span>{{ currencySymbol() }}</span>
-          <input
-            v-model="opinion.stopLossPrice"
-            type="number"
-            min="0.0001"
-            step="0.0001"
-            placeholder="不填写也可以"
-          />
-        </div>
-      </label>
-    </div>
-
-    <p v-if="localError || error" class="inline-error" role="alert">
+      <div class="field-grid price-fields">
+        <label>
+          <span>目标价（选填）</span>
+          <div class="price-input">
+            <span>{{ currencySymbol() }}</span>
+            <input
+              v-model="opinion.targetPrice"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="不填写也可以"
+              :aria-describedby="localError || error ? 'initial-opinion-error' : undefined"
+            />
+          </div>
+        </label>
+        <label>
+          <span>止损参考价（选填）</span>
+          <div class="price-input">
+            <span>{{ currencySymbol() }}</span>
+            <input
+              v-model="opinion.stopLossPrice"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="不填写也可以"
+              :aria-describedby="localError || error ? 'initial-opinion-error' : undefined"
+            />
+          </div>
+        </label>
+      </div>
+    </fieldset>
+    <p v-if="localError || error" id="initial-opinion-error" class="inline-error" role="alert">
       {{ localError || error }}
     </p>
     <div class="submit-row">
@@ -164,154 +175,176 @@ defineExpose({ focusHeading })
 
 <style scoped>
 .opinion-form {
-  padding: 30px 0 34px;
-  border-block: 1px solid var(--color-ink);
+  margin: 32px 0;
+  padding: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
 }
 .form-heading,
 .submit-row {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.form-heading > div {
+  min-width: 0;
 }
 .section-label {
-  margin: 0;
-  color: var(--color-focus);
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .form-heading h2 {
-  margin: 7px 0 0;
-  font-size: 24px;
-  line-height: 1.25;
+  margin: 10px 0 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.5;
   text-wrap: balance;
 }
 .form-heading h2:focus {
   outline: none;
 }
 .form-heading button {
+  min-height: 44px;
+  padding: 4px 0;
   border: 0;
   background: transparent;
   color: var(--color-muted);
-  cursor: pointer;
   text-decoration: underline;
-  text-underline-offset: 4px;
+  text-underline-offset: 5px;
+  cursor: pointer;
+  font-size: 12px;
 }
-.form-heading button:disabled {
+button:disabled {
   cursor: wait;
-  opacity: 0.58;
+  opacity: 0.6;
+}
+.opinion-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .field-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px;
   margin-top: 24px;
 }
-.compact-fields,
-.price-fields {
-  grid-template-columns: repeat(2, minmax(0, 260px));
-}
-.text-fields {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+label {
+  min-width: 0;
 }
 label > span {
   display: block;
-  margin-bottom: 9px;
-  font-size: 13px;
-  font-weight: 650;
+  margin-bottom: 8px;
+  color: var(--color-text);
+  font-size: 12px;
 }
 input,
 select,
 textarea {
+  min-width: 0;
   width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink);
   font: inherit;
+  font-size: 14px;
 }
 input,
 select {
-  min-height: 48px;
-  padding: 0 14px;
+  min-height: 44px;
+  padding: 10px 12px;
 }
 textarea {
   min-height: 132px;
-  padding: 13px 14px;
-  line-height: 1.7;
+  padding: 12px;
   resize: vertical;
+  line-height: 1.7;
 }
 input::placeholder,
 textarea::placeholder {
-  color: oklch(0.46 0.008 255);
+  color: var(--color-muted);
 }
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--color-ink);
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--color-focus);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--color-surface-secondary);
 }
 .price-input {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  gap: 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
-}
-.price-input:focus-within {
-  border-color: var(--color-ink);
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
+  font-family: var(--font-mono);
 }
 .price-input > span {
-  padding-left: 14px;
+  padding-left: 12px;
   color: var(--color-muted);
+  font-size: 13px;
 }
 .price-input input {
   border: 0;
-  outline: 0;
+}
+.price-input:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.price-input input:focus-visible {
+  outline: none;
 }
 .submit-row {
   margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
 }
 .submit-row > span {
+  max-width: 48ch;
   color: var(--color-muted);
   font-size: 12px;
 }
 .primary {
-  min-height: 48px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: var(--radius-action);
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 1px solid var(--color-ink);
+  border-radius: 999px;
   background: var(--color-ink);
-  color: white;
+  color: var(--color-surface);
   cursor: pointer;
-  font-weight: 700;
+  font-size: 12px;
 }
-.primary:disabled {
-  cursor: wait;
-  opacity: 0.58;
+.primary:hover {
+  background: var(--color-text);
 }
 .inline-error {
-  margin: 16px 0 0;
+  margin-top: 18px;
   color: var(--color-danger);
   font-size: 13px;
 }
 @media (max-width: 640px) {
-  .form-heading,
-  .submit-row {
-    display: block;
+  .opinion-form {
+    padding: 18px;
   }
-  .form-heading button {
-    margin-top: 12px;
-  }
-  .compact-fields,
-  .text-fields,
-  .price-fields {
-    grid-template-columns: 1fr;
+  .field-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
   }
   .submit-row .primary {
     width: 100%;
-    margin-top: 18px;
   }
 }
 </style>

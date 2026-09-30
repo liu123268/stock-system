@@ -5,6 +5,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { init, use, type ECharts } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { StockIntradayPointVO, StockTradingSessionVO } from '@/api/stock'
+import { marketTooltip, readMarketChartTheme } from '@/utils/market-chart-theme'
 import {
   buildIntradayChartData,
   buildIntradayPercentageData,
@@ -39,14 +40,16 @@ let resizeObserver: ResizeObserver | null = null
 function renderChart() {
   if (!chartHost.value) return
   chart ??= init(chartHost.value)
+  const theme = readMarketChartTheme(chartHost.value)
   const chartData = buildIntradayChartData(props.tradingSessions, props.points)
   const percentageData = buildIntradayPercentageData(props.referencePrice, chartData.prices)
   const percentScale = buildIntradayPercentScale(props.referencePrice, props.points)
   const boundaryLabels = tradingSessionBoundaryLabels(props.tradingSessions)
   chart.setOption({
     animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    legend: { top: 0, data: ['价格', '均价'] },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    textStyle: { color: theme.muted, fontFamily: theme.mono, fontSize: 11 },
+    legend: { top: 8, data: ['价格', '均价'], textStyle: { color: theme.muted, fontSize: 11 } },
+    tooltip: marketTooltip(theme),
     grid: [
       { left: 68, right: 68, top: 42, height: '57%' },
       { left: 68, right: 68, top: '75%', height: '15%' },
@@ -56,10 +59,13 @@ function renderChart() {
         type: 'category',
         data: chartData.times,
         boundaryGap: false,
+        axisLine: { lineStyle: { color: theme.line } },
+        axisTick: { show: false },
         axisLabel: {
           interval: (_index: number, value: string) => boundaryLabels.has(value),
           formatter: (value: string) => boundaryLabels.get(value) ?? '',
           hideOverlap: true,
+          color: theme.muted,
         },
       },
       {
@@ -67,6 +73,7 @@ function renderChart() {
         gridIndex: 1,
         data: chartData.times,
         boundaryGap: true,
+        axisLine: { lineStyle: { color: theme.line } },
         axisLabel: { show: false },
       },
     ],
@@ -76,8 +83,8 @@ function renderChart() {
         min: percentScale.priceMin,
         max: percentScale.priceMax,
         splitNumber: 4,
-        axisLabel: { formatter: (value: number) => value.toFixed(2) },
-        splitLine: { lineStyle: { color: '#E7E9EA' } },
+        axisLabel: { color: theme.muted, formatter: (value: number) => value.toFixed(2) },
+        splitLine: { lineStyle: { color: theme.line } },
       },
       {
         type: 'value',
@@ -86,6 +93,7 @@ function renderChart() {
         max: percentScale.percentLimit,
         splitNumber: 4,
         axisLabel: {
+          color: theme.muted,
           formatter: formatIntradayPercentage,
         },
         axisPointer: { label: { formatter: ({ value }: { value: number }) => formatIntradayPercentage(value) } },
@@ -100,7 +108,8 @@ function renderChart() {
         data: chartData.prices,
         symbol: 'none',
         connectNulls: INTRADAY_LINE_CONNECT_NULLS,
-        lineStyle: { color: '#3F6F8F', width: 1.5 },
+        lineStyle: { color: theme.focus, width: 1.5 },
+        itemStyle: { color: theme.focus },
         tooltip: { valueFormatter: formatIntradayPrice },
       },
       {
@@ -109,7 +118,8 @@ function renderChart() {
         data: chartData.averagePrices,
         symbol: 'none',
         connectNulls: INTRADAY_LINE_CONNECT_NULLS,
-        lineStyle: { color: '#C8892A', width: 1.2 },
+        lineStyle: { color: theme.average, width: 1.2 },
+        itemStyle: { color: theme.average },
         tooltip: { valueFormatter: formatIntradayPrice },
       },
       {
@@ -128,7 +138,22 @@ function renderChart() {
         xAxisIndex: 1,
         yAxisIndex: 2,
         data: chartData.volumes,
-        itemStyle: { color: 'rgba(98, 103, 107, 0.38)' },
+        itemStyle: { color: theme.volume },
+      },
+    ],
+    media: [
+      {
+        query: { maxWidth: 480 },
+        option: {
+          grid: [{ left: 54, right: 62 }, { left: 54, right: 62 }],
+          yAxis: [{ axisLabel: { fontSize: 10 } }, { axisLabel: { fontSize: 10 } }],
+        },
+      },
+      {
+        option: {
+          grid: [{ left: 68, right: 68 }, { left: 68, right: 68 }],
+          yAxis: [{ axisLabel: { fontSize: 11 } }, { axisLabel: { fontSize: 11 } }],
+        },
       },
     ],
   }, true)

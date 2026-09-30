@@ -660,4 +660,29 @@ describe('stock store', () => {
     expect(store.intradaySeries).toEqual(intradaySeries)
     expect(store.intradayError).toBe('')
   })
+
+  it('does not refill list state when an initial-opinion write finishes after leaving its market page', async () => {
+    const pending = deferred<AxiosResponse<ApiResult<AddWorkspaceStockResponseVO>>>()
+    vi.mocked(addWorkspaceStock).mockReturnValue(pending.promise)
+    const store = useStockStore()
+    const write = store.add(12, {
+      code: '600519.SH',
+      stance: 'NEUTRAL',
+      reason: '初始判断',
+      observationNote: null,
+      horizon: 'MEDIUM',
+      targetPrice: null,
+      stopLossPrice: null,
+    })
+    store.clearMarketDetail()
+    pending.resolve(response({
+      code: 'SUCCESS',
+      message: '成功',
+      data: { workspaceStockId: 21, researchCycleId: 31, alreadyActive: false },
+    }))
+    await write
+    expect(listWorkspaceStocks).not.toHaveBeenCalled()
+    expect(listEndedWorkspaceStocks).not.toHaveBeenCalled()
+    expect(store.submitLoading).toBe(false)
+  })
 })

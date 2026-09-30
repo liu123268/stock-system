@@ -168,7 +168,12 @@ function retryMarket() {
   if (detail) void loadMarket(workspaceId.value, workspaceStockId.value, detail.code)
 }
 
+let enteringResearchView = true
+
 async function load() {
+  // 只承接从行情页带来的保存结果，参数切换不沿用上一只股票的提示。
+  const savedRefreshWarning = enteringResearchView ? stockStore.refreshWarning : ''
+  enteringResearchView = false
   const requestedWorkspaceId = workspaceId.value
   const requestedStockId = workspaceStockId.value
   if (
@@ -193,6 +198,13 @@ async function load() {
     restorePendingDraft()
     if (route.hash === '#research-timeline') await scrollToTimeline()
   } catch (error) {
+    if (
+      savedRefreshWarning &&
+      workspaceId.value === requestedWorkspaceId &&
+      workspaceStockId.value === requestedStockId
+    ) {
+      stockStore.refreshWarning = savedRefreshWarning
+    }
     await handleWorkspaceApiError(error, router)
   }
 }

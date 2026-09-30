@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="market-controls">
-        <div class="period-switch" aria-label="选择图表类型">
+        <div class="period-switch chart-mode-switch" aria-label="选择图表类型">
           <button
             type="button"
             :class="{ active: chartMode === 'kline' }"
@@ -237,7 +237,6 @@ onBeforeUnmount(() => {
 
     <template v-if="chartMode === 'kline'">
       <div v-if="stockStore.candlestickLoading" class="market-loading" aria-live="polite">
-        <span></span><span></span><span></span>
         <p>正在读取 {{ candlestickPeriodLabel(selectedPeriod) }}</p>
       </div>
       <div v-else-if="stockStore.candlestickError" class="market-error" role="alert">
@@ -274,7 +273,6 @@ onBeforeUnmount(() => {
 
     <template v-else>
       <div v-if="stockStore.intradayLoading" class="market-loading" aria-live="polite">
-        <span></span><span></span><span></span>
         <p>正在读取分时数据</p>
       </div>
       <div v-else-if="stockStore.intradayError" class="market-error" role="alert">
@@ -302,139 +300,145 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .market-panel {
-  padding: 22px;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
+  min-width: 0;
+  border: 1px solid var(--color-ink);
+  border-radius: 8px;
   background: var(--color-surface);
 }
 .market-heading {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
 }
-.market-title strong,
+.market-title {
+  min-width: 0;
+}
+.market-title strong {
+  font-size: 14px;
+  font-weight: 700;
+}
 .market-title small {
   display: block;
-}
-.market-title small {
-  margin-top: 7px;
+  max-width: 50ch;
+  margin-top: 4px;
   color: var(--color-muted);
+  font-size: 11px;
 }
 .market-controls {
   display: flex;
-  max-width: 620px;
-  align-items: flex-end;
+  align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .period-switch {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
 }
 .period-switch button,
 .market-error button {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: var(--color-muted);
   cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.period-switch button:hover {
+  color: var(--color-ink);
 }
 .period-switch button.active {
-  border-color: var(--color-focus);
-  background: color-mix(in oklab, var(--color-focus) 10%, transparent);
+  border-color: var(--color-accent);
   color: var(--color-focus);
 }
-.period-switch button:focus-visible,
-.market-error button:focus-visible,
-.intraday-date input:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
-  outline-offset: 2px;
+.period-switch button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.chart-mode-switch {
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+.chart-mode-switch button {
+  padding-inline: 16px;
+}
+.chart-mode-switch button.active {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-surface);
 }
 .intraday-date {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   color: var(--color-muted);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 12px;
 }
 .intraday-date input {
-  min-height: 36px;
-  padding: 0 10px;
+  min-width: 0;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 6px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 .market-loading {
   display: grid;
   min-height: 360px;
   place-content: center;
+  gap: 12px;
   text-align: center;
-}
-.market-loading span {
-  display: inline-block;
-  width: 6px;
-  height: 26px;
-  margin: 0 3px;
-  border-radius: 999px;
-  background: var(--color-border);
-  animation: market-pulse 900ms ease-in-out infinite alternate;
-}
-.market-loading span:nth-child(2) {
-  animation-delay: 120ms;
-}
-.market-loading span:nth-child(3) {
-  animation-delay: 240ms;
 }
 .market-loading p,
 .market-meta {
   color: var(--color-muted);
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .market-error {
-  padding: 44px 12px;
+  padding: 36px 20px;
+  color: var(--color-danger);
+  font-size: 13px;
   text-align: center;
 }
 .market-error p {
-  margin-bottom: 14px;
-  color: var(--color-danger);
+  margin-bottom: 12px;
+}
+.market-error button {
+  border-color: var(--color-border);
 }
 .market-meta {
-  margin: 10px 0 0;
-  text-align: right;
-}
-@keyframes market-pulse {
-  to {
-    transform: scaleY(0.48);
-    opacity: 0.45;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .market-loading span {
-    animation: none;
-  }
+  margin: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
 }
 @media (max-width: 820px) {
-  .market-heading {
-    flex-direction: column;
-  }
   .market-controls {
-    max-width: none;
     justify-content: flex-start;
   }
 }
 @media (max-width: 640px) {
-  .market-panel {
-    padding: 16px 10px;
+  .market-heading {
+    padding: 14px 12px;
   }
   .market-meta {
-    text-align: left;
+    padding-inline: 12px;
   }
 }
 </style>

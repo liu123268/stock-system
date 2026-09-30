@@ -12,6 +12,25 @@ function mountForm() {
 }
 
 describe('StockInitialOpinionForm', () => {
+  it('does not emit again or allow editing while the parent is saving', async () => {
+    const wrapper = mountForm()
+    await wrapper.find('textarea').setValue('已经准备好的判断')
+    await wrapper.setProps({ loading: true })
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button[type="button"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('rejects a nonpositive optional price without submitting', async () => {
+    const wrapper = mountForm()
+    await wrapper.find('textarea').setValue('合理的判断理由')
+    await wrapper.find('input[type="number"]').setValue('-1')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('必须是大于 0 的数字')
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
   it('requires a judgment reason before emitting the initial opinion', async () => {
     const wrapper = mountForm()
 
