@@ -607,6 +607,47 @@ describe('stock store', () => {
     ])
   })
 
+  it('does not reload an old workspace after its delayed attention write finishes off-page', async () => {
+    const pending =
+      deferred<
+        AxiosResponse<
+          ApiResult<{ workspaceStockId: number; researchCycleId: number; attentionLevel: 'FOCUS' }>
+        >
+      >()
+    vi.mocked(updateWorkspaceStockAttention).mockReturnValue(pending.promise)
+    const store = useStockStore()
+    const write = store.updateAttention(12, 21, 31, 'FOCUS')
+    store.clearListViews()
+    pending.resolve(
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: { workspaceStockId: 21, researchCycleId: 31, attentionLevel: 'FOCUS' },
+      }),
+    )
+    await write
+    expect(listWorkspaceStocks).not.toHaveBeenCalled()
+    expect(store.attentionUpdatingStockId).toBeNull()
+    expect(store.refreshWarning).toBe('')
+  })
+
+  it('does not show an old attention failure in a new list view', async () => {
+    const pending =
+      deferred<
+        AxiosResponse<
+          ApiResult<{ workspaceStockId: number; researchCycleId: number; attentionLevel: 'FOCUS' }>
+        >
+      >()
+    vi.mocked(updateWorkspaceStockAttention).mockReturnValue(pending.promise)
+    const store = useStockStore()
+    const write = store.updateAttention(12, 21, 31, 'FOCUS')
+    store.clearListViews()
+    pending.reject(new Error('旧空间写入失败'))
+    await expect(write).rejects.toThrow('旧空间写入失败')
+    expect(store.attentionError).toBe('')
+    expect(store.attentionUpdatingStockId).toBeNull()
+  })
+
   it('uses the code-based intraday endpoint without requiring a workspace stock id', async () => {
     vi.mocked(getWorkspaceMarketStockIntraday).mockResolvedValue(
       response({ code: 'SUCCESS', message: '成功', data: intradaySeries }),

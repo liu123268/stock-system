@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
   OpinionType,
@@ -24,12 +24,22 @@ const keyword = ref('')
 const searchHasRun = ref(false)
 const formError = ref('')
 const expandedStockId = ref<number | null>(null)
+const endedError = ref('')
+const endedLoading = ref(false)
+let disposed = false
+let loadVersion = 0
+let searchVersion = 0
+let chartVersion = 0
+let readVersion = 0
+let endedVersion = 0
 
 function routeKeyword() {
   return typeof route.query.q === 'string' ? route.query.q.trim() : ''
 }
 
 async function load() {
+  const version = ++loadVersion
+  const id = workspaceId.value
   if (!Number.isSafeInteger(workspaceId.value) || workspaceId.value <= 0) {
     await router.replace('/workspaces')
     return
@@ -39,52 +49,59 @@ async function load() {
   stockStore.clearRefreshWarning()
   let loaded = false
   try {
-    await workspaceStore.ensureCurrent(workspaceId.value)
-    await Promise.all([
-      stockStore.loadList(workspaceId.value),
-      stockStore.loadEnded(workspaceId.value),
-    ])
+    await workspaceStore.ensureCurrent(id)
+    if (disposed || version !== loadVersion) return
+    await retryPageData()
     loaded = true
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed && version === loadVersion) await handleWorkspaceApiError(error, router)
   } finally {
-    pageLoading.value = false
+    if (!disposed && version === loadVersion) pageLoading.value = false
   }
-
-  const restoredKeyword = routeKeyword()
-  if (loaded && restoredKeyword && !isArchived.value) {
-    keyword.value = restoredKeyword
-    await runSearch(false)
+  if (!disposed && version === loadVersion && loaded && !isArchived.value) {
+    await restoreSearch(routeKeyword())
   }
 }
 
-async function runSearch(updateQuery: boolean) {
+async function restoreSearch(q: string) {
+  const version = ++searchVersion
   stockStore.clearSearch()
+  keyword.value = q
+  searchHasRun.value = !!q
+  formError.value = ''
+  if (!q) return
+  try {
+    await stockStore.search(q)
+  } catch (error) {
+    if (!disposed && version === searchVersion) await handleWorkspaceApiError(error, router)
+  }
+}
+
+async function search() {
+  if (isArchived.value || stockStore.searchLoading) return
   const normalizedKeyword = keyword.value.trim()
   if (!normalizedKeyword) {
+    searchVersion += 1
+    stockStore.clearSearch()
+    searchHasRun.value = false
     formError.value = '请输入股票代码、名称或拼音首字母'
     return
   }
-
   formError.value = ''
-  searchHasRun.value = true
-  if (updateQuery && routeKeyword() !== normalizedKeyword) {
+  if (routeKeyword() !== normalizedKeyword) {
     await router.replace({
       name: 'workspace-stocks',
       params: { workspaceId: workspaceId.value },
       query: { ...route.query, q: normalizedKeyword },
     })
-  }
-  try {
-    await stockStore.search(normalizedKeyword)
-  } catch (error) {
-    await handleWorkspaceApiError(error, router)
+  } else {
+    await restoreSearch(normalizedKeyword)
   }
 }
 
-async function search() {
-  await runSearch(true)
-}
+watch(routeKeyword, (q) => {
+  if (!pageLoading.value && !isArchived.value) void restoreSearch(q)
+})
 
 function listingStatusLabel(stock: StockSearchResponseVO) {
   if (stock.simulated) return '模拟行情'
@@ -95,15 +112,35 @@ function listingStatusLabel(stock: StockSearchResponseVO) {
 }
 
 async function retryPageData() {
-  try {
-    await Promise.all([stockStore.loadList(workspaceId.value), stockStore.loadEnded(workspaceId.value)])
+  const version = ++readVersion
+  const results = await Promise.allSettled([stockStore.loadList(workspaceId.value), retryEnded()])
+  if (disposed || version !== readVersion) return
+  if (results.every((result) => result.status === 'fulfilled') && !endedError.value) {
     stockStore.clearRefreshWarning()
+  }
+  for (const result of results) {
+    if (result.status === 'rejected') await handleWorkspaceApiError(result.reason, router)
+  }
+}
+
+async function retryEnded() {
+  const version = ++endedVersion
+  endedLoading.value = true
+  endedError.value = ''
+  try {
+    await stockStore.loadEnded(workspaceId.value)
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed && version === endedVersion) {
+      endedError.value = error instanceof Error ? error.message : '历史研究加载失败'
+      await handleWorkspaceApiError(error, router)
+    }
+  } finally {
+    if (!disposed && version === endedVersion) endedLoading.value = false
   }
 }
 
 async function toggleAttention(item: WorkspaceStockListResponseVO) {
+  if (isArchived.value || stockStore.attentionUpdatingStockId !== null) return
   try {
     await stockStore.updateAttention(
       workspaceId.value,
@@ -112,7 +149,7 @@ async function toggleAttention(item: WorkspaceStockListResponseVO) {
       item.attentionLevel === 'FOCUS' ? 'NORMAL' : 'FOCUS',
     )
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed) await handleWorkspaceApiError(error, router)
   }
 }
 
@@ -146,13 +183,19 @@ function opinionTypeLabel(type: OpinionType) {
   return { INITIAL: '初始观点', UPDATE: '观点更新', REVIEW: '复盘总结' }[type]
 }
 
-function toggleCandlesticks(item: WorkspaceStockListResponseVO) {
-  expandedStockId.value =
-    expandedStockId.value === item.workspaceStockId ? null : item.workspaceStockId
+async function toggleCandlesticks(item: WorkspaceStockListResponseVO) {
+  const version = ++chartVersion
+  const nextId = expandedStockId.value === item.workspaceStockId ? null : item.workspaceStockId
+  // 两张卡片的更新顺序不保证旧面板先卸载；留一个更新周期完成共享数据清理。
+  expandedStockId.value = null
+  await nextTick()
+  if (!disposed && version === chartVersion) expandedStockId.value = nextId
 }
 
 onMounted(load)
 onBeforeUnmount(() => {
+  disposed = true
+  stockStore.clearSearch()
   stockStore.clearListViews()
 })
 </script>
@@ -186,14 +229,14 @@ onBeforeUnmount(() => {
 
     <section class="page-heading">
       <div>
-        <p class="section-label">共享研究对象</p>
+        <p class="section-label"><span>02</span> — 共享研究对象</p>
         <h1>共享自选</h1>
         <p>空间成员看到同一份股票列表，每只股票从一条可追溯的初始观点开始。</p>
       </div>
       <dl>
         <div>
           <dt>正在关注</dt>
-          <dd>{{ stockStore.items.length }}</dd>
+          <dd>{{ stockStore.listError ? '暂不可用' : stockStore.items.length + ' 只' }}</dd>
         </div>
         <div>
           <dt>数据范围</dt>
@@ -260,7 +303,6 @@ onBeforeUnmount(() => {
       >
         没有找到匹配的股票，请尝试标准代码、更短的名称或从首字开始的拼音缩写。
       </p>
-
     </section>
 
     <p v-if="stockStore.refreshWarning" class="inline-error" role="alert">
@@ -278,7 +320,7 @@ onBeforeUnmount(() => {
           v-if="stockStore.listError"
           type="button"
           :disabled="stockStore.listLoading"
-          @click="stockStore.loadList(workspaceId)"
+          @click="retryPageData"
         >
           重新加载列表
         </button>
@@ -297,7 +339,7 @@ onBeforeUnmount(() => {
         <article v-for="item in stockStore.items" :key="item.workspaceStockId">
           <div class="stock-summary">
             <div class="identity">
-              <span class="attention">{{
+              <span class="attention ui-chip" :class="{ focus: item.attentionLevel === 'FOCUS' }">{{
                 item.attentionLevel === 'FOCUS' ? '重点关注' : '普通关注'
               }}</span>
               <h3>
@@ -310,18 +352,23 @@ onBeforeUnmount(() => {
                   {{ item.name }}
                 </RouterLink>
               </h3>
-              <p>{{ item.code }} · {{ item.exchange }}</p>
+              <p>
+                {{ item.code }} · {{ item.exchange }} ·
+                {{ item.currency === 'HKD' ? '港币' : '人民币' }}
+              </p>
             </div>
             <div class="metric">
               <span>关注价格</span>
               <strong>{{ formatPrice(item.startPrice, item.currency) }}</strong>
               <small>{{ item.simulated ? '本地模拟行情' : item.quoteSource }}</small>
+              <small>{{ formatTime(item.quoteTime) }}</small>
             </div>
             <div class="metric">
               <span>最近一条观点</span>
               <strong>{{ stanceLabel(item.latestOpinionStance) }}</strong>
               <small>
-                {{ opinionTypeLabel(item.latestOpinionType) }} · {{ item.latestOpinionAuthorNickname }}
+                {{ opinionTypeLabel(item.latestOpinionType) }} ·
+                {{ item.latestOpinionAuthorNickname }}
               </small>
               <small>{{ formatTime(item.latestOpinionCreatedAt) }}</small>
             </div>
@@ -375,6 +422,7 @@ onBeforeUnmount(() => {
             class="market-panel-slot"
           >
             <StockMarketPanel
+              :key="`${workspaceId}:${item.workspaceStockId}`"
               :workspace-id="workspaceId"
               :workspace-stock-id="item.workspaceStockId"
               :code="item.code"
@@ -390,14 +438,23 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-if="stockStore.endedItems.length" class="ended-section" aria-labelledby="ended-title">
+    <section
+      v-if="stockStore.endedItems.length || endedError || endedLoading"
+      class="ended-section"
+      aria-labelledby="ended-title"
+    >
       <div class="list-heading">
         <div>
           <p class="section-label">历史研究</p>
           <h2 id="ended-title">已结束关注</h2>
         </div>
+        <button v-if="endedError" type="button" :disabled="endedLoading" @click="retryEnded">
+          重新加载历史研究
+        </button>
       </div>
-      <div class="ended-list">
+      <p v-if="endedError" class="inline-error" role="alert">{{ endedError }}</p>
+      <p v-else-if="endedLoading" class="search-empty" aria-live="polite">正在读取历史研究</p>
+      <div v-else class="ended-list">
         <RouterLink
           v-for="item in stockStore.endedItems"
           :key="item.workspaceStockId"
@@ -410,7 +467,10 @@ onBeforeUnmount(() => {
             <strong>{{ item.name }}</strong>
             <small>{{ item.code }} · {{ item.exchange }}</small>
           </span>
-          <span>{{ item.status === 'CANCELLED' ? '取消于' : '结束于' }} {{ formatTime(item.endedAt) }}</span>
+          <span
+            >{{ item.status === 'CANCELLED' ? '取消于' : '结束于' }}
+            {{ formatTime(item.endedAt) }}</span
+          >
         </RouterLink>
       </div>
     </section>
@@ -418,132 +478,131 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.list-heading button,
-.state-actions button {
-  border: 0;
-  background: transparent;
-  color: inherit;
+button {
+  min-height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 8px 16px;
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
+  font-size: 12px;
 }
-.archive-notice {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 24px;
-  margin-top: 24px;
-  padding: 16px 18px;
-  background: color-mix(in oklab, var(--color-focus) 8%, var(--color-surface));
-  font-size: 13px;
+button:hover {
+  border-color: var(--color-focus);
+  color: var(--color-focus);
 }
-.archive-notice span {
-  color: var(--color-muted);
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 .page-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 42px;
-  padding: 64px 0 42px;
-  border-bottom: 1px solid var(--color-ink);
+  padding: 52px 0 0;
 }
 .section-label {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.section-label > span {
   color: var(--color-focus);
-  font-size: 13px;
-  font-weight: 650;
 }
 .page-heading h1,
 .content-state h1 {
-  margin-top: 12px;
-  font-size: 44px;
-  font-weight: 570;
-  letter-spacing: -0.035em;
-  line-height: 1.08;
-  text-wrap: balance;
+  margin-top: 14px;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3vw, 40px);
+  font-weight: 900;
+  line-height: 1.3;
 }
 .page-heading > div > p:last-child {
-  max-width: 58ch;
-  margin-top: 15px;
+  max-width: 66ch;
+  margin-top: 12px;
   color: var(--color-muted);
+  font-size: 14px;
 }
 .page-heading dl {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 36px;
-  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 30px 0 0;
+  border-block: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
-.page-heading dt,
-.metric span {
+.page-heading dl > div {
+  padding: 16px 22px;
+}
+.page-heading dl > div + div {
+  border-left: 1px solid var(--color-border);
+}
+.page-heading dt {
   color: var(--color-muted);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .page-heading dd {
-  margin: 5px 0 0;
+  margin: 6px 0 0;
+  font-size: 17px;
   font-weight: 700;
 }
 .add-section {
-  padding: 42px 0 48px;
-  border-bottom: 1px solid var(--color-border);
+  margin-top: 48px;
+  padding: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
 }
-.add-copy {
-  display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(320px, 1.3fr);
-  gap: 32px;
-}
-.add-copy h2,
-.list-heading h2 {
-  font-size: 25px;
-  letter-spacing: -0.025em;
-  text-wrap: balance;
+.add-copy h2 {
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.5;
 }
 .add-copy > p:last-child {
-  max-width: 58ch;
+  margin-top: 8px;
   color: var(--color-muted);
+  font-size: 12px;
 }
 .search-form {
-  margin-top: 30px;
+  margin-top: 20px;
 }
 .search-form label {
   display: block;
-  margin-bottom: 9px;
-  font-size: 13px;
-  font-weight: 650;
+  margin-bottom: 8px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .search-form > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 12px;
 }
 input {
+  min-width: 0;
   width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink);
-}
-input {
-  min-height: 48px;
-  padding: 0 14px;
+  font-size: 14px;
 }
 input::placeholder {
-  color: oklch(0.46 0.008 255);
+  color: var(--color-muted);
 }
-input:focus {
-  border-color: var(--color-ink);
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
+input:focus-visible {
+  border-color: var(--color-focus);
 }
 .primary {
-  min-height: 46px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: var(--radius-action);
-  background: var(--color-ink);
-  color: white;
-  cursor: pointer;
-  font-weight: 700;
+  border-color: var(--color-ink);
+  color: var(--color-ink);
 }
-.primary:disabled {
-  cursor: wait;
-  opacity: 0.58;
+.primary:hover {
+  background: var(--color-ink);
+  color: var(--color-surface);
 }
 .search-results {
   margin-top: 18px;
@@ -551,327 +610,328 @@ input:focus {
 }
 .search-results a {
   display: grid;
-  width: 100%;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 24px;
-  padding: 18px 12px;
+  gap: 18px;
+  min-height: 70px;
+  padding: 13px 4px;
   border-bottom: 1px solid var(--color-border);
-  background: transparent;
   color: inherit;
-  text-align: left;
+  text-decoration: none;
+  font-size: 14px;
 }
-.search-results a:hover,
-.search-results a:focus-visible {
-  background: color-mix(in oklab, var(--color-focus) 7%, transparent);
+.search-results a:hover {
+  background: var(--color-surface-secondary);
 }
 .search-results strong,
 .search-results small {
   display: block;
 }
 .search-results small {
-  margin-top: 4px;
   color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .quote {
-  flex: 0 0 auto;
   text-align: right;
+}
+.quote strong {
+  font-family: var(--font-mono);
 }
 .result-action {
   color: var(--color-focus);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 12px;
   white-space: nowrap;
+}
+.list-section {
+  margin-top: 56px;
 }
 .list-heading {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.list-heading h2 {
+  margin-top: 8px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 26px;
 }
 .inline-error,
 .search-empty {
   margin-top: 16px;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .inline-error {
   color: var(--color-danger);
 }
+.inline-error button {
+  margin: 8px 0 0 8px;
+}
 .search-empty {
   color: var(--color-muted);
 }
-.list-section {
-  padding-top: 48px;
-}
-.list-heading {
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--color-ink);
-}
-.list-heading button {
-  color: var(--color-focus);
-  font-weight: 650;
-}
 .stock-list article {
-  border-bottom: 1px solid var(--color-border);
-}
-.identity a {
-  color: inherit;
-  text-decoration-color: color-mix(in oklab, var(--color-focus) 45%, transparent);
-  text-underline-offset: 4px;
-}
-.ended-section {
-  padding: 64px 0;
-}
-.ended-list a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 20px 4px;
-  border-bottom: 1px solid var(--color-border);
-  color: inherit;
-  text-decoration: none;
-}
-.ended-list strong,
-.ended-list small {
-  display: block;
-}
-.ended-list small,
-.ended-list a > span:last-child {
-  margin-top: 4px;
-  color: var(--color-muted);
-  font-size: 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
 }
 .stock-summary {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.55fr) minmax(150px, 0.55fr);
-  gap: 28px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1.25fr);
+  align-items: start;
+  gap: 20px;
+  padding: 20px 24px;
+}
+.identity,
+.metric {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.attention {
+  margin-bottom: 9px;
+}
+.attention.focus {
+  border-color: var(--color-accent);
+  color: var(--color-focus);
+}
+.identity h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.identity a {
+  display: inline-flex;
   align-items: center;
-  padding: 27px 4px 22px;
+  min-height: 32px;
+  color: inherit;
+  text-decoration: none;
+}
+.identity a:hover {
+  color: var(--color-focus);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.identity p {
+  margin-top: 4px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.metric {
+  padding-top: 6px;
+}
+.metric > span {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.metric strong {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+.metric small {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-muted);
+  font-size: 11.5px;
 }
 .stock-actions {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding: 0 4px 18px;
-}
-.stock-action-controls {
-  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 14px;
+  padding: 10px 24px;
+  border-top: 1px solid var(--color-border);
 }
-.stock-actions small {
-  color: var(--color-muted);
-  font-size: 12px;
-  white-space: nowrap;
+.stock-action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .research-summary-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px 12px;
-}
-.kline-toggle,
-.research-link {
-  border: 0;
-  background: transparent;
-  color: var(--color-focus);
-  cursor: pointer;
-  font-weight: 650;
-}
-.kline-toggle,
-.research-link {
-  padding: 0;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.research-link {
-  font-size: 13px;
-}
-.attention-toggle {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-action);
-  background: var(--color-surface);
-  color: var(--color-focus);
-  cursor: pointer;
-  font-weight: 650;
-}
-.attention-toggle:disabled {
-  cursor: wait;
-  opacity: 0.58;
-}
-.attention-toggle:focus-visible,
-.kline-toggle:focus-visible,
-.research-link:focus-visible {
-  border-radius: 4px;
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 25%, transparent);
-  outline-offset: 3px;
-}
-.market-panel-slot {
-  margin: 0 4px 24px;
-}
-.identity h3 {
-  margin: 6px 0 2px;
-  font-size: 21px;
-}
-.identity p {
+  gap: 16px;
   color: var(--color-muted);
-  font-size: 13px;
+  font-family: var(--font-mono);
 }
-.attention {
+.research-summary-meta small {
+  font-size: 11px;
+}
+.research-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
   color: var(--color-focus);
   font-size: 12px;
-  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent);
+  text-underline-offset: 6px;
 }
-.metric strong,
-.metric small {
-  display: block;
+.market-panel-slot {
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--color-border);
 }
-.metric strong {
-  margin-top: 5px;
-  font-size: 18px;
+.market-panel-slot :deep(.market-panel) {
+  margin: 0;
 }
-.metric small {
-  margin-top: 3px;
+.ended-section {
+  padding: 48px 0;
+}
+.ended-list a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 70px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--color-border);
+  color: inherit;
+  text-decoration: none;
+}
+.ended-list a:hover {
+  background: var(--color-surface-secondary);
+}
+.ended-list a > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ended-list strong {
+  font-size: 14px;
+}
+.ended-list small {
+  margin-left: 10px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.ended-list a > span:last-child {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.archive-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 24px;
+  padding: 16px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface-secondary);
+  font-size: 13px;
+}
+.archive-notice span {
   color: var(--color-muted);
 }
-.empty-list {
-  padding: 70px 0;
-  text-align: center;
+.empty-list,
+.content-state {
+  padding: 48px 0;
+  color: var(--color-muted);
 }
 .empty-list h3 {
-  font-size: 21px;
+  margin: 0 0 12px;
+  color: var(--color-ink);
+  font-family: var(--font-display);
 }
-.empty-list p {
-  margin-top: 8px;
-  color: var(--color-muted);
+.content-state p {
+  margin-top: 16px;
 }
-.content-state {
-  max-width: 720px;
-  padding-top: 120px;
-}
-.content-state > p:not(.section-label) {
-  margin-top: 18px;
-  color: var(--color-muted);
+.state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
 }
 .loading-line,
 .list-skeleton span {
   display: block;
-  height: 18px;
+  height: 16px;
   margin-bottom: 14px;
-  background: var(--color-border);
-  animation: pulse 1.4s ease-in-out infinite alternate;
+  border-radius: 4px;
+  background: var(--color-surface-secondary);
 }
 .loading-line {
-  width: min(560px, 75%);
+  max-width: 480px;
 }
 .loading-line.short {
-  width: min(360px, 52%);
+  max-width: 260px;
 }
-.list-skeleton {
-  padding: 28px 0;
+.list-skeleton span {
+  height: 110px;
 }
-.list-skeleton span:nth-child(2) {
-  width: 82%;
-}
-.list-skeleton span:nth-child(3) {
-  width: 64%;
-}
-.state-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-}
-@keyframes pulse {
-  to {
-    opacity: 0.4;
+@media (max-width: 720px) {
+  .stock-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .identity {
+    grid-column: 1 / -1;
+  }
+  .stock-summary,
+  .stock-actions {
+    padding-inline: 18px;
+  }
+  .market-panel-slot {
+    padding: 12px;
+  }
+  .research-summary-meta {
+    gap: 4px 16px;
+  }
+  .ended-list a {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .loading-line,
-  .list-skeleton span {
-    animation: none;
-  }
-}
-@media (max-width: 820px) {
+@media (max-width: 480px) {
   .page-heading {
-    padding-top: 42px;
+    padding-top: 32px;
   }
-  .stock-summary {
-    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(130px, 0.5fr));
+  .page-heading dl > div {
+    padding: 14px;
   }
-}
-@media (max-width: 640px) {
-  .archive-notice,
-  .page-heading,
-  .add-copy {
-    display: block;
+  .add-section {
+    margin-top: 32px;
+    padding: 18px;
   }
-  .archive-notice span {
-    display: block;
-    margin-top: 6px;
-  }
-  .page-heading h1 {
-    font-size: 36px;
-  }
-  .page-heading dl {
-    margin-top: 28px;
-  }
-  .add-copy {
-    display: block;
-  }
-  .add-copy > p:last-child {
-    margin-top: 12px;
-  }
-  .search-form > div,
-  .stock-summary {
-    grid-template-columns: 1fr;
-  }
-  .search-form .primary {
-    width: 100%;
+  .search-form > div {
+    grid-template-columns: minmax(0, 1fr);
   }
   .search-results a {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px 16px;
-  }
-  .search-results .quote {
-    grid-column: 1;
-    text-align: left;
+    gap: 4px 12px;
   }
   .result-action {
-    grid-row: 1 / span 2;
-    grid-column: 2;
+    grid-column: 1 / -1;
+    text-align: right;
   }
   .stock-summary {
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .stock-actions,
-  .stock-action-controls {
-    align-items: flex-start;
+  .identity {
+    grid-column: auto;
   }
   .stock-actions {
+    gap: 8px;
+  }
+  .list-section {
+    margin-top: 40px;
+  }
+  .ended-list small {
     display: block;
-  }
-  .stock-actions small {
-    display: block;
-    margin-top: 12px;
-    white-space: normal;
-  }
-  .research-summary-meta {
-    align-items: flex-start;
-    justify-content: flex-start;
-  }
-  .research-summary-meta small {
-    margin-top: 0;
-  }
-  .market-panel-slot {
-    margin-inline: 0;
+    margin: 4px 0 0;
   }
 }
 </style>

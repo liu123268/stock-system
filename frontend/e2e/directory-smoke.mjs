@@ -29,9 +29,15 @@ function sql(statement) {
   ], { input: statement, encoding: 'utf8', env: { ...process.env, MYSQL_PWD: process.env.DB_PASSWORD } }).trim()
 }
 assert.equal(sql('SELECT DATABASE()'), 'stock_system_test')
-const environment = await (await fetch(`${backend}/api/test/environment`)).json()
-assert.equal(environment.data.profile, 'test')
-assert.equal(environment.data.database, 'stock_system_test')
+// 需先以 test profile + --stock-system.market.mode=directory 启动测试后端。
+// 搜索结果的 null 报价与 fixture source 断言还会验证实际模式，不能仅相信启动参数。
+for (const url of [backend, frontend]) {
+  const response = await fetch(`${url}/api/test/environment`)
+  assert.ok(response.ok, '测试后端和前端代理必须均具有环境探针')
+  const environment = await response.json()
+  assert.equal(environment.data.profile, 'test')
+  assert.equal(environment.data.database, 'stock_system_test')
+}
 assert.equal(sql("SELECT COUNT(*) FROM stock WHERE code IN ('00700.HK','000001.SZ','600089.SH','920002.BJ')"), '0')
 let browser
 let spaceId
@@ -53,9 +59,9 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(`${frontend}/login`)
-  await page.locator('input').nth(0).fill(username)
-  await page.locator('input').nth(1).fill(password)
-  await page.locator('button[type=submit]').click()
+  await page.getByLabel('登录账号').fill(username)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '进入空间', exact: true }).click()
   await page.waitForURL('**/workspaces')
   const login = await (await fetch(`${backend}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }) })).json()
@@ -73,6 +79,7 @@ try {
     const data = await (await done).json()
     assert.equal(data.data[0].code, code)
     assert.equal(data.data[0].price, null)
+    assert.equal(data.data[0].source, source)
     const candidate = page.locator('.search-results a').filter({ hasText: code })
     await candidate.waitFor()
     assert.match(await candidate.innerText(), /暂无报价/)
@@ -80,6 +87,7 @@ try {
     await page.waitForURL(`**/workspaces/${spaceId}/stocks/market/${code}**`)
     await page.getByText('这只股票的交易状态暂时无法核实，行情仍可查看，但暂时不能加入关注。', { exact: true }).waitFor()
     assert.equal(await page.locator('.opinion-form').count(), 0)
+    assert.equal(await page.getByRole('button', { name: '加入共享自选', exact: true }).isDisabled(), true)
     await page.goBack()
     await page.waitForURL(`**/workspaces/${spaceId}/stocks**`)
     await page.locator('#stock-keyword').waitFor()
@@ -95,7 +103,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false)
   await page.screenshot({ path: new URL('directory-mobile.png', shots).pathname.replace(/^\/([A-Za-z]:)/, '$1'), fullPage: true })
   assert.deepEqual(errors, [])
-  console.log('PASS: directory search, independent read-only market page, no research writes, desktop/mobile')
+  console.log('PASS: directory aliases/codes/BSE, unavailable directory quote, no research writes, desktop/mobile')
 } finally {
   if (browser) await browser.close()
   if (spaceId) {

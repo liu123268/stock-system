@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { CandlestickPeriod } from '@/api/stock'
 import { useStockStore } from '@/stores/stock'
@@ -17,14 +17,15 @@ const stockStore = useStockStore()
 const StockCandlestickChart = defineAsyncComponent(
   () => import('@/components/StockCandlestickChart.vue'),
 )
-const StockIntradayChart = defineAsyncComponent(
-  () => import('@/components/StockIntradayChart.vue'),
-)
+const StockIntradayChart = defineAsyncComponent(() => import('@/components/StockIntradayChart.vue'))
 
 const selectedPeriod = ref<CandlestickPeriod>('day')
 const chartMode = ref<'kline' | 'intraday'>('kline')
 const intradayDate = ref('')
 let intradayRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+let intradayVersion = 0
+let candlestickVersion = 0
 
 const candlestickPeriods: { value: CandlestickPeriod; label: string }[] = [
   { value: '1m', label: '1 分' },
@@ -55,6 +56,7 @@ function formatTime(value: string) {
 }
 
 async function requestCandlesticks(period: CandlestickPeriod) {
+  const version = ++candlestickVersion
   try {
     if (usesWorkspaceStock.value) {
       await stockStore.loadCandlesticks(props.workspaceId, props.workspaceStockId!, period)
@@ -62,7 +64,7 @@ async function requestCandlesticks(period: CandlestickPeriod) {
       await stockStore.loadMarketCandlesticks(props.workspaceId, props.code, period)
     }
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed && version === candlestickVersion) await handleWorkspaceApiError(error, router)
   }
 }
 
@@ -88,12 +90,14 @@ async function loadIntraday(silent = false) {
   )
 }
 
-function scheduleIntradayRefresh() {
+function scheduleIntradayRefresh(version: number) {
+  if (disposed || version !== intradayVersion || chartMode.value !== 'intraday') return
   stopIntradayRefresh()
   if (!stockStore.intradaySeries?.updating) return
   intradayRefreshTimer = setTimeout(async () => {
-    if (chartMode.value !== 'intraday' || document.hidden) {
-      scheduleIntradayRefresh()
+    if (disposed || version !== intradayVersion || chartMode.value !== 'intraday') return
+    if (document.hidden) {
+      scheduleIntradayRefresh(version)
       return
     }
     try {
@@ -101,18 +105,20 @@ function scheduleIntradayRefresh() {
     } catch {
       // Keep the last explicitly timestamped series visible; the next controlled refresh can recover.
     }
-    scheduleIntradayRefresh()
+    scheduleIntradayRefresh(version)
   }, 30_000)
 }
 
 async function requestIntraday() {
+  const version = ++intradayVersion
   stopIntradayRefresh()
   try {
     const series = await loadIntraday()
+    if (disposed || version !== intradayVersion || chartMode.value !== 'intraday') return
     intradayDate.value = series.tradeDate
-    scheduleIntradayRefresh()
+    scheduleIntradayRefresh(version)
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed && version === intradayVersion) await handleWorkspaceApiError(error, router)
   }
 }
 
@@ -123,7 +129,9 @@ async function selectChartMode(mode: 'kline' | 'intraday') {
     stockStore.clearIntraday()
     await requestIntraday()
   } else {
+    intradayVersion += 1
     stopIntradayRefresh()
+    stockStore.clearIntraday()
   }
 }
 
@@ -134,6 +142,7 @@ async function selectCandlestickPeriod(period: CandlestickPeriod) {
 }
 
 async function loadOlderCandlesticks() {
+  const version = candlestickVersion
   try {
     if (usesWorkspaceStock.value) {
       await stockStore.loadOlderCandlesticks(props.workspaceId, props.workspaceStockId!)
@@ -141,12 +150,27 @@ async function loadOlderCandlesticks() {
       await stockStore.loadOlderMarketCandlesticks(props.workspaceId, props.code)
     }
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!disposed && version === candlestickVersion) await handleWorkspaceApiError(error, router)
   }
 }
 
-onMounted(() => requestCandlesticks(selectedPeriod.value))
+watch(
+  () => [props.workspaceId, props.workspaceStockId, props.code],
+  () => {
+    intradayVersion += 1
+    stopIntradayRefresh()
+    chartMode.value = 'kline'
+    intradayDate.value = ''
+    stockStore.clearCandlesticks()
+    stockStore.clearIntraday()
+    void requestCandlesticks(selectedPeriod.value)
+  },
+  { immediate: true },
+)
 onBeforeUnmount(() => {
+  disposed = true
+  intradayVersion += 1
+  candlestickVersion += 1
   stopIntradayRefresh()
   stockStore.clearCandlesticks()
   stockStore.clearIntraday()
@@ -266,11 +290,9 @@ onBeforeUnmount(() => {
         />
         <p class="market-meta">
           {{ stockStore.intradaySeries.tradeDate }} ·
-          {{ stockStore.intradaySeries.updating ? '盘中受控刷新' : '已收盘历史快照' }} ·
-          已加载 {{ stockStore.intradaySeries.points.length }} 个点 · 数据源：{{
-            stockStore.intradaySeries.simulated
-              ? '本地模拟行情'
-              : stockStore.intradaySeries.source
+          {{ stockStore.intradaySeries.updating ? '盘中受控刷新' : '已收盘历史快照' }} · 已加载
+          {{ stockStore.intradaySeries.points.length }} 个点 · 数据源：{{
+            stockStore.intradaySeries.simulated ? '本地模拟行情' : stockStore.intradaySeries.source
           }}
         </p>
       </template>

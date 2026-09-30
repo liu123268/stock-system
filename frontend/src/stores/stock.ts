@@ -57,6 +57,7 @@ export const useStockStore = defineStore('stock', () => {
   const refreshWarning = ref('')
   const attentionUpdatingStockId = ref<number | null>(null)
   const attentionError = ref('')
+  let attentionRequestVersion = 0
   const endedItems = ref<EndedWorkspaceStockResponseVO[]>([])
   let endedRequestVersion = 0
   let endedWorkspaceId: number | null = null
@@ -187,6 +188,7 @@ export const useStockStore = defineStore('stock', () => {
     researchCycleId: number,
     attentionLevel: AttentionLevel,
   ) {
+    const version = ++attentionRequestVersion
     attentionUpdatingStockId.value = workspaceStockId
     attentionError.value = ''
     refreshWarning.value = ''
@@ -201,16 +203,21 @@ export const useStockStore = defineStore('stock', () => {
         )
       ).data.data
     } catch (error) {
-      attentionError.value = error instanceof Error ? error.message : '关注级别更新失败'
-      attentionUpdatingStockId.value = null
+      if (version === attentionRequestVersion) {
+        attentionError.value = error instanceof Error ? error.message : '关注级别更新失败'
+        attentionUpdatingStockId.value = null
+      }
       throw error
     }
+    if (version !== attentionRequestVersion) return result
     try {
       await loadList(workspaceId)
     } catch {
-      refreshWarning.value = '关注级别已经保存，但共享自选刷新失败，请重新加载列表。'
+      if (version === attentionRequestVersion) {
+        refreshWarning.value = '关注级别已经保存，但共享自选刷新失败，请重新加载列表。'
+      }
     }
-    attentionUpdatingStockId.value = null
+    if (version === attentionRequestVersion) attentionUpdatingStockId.value = null
     return result
   }
 
@@ -627,6 +634,9 @@ export const useStockStore = defineStore('stock', () => {
   }
 
   function clearListViews() {
+    attentionRequestVersion += 1
+    attentionUpdatingStockId.value = null
+    attentionError.value = ''
     listRequestVersion += 1
     endedRequestVersion += 1
     listWorkspaceId = null
