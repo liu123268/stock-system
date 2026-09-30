@@ -1,6 +1,23 @@
 # SPEC-003：迁移设计与差异映射
 
-本文回答怎样迁移；目标见 [requirements](requirements.md)，执行顺序与证据见 [tasks](tasks.md)。2026-09-30 已在独立预览中进行当前源码的内容对齐；正式前端仍未改造，预览验收不等于真实后端联调完成。
+本文回答怎样迁移；目标见 [requirements](requirements.md)，执行顺序与证据见 [tasks](tasks.md)。2026-09-30 用户否定套用现有 Vue 页面的预览，已恢复原 V2 设计版；正式前端未改造。
+
+当前审阅副本为 `D:\Java\stockweb\ui-preview\stock-workspace-demo-v2-content-aligned.html`。它直接保留原 HTML 与 CSS，在原设计内补内容；空间选择、首页构图和原动效不重新设计。原 `stock-workspace-demo-v2.html` 保持 SHA-256 `910BAA8D95D0F7ECD57B560501E46DEE5D4FB0A67C2EFB5EB24671FADB93FE72`。`content-aligned/build.mjs` 仅生成新副本；演示脚本和 fixture 只服务设计检查，不能迁入 `frontend/src`。
+
+### 内容补齐的检查入口
+
+| 副本内位置 | 对照的现有代码／数据 | 迁移时的职责 |
+| --- | --- | --- |
+| 概览四项统计与动态链接 | `WorkspaceOverviewView`；`currentWorkspace`、`overviewData.activeStockCount/recentActivities` | 空间身份和概览响应分别读取；关注数不取动态条数 |
+| 空间选择与创建／加入 | `WorkspaceListView`；空间列表、创建和加入处理器 | 保留预览选择页；创建按无活动空间条件出现；不补造最近进入或归档时间 |
+| 改名与归档确认 | `WorkspaceSettingsView`；`renameName`、`pendingAction` | 名称同步空间详情与列表；恢复按 OWNER／治理归档来源判断 |
+| 自选摘要与原位行情面板 | `WorkspaceStocksView`、`StockMarketPanel` | 保留最近未撤回个人观点、本期人数与观点数；同时只展开一个图表 |
+| 行情页加入／重新关注 | `WorkspaceStockMarketView`、`StockInitialOpinionForm` | 只读行情不写研究对象；显式提交初始观点才写入 |
+| 研究行情、筛选及更早记录 | `WorkspaceStockResearchView`；`currentCycle`、独立 timeline `cycles[].opinions[]/nextCursor` | 当前周期摘要不承载完整历史；筛选在服务端，游标跨批合并周期；保留撤销占位 |
+| 成员确认、昵称／改密、认证 | 对应 Members／Profile／Login／Register 视图 | 复用已有校验和提交逻辑；不能把本地演示成功当真实请求成功 |
+| 治理筛选、详情、状态确认及分页 | 三个 Admin 视图、`memberships[]/members[]`、分页响应 | 只读基础治理信息；生产使用真实详情与分页，不能用预览 fixture 推断成员关系 |
+
+副本图表仍为原设计 SVG 示意，补入周期、交易日、历史入口及成交量位置；正式迁移继续用现有 ECharts，实现真实均价、百分比轴、历史分页与受控刷新，不搬入预览图表脚本。副本中的少量示例历史通过按钮展开，不代表已验证服务端 20 条游标分页。
 
 ## 1. 参考基线
 
@@ -8,13 +25,13 @@
 
 本轮读取的 SHA-256：`5AD1C1C1B2FADFBD7FD30896CDD793D0C82A1D2CDA122D0F3DB019FBB966AFA0`。
 
-该文件是最初视觉参考，不导入生产源码、不修改原文件。当前内容对齐预览为 `D:\Java\stockweb\ui-preview\stock-workspace-demo-v2.html`；上次纯设计版保存在同目录 `stock-workspace-demo-v2-design-before-parity.html`，只供历史对照。新版生成机制与源码指纹见下节。视觉规则在 [视觉规范](../../architecture/ui-design-system.md) 维护，演示数据适配器不成为生产业务实现。
+该文件是最初视觉参考，不导入生产源码、不修改原文件。当前已恢复的设计预览为 `D:\Java\stockweb\ui-preview\stock-workspace-demo-v2.html`；恢复来源为同目录 `stock-workspace-demo-v2-design-before-parity.html`，两文件 SHA-256 一致。视觉规则在 [视觉规范](../../architecture/ui-design-system.md) 维护，演示数据适配器不成为生产业务实现。
 
-### 独立预览怎样避免漏字段
+### 已撤回的源码生成实验（仅历史记录）
 
-`ui-preview/parity/build.mjs` 只读编译现有 `frontend/src` 的业务 Vue 模板、Store、API 调用与图表组件；预览专用 `theme.css` 调整外观，`mock.js` 在 Axios adapter 处返回符合现有 VO 层次的内存示例。生成结果仍写入原 V2 文件，可通过 file URL 打开，不启动后端。预览说明见工作区 `ui-preview/README.md`。
+`ui-preview/parity/build.mjs` 只读编译现有 `frontend/src` 的业务 Vue 模板、Store、API 调用与图表组件；预览专用 `theme.css` 调整外观，`mock.js` 在 Axios adapter 处返回符合现有 VO 层次的内存示例。此实验被用户否定，构建入口已停用，不能覆盖当前 V2。预览说明见工作区 `ui-preview/README.md`。
 
-预览适配仅包括：独立 hash 路由、独立存储键、内存数据、用户确认的“基点”品牌文字、原轨道装饰替换为静态示意曲线及样式覆盖。业务表单与字段绑定不另抄一套。`source-manifest.json` 记录参与编译的源码路径及 SHA-256；正式源码变化后重新生成，不能把旧构建快照当成实时同步。
+预览适配仅包括：独立 hash 路由、独立存储键、内存数据、用户确认的“基点”品牌文字、原轨道装饰替换为静态示意曲线及样式覆盖。业务表单与字段绑定不另抄一套。`source-manifest.json` 记录参与编译的源码路径及 SHA-256；该实验不作为后续实施方案。
 
 所有示例都明确为演示数据，CSP 禁止网络连接，适配器未覆盖的调用返回错误而非回落到真实 HTTP。重新载入还原内存操作。它可以验证现有前端的呈现和调用链，但不证明后端权限、并发、事务、邀请码防猜测、供应商或真实数据正确；这些仍按每块正式验收执行。
 
@@ -47,7 +64,7 @@
 4. **字段文字**：预览“观察备注”适配为既有“关键观察条件（选填）”，“判断期限”按既有业务用语“关注周期”统一；不改变字段含义、可空性、长度和数值校验。
 5. **缺失接口字段**：预览的最近进入时间、行情页“较昨收”摘要、发起人等只在对应响应确实提供且语义匹配时展示。当前单股行情详情 VO 没有昨收或发起人字段，不从图表的不同日期数据猜值，不为装饰新增接口；保留最新报价、时间、来源及真实关注状态。
 6. **统计与演示**：首页示意图保留可辨认的演示说明；业务页不统一贴“示意数据”，按响应保留真正的模拟标识。预览的“腾讯行情”、固定价格和固定人名不硬编码到业务页。空间列表无归档时间字段时不伪造日期。
-7. **品牌文字**：2026-09-30 用户确认名称为“基点”，预览已使用该名称，正式页面随迁移更新；不是继续沿用“见微”占位或“同研自选”暂定名。“房间”等修辞可在说明中使用，功能名称和反馈保持“空间”一致。
+7. **品牌文字**：2026-09-30 用户确认名称为“基点”，新审阅副本使用该名称，原设计文件仍保留“见微”占位，正式页面随迁移更新。“房间”等修辞可在说明中使用，功能名称和反馈保持“空间”一致。
 8. **角色**：不移植角色切换工具。普通用户与超级管理员沿用真实路由和后端授权；个人资料依然支持两种账号访问。
 
 ## 3. 样式与代码迁移方式
