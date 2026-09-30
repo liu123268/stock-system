@@ -387,7 +387,7 @@ try {
     throw new Error('原子添加后没有成功进入研究详情')
   }
   await page.waitForURL((url) => /\/workspaces\/\d+\/stocks\/\d+$/.test(url.pathname))
-  await page.getByText('贵州茅台', { exact: true }).first().waitFor()
+  await page.getByRole('heading', { name: '贵州茅台 · 研究', exact: true }).waitFor()
   const stockPageText = await page.locator('body').innerText()
   if (!stockPageText.includes('看多')) {
     throw new Error(`研究详情没有显示刚保存的初始观点摘要：${stockPageText}`)

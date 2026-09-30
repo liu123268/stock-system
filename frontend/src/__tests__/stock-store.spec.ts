@@ -14,6 +14,7 @@ import {
   listWorkspaceStocks,
   searchStocks,
   updateWorkspaceStockAttention,
+  withdrawWorkspaceStockOpinion,
 } from '@/api/stock'
 import type { ApiResult } from '@/api/auth'
 import type {
@@ -660,6 +661,68 @@ describe('stock store', () => {
     expect(store.intradaySeries).toEqual(intradaySeries)
     expect(store.intradayError).toBe('')
   })
+
+  it('does not refresh the previous research target when an opinion write returns after switching', async () => {
+    const pending = deferred<AxiosResponse<ApiResult<StockOpinionResponseVO>>>()
+    vi.mocked(createWorkspaceStockOpinion).mockReturnValue(pending.promise)
+    vi.mocked(getWorkspaceStockResearch).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: researchDetail(22, '腾讯控股') }),
+    )
+    const store = useStockStore()
+    const write = store.createOpinion(12, 21, {
+      researchCycleId: 31,
+      type: 'UPDATE',
+      stance: 'NEUTRAL',
+      reason: '旧股票的判断',
+      observationNote: null,
+      horizon: 'MEDIUM',
+      targetPrice: null,
+      stopLossPrice: null,
+    })
+    store.clearResearchView()
+    await store.loadResearch(12, 22)
+    const saved: StockOpinionResponseVO = {
+      id: 51,
+      authorUserId: 9,
+      authorNickname: '研究成员',
+      type: 'UPDATE',
+      stance: 'NEUTRAL',
+      reason: '旧股票的判断',
+      observationNote: null,
+      horizon: 'MEDIUM',
+      targetPrice: null,
+      stopLossPrice: null,
+      createdAt: '2026-09-30T00:00:00',
+      withdrawn: false,
+      withdrawnAt: null,
+      canWithdraw: true,
+    }
+    pending.resolve(response({ code: 'SUCCESS', message: '成功', data: saved }))
+    expect(await write).toEqual(saved)
+    expect(getWorkspaceStockResearch).toHaveBeenCalledTimes(1)
+    expect(store.researchDetail?.workspaceStockId).toBe(22)
+    expect(store.researchSubmitting).toBe(false)
+  })
+
+  it.each(['end', 'withdraw'] as const)(
+    'ignores the late %s operation after leaving the research view',
+    async (kind) => {
+      const pending = deferred<AxiosResponse<ApiResult<null>>>()
+      if (kind === 'end') vi.mocked(endWorkspaceStockResearch).mockReturnValue(pending.promise)
+      else vi.mocked(withdrawWorkspaceStockOpinion).mockReturnValue(pending.promise)
+      const store = useStockStore()
+      const write =
+        kind === 'end' ? store.endResearch(12, 21, 31) : store.withdrawOpinion(12, 21, 51)
+      store.clearResearchView()
+      pending.resolve(response({ code: 'SUCCESS', message: '成功', data: null }))
+      await write
+      expect(getWorkspaceStockResearch).not.toHaveBeenCalled()
+      expect(listWorkspaceStocks).not.toHaveBeenCalled()
+      expect(listEndedWorkspaceStocks).not.toHaveBeenCalled()
+      expect(store.refreshWarning).toBe('')
+      expect(store.researchSubmitting).toBe(false)
+    },
+  )
 
   it('does not refill list state when an initial-opinion write finishes after leaving its market page', async () => {
     const pending = deferred<AxiosResponse<ApiResult<AddWorkspaceStockResponseVO>>>()

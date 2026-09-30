@@ -5,7 +5,9 @@ import { isAuthenticationFailure } from '@/utils/authentication-error'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  scrollBehavior(_to, _from, savedPosition) {
+  scrollBehavior(to, _from, savedPosition) {
+    // 研究时间线由页面在异步数据和报价布局完成后定位，路由不能再把它滚回顶部。
+    if (to.name === 'workspace-stock-research' && to.hash === '#research-timeline') return false
     return savedPosition ?? { top: 0 }
   },
   routes: [

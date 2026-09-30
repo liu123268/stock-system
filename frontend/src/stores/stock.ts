@@ -55,6 +55,7 @@ export const useStockStore = defineStore('stock', () => {
   const submitLoading = ref(false)
   const submitError = ref('')
   let submitRequestVersion = 0
+  let researchMutationVersion = 0
   const refreshWarning = ref('')
   const attentionUpdatingStockId = ref<number | null>(null)
   const attentionError = ref('')
@@ -273,21 +274,26 @@ export const useStockStore = defineStore('stock', () => {
     workspaceStockId: number,
     researchCycleId: number,
   ) {
+    const version = ++researchMutationVersion
     researchSubmitting.value = true
     researchError.value = ''
     refreshWarning.value = ''
     try {
       await endWorkspaceStockResearch(workspaceId, workspaceStockId, researchCycleId)
     } catch (error) {
-      researchError.value = error instanceof Error ? error.message : '结束关注失败'
-      researchSubmitting.value = false
+      if (version === researchMutationVersion) {
+        researchError.value = error instanceof Error ? error.message : '结束关注失败'
+        researchSubmitting.value = false
+      }
       throw error
     }
+    if (version !== researchMutationVersion) return
     const refreshResults = await Promise.allSettled([
       loadResearch(workspaceId, workspaceStockId),
       loadList(workspaceId),
       loadEnded(workspaceId),
     ])
+    if (version !== researchMutationVersion) return
     if (refreshResults.some((item) => item.status === 'rejected')) {
       refreshWarning.value = '本轮关注已经结束，但页面数据刷新失败，请重新加载。'
     }
@@ -299,48 +305,52 @@ export const useStockStore = defineStore('stock', () => {
     workspaceStockId: number,
     request: CreateStockOpinionRequestDTO,
   ) {
+    const version = ++researchMutationVersion
     researchSubmitting.value = true
     researchError.value = ''
     refreshWarning.value = ''
     let result!: StockOpinionResponseVO
     try {
-      result = (
-        await createWorkspaceStockOpinion(workspaceId, workspaceStockId, request)
-      ).data.data
+      result = (await createWorkspaceStockOpinion(workspaceId, workspaceStockId, request)).data.data
     } catch (error) {
-      researchError.value = error instanceof Error ? error.message : '观点发表失败'
-      researchSubmitting.value = false
+      if (version === researchMutationVersion) {
+        researchError.value = error instanceof Error ? error.message : '观点发表失败'
+        researchSubmitting.value = false
+      }
       throw error
     }
+    if (version !== researchMutationVersion) return result
     try {
       await loadResearch(workspaceId, workspaceStockId)
     } catch {
-      refreshWarning.value = '观点已经保存，但研究详情刷新失败，请重新加载。'
+      if (version === researchMutationVersion)
+        refreshWarning.value = '观点已经保存，但研究详情刷新失败，请重新加载。'
     }
-    researchSubmitting.value = false
+    if (version === researchMutationVersion) researchSubmitting.value = false
     return result
   }
 
-  async function withdrawOpinion(
-    workspaceId: number,
-    workspaceStockId: number,
-    opinionId: number,
-  ) {
+  async function withdrawOpinion(workspaceId: number, workspaceStockId: number, opinionId: number) {
+    const version = ++researchMutationVersion
     researchSubmitting.value = true
     researchError.value = ''
     refreshWarning.value = ''
     try {
       await withdrawWorkspaceStockOpinion(workspaceId, workspaceStockId, opinionId)
     } catch (error) {
-      researchError.value = error instanceof Error ? error.message : '观点撤回失败'
-      researchSubmitting.value = false
+      if (version === researchMutationVersion) {
+        researchError.value = error instanceof Error ? error.message : '观点撤回失败'
+        researchSubmitting.value = false
+      }
       throw error
     }
+    if (version !== researchMutationVersion) return
     const refreshResults = await Promise.allSettled([
       loadResearch(workspaceId, workspaceStockId),
       loadList(workspaceId),
       loadEnded(workspaceId),
     ])
+    if (version !== researchMutationVersion) return
     if (refreshResults.some((item) => item.status === 'rejected')) {
       refreshWarning.value = '撤销操作已经保存，但页面数据刷新失败，请重新加载。'
     }
@@ -657,6 +667,10 @@ export const useStockStore = defineStore('stock', () => {
   }
 
   function clearResearchView() {
+    researchMutationVersion += 1
+    submitRequestVersion += 1
+    researchSubmitting.value = false
+    submitLoading.value = false
     researchRequestVersion += 1
     researchTargetKey = ''
     researchDetail.value = null

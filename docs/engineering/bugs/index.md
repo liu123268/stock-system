@@ -10,3 +10,4 @@
 - [BUG-006：退出后的旧请求改变导航与会话](BUG-006-stale-session-response.md)
 - [BUG-007：图表卸载后迟到请求重新启动刷新](BUG-007-market-panel-delayed-refresh.md)
 - [BUG-008：进入研究页后丢失已保存提示](BUG-008-saved-result-lost-on-navigation.md)
+- [BUG-009：研究目标变化后的旧写入回调](BUG-009-research-target-lifetime.md)

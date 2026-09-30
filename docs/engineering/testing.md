@@ -58,6 +58,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 - UI-03 的行情／初始观点定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-market`，需要默认 test mock 后端。脚本在写入前检查前后端探针与实际 MySQL catalog；实施前可用 `E2E_UI_PHASE=before` 留旧页面对照，默认 `after` 验证九种周期、当天／历史分时、历史读取失败及分页合并、body 提示框、路由参数复用、表单校验／草稿／提交禁用、保存后 GET 失败只读重试、迟到 POST、双成员已有周期、共享图表与归档。四种宽度还读取真实 ECharts 坐标边距，防止宽屏恢复后仍使用手机配置。输出默认在工作区 `ui-preview/ui-03`，可由 `E2E_UI_OUTPUT` 更改；所有本轮账号／空间／研究数据及本轮新建的无引用 mock 股票在 finally 精确清理。目录无报价场景仍单独使用上文的 directory 模式脚本，不能以 mock 代替。
 
+- UI-04 的研究详情定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-research`，连接默认 test mock 后端，写入前检查两条环境探针和实际 MySQL catalog。`E2E_UI_PHASE=before` 留原页及参考截图，默认 after 验证 47 条观点跨三批／两周期、服务端成员／倾向／类型筛选、分页失败重试与去重、独立行情及价差边界、表单校验和禁用、写后 GET 失败只读重试、迟到 POST／GET／时间线、双成员周期变化与草稿确认、结束／重开、撤销正文隐藏和五分钟窗口、归档只读与锚点刷新。四种宽度检查溢出和真实图表坐标。默认输出 `ui-preview/ui-04`，支持 `E2E_UI_OUTPUT`；所有本轮 fixture 和新增无引用 mock 股票在 finally 精确清理并核对 0。mock 或受控报价响应只验证 UI 边界，不代替 directory／真实供应商准入验收。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：
