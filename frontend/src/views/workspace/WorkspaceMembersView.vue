@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { WorkspaceMemberResponseVO } from '@/api/workspace'
 import { useAuthStore } from '@/stores/auth'
@@ -7,293 +7,276 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
 
 type PendingAction =
-  | { type: 'leave' }
-  | { type: 'remove'; member: WorkspaceMemberResponseVO }
-  | { type: 'transfer'; member: WorkspaceMemberResponseVO }
-  | null
-
+  | { type: 'leave'; workspaceId: number }
+  | { type: 'remove' | 'transfer'; workspaceId: number; member: WorkspaceMemberResponseVO }
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const store = useWorkspaceStore()
 const workspaceId = computed(() => Number(route.params.workspaceId))
-const isOwner = computed(() => store.currentWorkspace?.role === 'OWNER')
-const isArchived = computed(() => store.currentWorkspace?.status !== 'ACTIVE')
-const pendingAction = ref<PendingAction>(null)
+const workspace = computed(() =>
+  store.currentWorkspace?.workspaceId === workspaceId.value ? store.currentWorkspace : null,
+)
+const isOwner = computed(() => workspace.value?.role === 'OWNER')
+const isArchived = computed(() => workspace.value?.status !== 'ACTIVE')
+const pendingAction = ref<PendingAction | null>(null)
 const actionLoading = ref(false)
 const actionMessage = ref('')
 const actionError = ref('')
+const refreshWarning = ref('')
+const pageLoading = ref(false)
+const pageError = ref('')
+const confirmation = ref<HTMLElement | null>(null)
+let returnFocus: HTMLElement | null = null
+let pageVersion = 0
+let disposed = false
+const isCurrent = (id: number, version: number) =>
+  !disposed && id === workspaceId.value && version === pageVersion
 
 async function load() {
-  if (!Number.isSafeInteger(workspaceId.value) || workspaceId.value <= 0) {
+  const id = workspaceId.value
+  const version = ++pageVersion
+  if (!Number.isSafeInteger(id) || id <= 0) {
     await router.replace('/workspaces')
     return
   }
+  pageLoading.value = true
+  pageError.value = ''
+  pendingAction.value = null
   try {
-    // 成员角色可能被另一会话改变，治理动作不能沿用同 ID 空间的旧角色。
-    await Promise.all([store.loadCurrent(workspaceId.value), store.loadMembers(workspaceId.value)])
+    // 等两路读取都结束，避免一路失败后另一路仍改变权限或列表。
+    const results = await Promise.allSettled([store.loadCurrent(id), store.loadMembers(id)])
+    if (!isCurrent(id, version)) return
+    const failed = results.find((result) => result.status === 'rejected')
+    if (failed?.status === 'rejected') throw failed.reason
+    refreshWarning.value = ''
   } catch (error) {
-    await handleWorkspaceApiError(error, router)
+    if (!isCurrent(id, version)) return
+    if (await handleWorkspaceApiError(error, router)) return
+    pageError.value = error instanceof Error ? error.message : '成员列表加载失败'
+  } finally {
+    if (isCurrent(id, version)) pageLoading.value = false
   }
 }
-
 function isCurrentUser(member: WorkspaceMemberResponseVO) {
   return member.userId === authStore.currentUser?.userId
 }
-
-function requestAction(action: PendingAction) {
+async function requestAction(
+  type: 'leave' | 'remove' | 'transfer',
+  event: Event,
+  member?: WorkspaceMemberResponseVO,
+) {
+  if (actionLoading.value || pageLoading.value || refreshWarning.value) return
+  if (type === 'leave') {
+    if (!workspace.value || isOwner.value) return
+    pendingAction.value = { type, workspaceId: workspaceId.value }
+  } else {
+    if (!isOwner.value || isArchived.value || !member || member.role !== 'MEMBER') return
+    pendingAction.value = { type, member: { ...member }, workspaceId: workspaceId.value }
+  }
   actionMessage.value = ''
   actionError.value = ''
-  pendingAction.value = action
+  returnFocus = event.currentTarget as HTMLElement
+  await nextTick()
+  confirmation.value?.focus()
 }
-
 function cancelAction() {
+  if (actionLoading.value) return
   pendingAction.value = null
+  returnFocus?.focus()
 }
-
-function confirmationText() {
+const confirmationText = computed(() => {
   const action = pendingAction.value
   if (!action) return ''
   if (action.type === 'leave') return '退出后将立即失去访问权，需要有效邀请码才能重新加入。'
-  if (action.type === 'remove') {
+  if (action.type === 'remove')
     return `移除 ${action.member.nickname} 后，对方只能使用移除后新生成的邀请码重新加入。`
-  }
   return `所有权将立即转让给 ${action.member.nickname}，你会变为普通成员。`
-}
-
-function confirmationLabel() {
-  const type = pendingAction.value?.type
-  if (type === 'leave') return '确认退出空间'
-  if (type === 'remove') return '确认移除成员'
-  return '确认转让所有权'
-}
-
+})
+const confirmationLabel = computed(() =>
+  pendingAction.value?.type === 'leave'
+    ? '确认退出空间'
+    : pendingAction.value?.type === 'remove'
+      ? '确认移除成员'
+      : '确认转让所有权',
+)
 async function confirmAction() {
   const action = pendingAction.value
-  if (!action) return
+  const version = pageVersion
+  if (!action || actionLoading.value || !isCurrent(action.workspaceId, version)) return
   actionLoading.value = true
   actionError.value = ''
   try {
     if (action.type === 'leave') {
-      await store.leave(workspaceId.value)
+      await store.leave(action.workspaceId)
+      if (!isCurrent(action.workspaceId, version)) return
       await router.replace({ path: '/workspaces', query: { reason: 'left' } })
       return
     }
-    if (action.type === 'remove') {
-      await store.removeMember(workspaceId.value, action.member.userId)
-      actionMessage.value = `${action.member.nickname} 已被移出空间`
-    } else {
-      await store.transferOwnership(workspaceId.value, action.member.userId)
-      actionMessage.value = `所有权已转让给 ${action.member.nickname}`
-    }
+    if (action.type === 'remove') await store.removeMember(action.workspaceId, action.member.userId)
+    else await store.transferOwnership(action.workspaceId, action.member.userId)
+    if (!isCurrent(action.workspaceId, version)) return
+    actionMessage.value =
+      action.type === 'remove'
+        ? `${action.member.nickname} 已被移出空间`
+        : `所有权已转让给 ${action.member.nickname}`
     pendingAction.value = null
+    if (store.errorMessage || store.membersError)
+      refreshWarning.value = '操作已完成，但页面刷新失败。请重新读取，勿重复提交。'
   } catch (error) {
+    if (!isCurrent(action.workspaceId, version)) return
     if (await handleWorkspaceApiError(error, router)) return
     actionError.value = error instanceof Error ? error.message : '成员操作失败'
   } finally {
-    actionLoading.value = false
+    if (isCurrent(action.workspaceId, version)) actionLoading.value = false
   }
 }
-
-onMounted(load)
+watch(
+  workspaceId,
+  () => {
+    actionMessage.value = ''
+    actionError.value = ''
+    refreshWarning.value = ''
+    actionLoading.value = false
+    void load()
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  disposed = true
+  pageVersion += 1
+  store.invalidateManagement()
+})
 </script>
-
 <template>
-  <section v-if="store.loading || store.membersLoading" class="content-state" aria-live="polite">
+  <section v-if="pageLoading" class="content-state" aria-live="polite">
     <div class="loading-line"></div>
     <div class="loading-line short"></div>
     <p>正在读取成员关系</p>
   </section>
-
-  <section v-else-if="store.errorMessage || store.membersError" class="content-state" role="alert">
+  <section v-else-if="pageError" class="content-state" role="alert">
     <h1>成员列表暂时没有加载出来</h1>
-    <p>{{ store.errorMessage || store.membersError }}</p>
+    <p>{{ pageError }}</p>
+    <p v-if="actionMessage" class="feedback">{{ actionMessage }}</p>
     <button class="primary" type="button" @click="load">重新加载</button>
   </section>
-
-  <template v-else-if="store.currentWorkspace">
+  <template v-else-if="workspace">
+    <section class="members-heading management-heading">
+      <p class="section-label">( <span>03</span> — 空间成员 )</p>
+      <h1>{{ workspace.name }}</h1>
+      <p>当前共有 {{ store.members.length }} 名有效成员。邀请码由 OWNER 在概览页管理。</p>
+    </section>
     <section v-if="isArchived" class="archive-notice" aria-live="polite">
-      <strong>已归档空间只保留读取和普通成员主动退出。</strong>
-      <span>移除成员与转让所有权需先由有权限的人恢复空间。</span>
+      <strong>已归档空间只保留读取和普通成员主动退出。</strong
+      ><span>移除成员与转让所有权需先由有权限的人恢复空间。</span>
     </section>
-
-    <section class="members-heading">
+    <section
+      v-if="pendingAction"
+      ref="confirmation"
+      class="confirmation"
+      tabindex="-1"
+      aria-labelledby="member-confirm-title"
+    >
       <div>
-        <p class="section-label">空间成员</p>
-        <h1>{{ store.currentWorkspace.name }}</h1>
-        <p>当前共有 {{ store.members.length }} 名有效成员。</p>
+        <h2 id="member-confirm-title">{{ confirmationLabel }}？</h2>
+        <p>{{ confirmationText }}</p>
       </div>
-      <button
-        v-if="!isOwner"
-        class="danger-action"
-        type="button"
-        @click="requestAction({ type: 'leave' })"
-      >
-        退出这个空间
-      </button>
-    </section>
-
-    <section v-if="pendingAction" class="confirmation" aria-live="polite">
-      <p>{{ confirmationText() }}</p>
-      <div>
-        <button type="button" :disabled="actionLoading" @click="cancelAction">取消</button>
-        <button
+      <div class="confirmation-actions">
+        <button type="button" :disabled="actionLoading" @click="cancelAction">取消</button
+        ><button
           class="danger-action"
           type="button"
           :disabled="actionLoading"
           @click="confirmAction"
         >
-          {{ actionLoading ? '正在处理…' : confirmationLabel() }}
+          {{ actionLoading ? '正在处理…' : confirmationLabel }}
         </button>
       </div>
     </section>
-
     <p v-if="actionError" class="feedback error" role="alert">{{ actionError }}</p>
-    <p v-if="actionMessage" class="feedback" aria-live="polite">{{ actionMessage }}</p>
-
+    <p v-if="actionMessage" class="feedback" role="status">{{ actionMessage }}</p>
+    <div v-if="refreshWarning" class="refresh-warning" role="alert">
+      <p>{{ refreshWarning }}</p>
+      <button type="button" @click="load">重新读取</button>
+    </div>
     <section class="member-list" aria-label="有效成员列表">
-      <article v-for="member in store.members" :key="member.userId" class="member-row">
+      <article
+        v-for="member in store.members"
+        :key="member.userId"
+        class="member-row"
+        :data-member-id="member.userId"
+      >
         <div class="member-identity">
-          <span class="avatar" aria-hidden="true">{{ member.nickname.slice(0, 1) }}</span>
+          <span class="avatar" aria-hidden="true">{{ [...member.nickname][0] }}</span>
           <div>
             <h2>
-              {{ member.nickname }}
-              <small v-if="isCurrentUser(member)">你</small>
+              {{ member.nickname
+              }}<small v-if="isCurrentUser(member)">你 · {{ member.role }}</small>
             </h2>
             <p>@{{ member.username }} · {{ member.role }}</p>
           </div>
         </div>
-        <time :datetime="member.lastJoinedAt"
-          >最近加入 {{ new Date(member.lastJoinedAt).toLocaleDateString('zh-CN') }}</time
-        >
+        <time :datetime="member.lastJoinedAt">最近加入 {{ member.lastJoinedAt.slice(0, 10) }}</time>
         <div v-if="isOwner && !isArchived && member.role === 'MEMBER'" class="member-actions">
-          <button type="button" @click="requestAction({ type: 'transfer', member })">
-            转让所有权
-          </button>
           <button
-            class="danger-link"
             type="button"
-            @click="requestAction({ type: 'remove', member })"
+            :disabled="actionLoading || !!refreshWarning"
+            @click="requestAction('transfer', $event, member)"
+          >
+            转让所有权</button
+          ><button
+            class="danger-action"
+            type="button"
+            :disabled="actionLoading || !!refreshWarning"
+            @click="requestAction('remove', $event, member)"
           >
             移除成员
           </button>
         </div>
-        <span v-else class="member-status">有效成员</span>
+        <span v-else class="member-status">{{
+          member.role === 'OWNER' ? '空间所有者' : '有效成员'
+        }}</span>
       </article>
+    </section>
+    <section class="leave-section setting-block">
+      <div>
+        <h2>想离开这个空间？</h2>
+        <p>退出后立即失去访问权，重新加入需要有效邀请码。OWNER 需先转让所有权，再退出空间。</p>
+      </div>
+      <button
+        class="danger-action"
+        type="button"
+        :disabled="isOwner || actionLoading || !!refreshWarning"
+        :title="isOwner ? 'OWNER 需先转让所有权' : undefined"
+        @click="requestAction('leave', $event)"
+      >
+        退出这个空间
+      </button>
     </section>
   </template>
 </template>
-
+<style scoped src="@/styles/workspace-management.css"></style>
 <style scoped>
-.member-row time,
-.member-status {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.members-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 32px;
-  padding-top: clamp(64px, 10vh, 104px);
-}
-.archive-notice {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px 24px;
-  margin-top: 36px;
-  padding: 14px 0;
-  border-block: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-size: 13px;
-}
-.archive-notice strong {
-  color: var(--color-ink);
-}
-.section-label {
-  color: var(--color-focus);
-  font-size: 12px;
-  font-weight: 700;
-}
-.members-heading h1,
-.content-state h1 {
-  margin-top: 14px;
-  font-size: 38px;
-  letter-spacing: -0.03em;
-  text-wrap: balance;
-}
-.members-heading p:last-child,
-.content-state p {
-  margin-top: 14px;
-  color: var(--color-muted);
-}
-button {
-  min-height: 40px;
-  padding: 0 15px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-action);
-  background: transparent;
-  color: var(--color-ink);
-  cursor: pointer;
-}
-button:focus-visible,
-a:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 35%, transparent);
-  outline-offset: 2px;
-}
-button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
-.danger-action {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-.confirmation {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  max-width: 920px;
-  margin-top: 40px;
-  padding: 18px 0;
-  border-block: 1px solid var(--color-danger);
-}
-.confirmation p {
-  max-width: 65ch;
-  line-height: 1.7;
-}
-.confirmation div {
-  display: flex;
-  flex-shrink: 0;
-  gap: 10px;
-}
-.feedback {
-  max-width: 920px;
-  margin-top: 24px;
-  color: var(--color-focus);
-}
-.feedback.error {
-  color: var(--color-danger);
-}
 .member-list {
-  max-width: 920px;
-  margin-top: 50px;
+  margin-top: 44px;
   border-top: 1px solid var(--color-ink);
 }
 .member-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.65fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.6fr) auto;
   align-items: center;
-  gap: 24px;
-  padding: 20px 0;
+  gap: 22px;
+  padding: 22px 0;
   border-bottom: 1px solid var(--color-border);
 }
 .member-identity {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 14px;
+}
+.member-identity > div {
+  min-width: 0;
 }
 .avatar {
   display: grid;
@@ -302,78 +285,68 @@ button:disabled {
   flex: 0 0 40px;
   place-items: center;
   border-radius: 50%;
-  background: color-mix(in oklab, var(--color-focus) 10%, transparent);
+  background: var(--color-surface-secondary);
+  font-size: 15px;
   font-weight: 700;
 }
 .member-identity h2 {
+  font-family: inherit;
   font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 .member-identity h2 small {
-  margin-left: 7px;
+  display: inline-block;
+  margin-left: 8px;
   color: var(--color-focus);
-  font-size: 11px;
+  font: 10px var(--font-mono);
+}
+.member-identity p,
+.member-row time,
+.member-status {
+  font: 11px/1.8 var(--font-mono);
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
 }
 .member-identity p {
-  margin-top: 5px;
-  color: var(--color-muted);
-  font-size: 12px;
+  margin-top: 4px;
 }
 .member-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
-.danger-link {
-  color: var(--color-danger);
+.member-actions button {
+  padding-inline: 14px;
+  font-size: 11px;
 }
-.content-state {
-  max-width: 720px;
-  padding-top: 100px;
+.leave-section {
+  margin-top: 52px;
+  border-top: 0;
 }
-.content-state .primary {
-  margin-top: 24px;
-  border-color: var(--color-ink);
-  background: var(--color-ink);
-  color: white;
-}
-.loading-line {
-  width: min(540px, 80%);
-  height: 22px;
-  margin-bottom: 14px;
-  background: var(--color-border);
-  animation: pulse 1.4s ease-in-out infinite alternate;
-}
-.loading-line.short {
-  width: min(340px, 52%);
-}
-@keyframes pulse {
-  to {
-    opacity: 0.4;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .loading-line {
-    animation: none;
-  }
-}
-@media (max-width: 820px) {
-  .members-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    padding-top: 52px;
-  }
-  .confirmation {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .confirmation div {
-    flex-wrap: wrap;
-  }
+@media (max-width: 1100px) {
   .member-row {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
-  .member-actions {
-    flex-wrap: wrap;
+  .member-row time {
+    grid-column: 1;
+  }
+  .member-actions,
+  .member-status {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+@media (max-width: 700px) {
+  .member-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .member-actions,
+  .member-status,
+  .member-row time {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
 </style>

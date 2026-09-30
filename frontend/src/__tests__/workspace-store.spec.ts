@@ -573,6 +573,129 @@ describe('workspace store', () => {
     expect(store.currentWorkspace?.archivedAt).toBeNull()
   })
 
+  it('keeps a saved removal and its local result when both refresh reads fail', async () => {
+    vi.mocked(removeWorkspaceMember).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: null }),
+    )
+    vi.mocked(getWorkspace).mockRejectedValue(new Error('详情读取失败'))
+    vi.mocked(listWorkspaceMembers).mockRejectedValue(new Error('成员读取失败'))
+    const store = useWorkspaceStore()
+    store.currentWorkspace = { ...detail, memberCount: 2 }
+    store.members = members
+    await expect(store.removeMember(12, 10)).resolves.toBeUndefined()
+    expect(store.members).toEqual([members[0]])
+    expect(store.currentWorkspace?.memberCount).toBe(1)
+    expect(store.errorMessage).toBe('详情读取失败')
+    expect(store.membersError).toBe('成员读取失败')
+    expect(removeWorkspaceMember).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps transferred roles and clears invitations even when follow-up reads fail', async () => {
+    const transferred = { ...detail, role: 'MEMBER' as const, ownerUserId: 10 }
+    vi.mocked(transferWorkspaceOwnership).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: transferred }),
+    )
+    vi.mocked(listWorkspaces).mockRejectedValue(new Error('空间列表读取失败'))
+    vi.mocked(listWorkspaceMembers).mockRejectedValue(new Error('成员读取失败'))
+    const store = useWorkspaceStore()
+    store.currentWorkspace = detail
+    store.workspaces = [summary]
+    store.members = members
+    store.currentInvitation = currentInvitation
+    await expect(store.transferOwnership(12, 10)).resolves.toEqual(transferred)
+    expect(store.currentWorkspace?.role).toBe('MEMBER')
+    expect(store.workspaces[0]?.role).toBe('MEMBER')
+    expect(store.members.find((member) => member.userId === 10)?.role).toBe('OWNER')
+    expect(store.currentInvitation).toBeNull()
+  })
+
+  it('completes leaving even when the selector refresh fails', async () => {
+    vi.mocked(leaveWorkspace).mockResolvedValue(
+      response({ code: 'SUCCESS', message: '成功', data: null }),
+    )
+    vi.mocked(listWorkspaces).mockRejectedValue(new Error('空间列表读取失败'))
+    const store = useWorkspaceStore()
+    store.currentWorkspace = detail
+    store.members = members
+    await expect(store.leave(12)).resolves.toBeUndefined()
+    expect(store.currentWorkspace).toBeNull()
+    expect(store.members).toEqual([])
+    expect(store.errorMessage).toBe('空间列表读取失败')
+  })
+
+  it.each(['leave', 'remove', 'transfer', 'archive', 'restore', 'rename'] as const)(
+    'ignores a delayed %s write after changing space and starts no obsolete refresh',
+    async (action) => {
+      const delayed = deferred<AxiosResponse<ApiResult<WorkspaceDetailResponseVO>>>()
+      const emptyWrite = deferred<AxiosResponse<ApiResult<null>>>()
+      const store = useWorkspaceStore()
+      store.currentWorkspace = detail
+      let pending: Promise<unknown>
+      // 写入响应在服务器已成功，浏览器直到切到 B 后才收到。
+      const success = response({ code: 'SUCCESS', message: '成功', data: detail })
+      if (action === 'leave') {
+        vi.mocked(leaveWorkspace).mockReturnValue(emptyWrite.promise)
+        pending = store.leave(12)
+      } else if (action === 'remove') {
+        vi.mocked(removeWorkspaceMember).mockReturnValue(emptyWrite.promise)
+        pending = store.removeMember(12, 10)
+      } else if (action === 'transfer') {
+        vi.mocked(transferWorkspaceOwnership).mockReturnValue(delayed.promise)
+        pending = store.transferOwnership(12, 10)
+      } else if (action === 'archive') {
+        vi.mocked(archiveWorkspace).mockReturnValue(delayed.promise)
+        pending = store.archive(12)
+      } else if (action === 'restore') {
+        vi.mocked(restoreWorkspace).mockReturnValue(delayed.promise)
+        pending = store.restore(12)
+      } else {
+        vi.mocked(renameWorkspace).mockReturnValue(delayed.promise)
+        pending = store.rename(12, '新名')
+      }
+      store.clearCurrent()
+      const next = { ...detail, workspaceId: 13, name: '空间 B' }
+      store.currentWorkspace = next
+      store.workspaces = [{ ...summary, name: '未读的空间 A' }, next]
+      store.members = members
+      store.currentInvitation = currentInvitation
+      delayed.resolve(success)
+      emptyWrite.resolve(response({ code: 'SUCCESS', message: '成功', data: null }))
+      await pending
+      expect(store.currentWorkspace).toEqual(next)
+      expect(store.members).toEqual(members)
+      expect(store.currentInvitation).toEqual(currentInvitation)
+      expect(store.workspaces[0]?.name).toBe('未读的空间 A')
+      expect(getWorkspace).not.toHaveBeenCalled()
+      expect(listWorkspaces).not.toHaveBeenCalled()
+      expect(listWorkspaceMembers).not.toHaveBeenCalled()
+    },
+  )
+
+  it('invalidates same-space management callbacks and reads when the page unmounts', async () => {
+    const write = deferred<AxiosResponse<ApiResult<WorkspaceDetailResponseVO>>>()
+    const read = deferred<AxiosResponse<ApiResult<WorkspaceMemberResponseVO[]>>>()
+    vi.mocked(archiveWorkspace).mockReturnValue(write.promise)
+    vi.mocked(listWorkspaceMembers).mockReturnValue(read.promise)
+    const store = useWorkspaceStore()
+    const saving = store.archive(12)
+    const reading = store.loadMembers(12)
+    store.invalidateManagement()
+    store.currentWorkspace = detail
+    store.members = members
+    write.resolve(
+      response({
+        code: 'SUCCESS',
+        message: '成功',
+        data: { ...detail, status: 'ARCHIVED_BY_OWNER' },
+      }),
+    )
+    read.resolve(response({ code: 'SUCCESS', message: '成功', data: [] }))
+    await Promise.all([saving, reading])
+    expect(store.currentWorkspace).toEqual(detail)
+    expect(store.members).toEqual(members)
+    expect(listWorkspaces).not.toHaveBeenCalled()
+  })
+
   it('clears every workspace cache at the account logout boundary', () => {
     const store = useWorkspaceStore()
     store.workspaces = [summary]

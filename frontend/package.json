@@ -16,6 +16,7 @@
     "test:e2e:ui-market": "node e2e/ui-market-smoke.mjs",
     "test:e2e:ui-research": "node e2e/ui-research-smoke.mjs",
     "test:e2e:ui-overview": "node e2e/ui-overview-smoke.mjs",
+    "test:e2e:ui-management": "node e2e/ui-management-smoke.mjs",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:oxlint lint:eslint",

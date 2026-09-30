@@ -40,6 +40,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let invitationRequestVersion = 0
   let invitationMutationVersion = 0
   let membersRequestVersion = 0
+  let managementVersion = 0
   let sessionVersion = 0
 
   async function loadWorkspaces() {
@@ -85,11 +86,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return result
   }
 
-  async function loadCurrent(workspaceId: number) {
+  async function loadCurrent(workspaceId: number, preserveCurrent = false) {
     const requestVersion = ++currentRequestVersion
     loading.value = true
     errorMessage.value = ''
-    currentWorkspace.value = null
+    if (!preserveCurrent || currentWorkspace.value?.workspaceId !== workspaceId)
+      currentWorkspace.value = null
     try {
       const result = (await getWorkspace(workspaceId)).data
       if (requestVersion === currentRequestVersion) {
@@ -116,6 +118,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearCurrent() {
+    managementVersion += 1
     currentRequestVersion += 1
     clearInvitations()
     membersRequestVersion += 1
@@ -212,27 +215,56 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function leave(workspaceId: number) {
+    const version = beginManagement()
     await leaveWorkspace(workspaceId)
+    if (version !== managementVersion) return
     clearCurrent()
-    await loadWorkspaces()
+    try {
+      await loadWorkspaces()
+    } catch {
+      // 成员关系已退出，仍返回选择页；列表重试只读取，不再次退出。
+    }
   }
 
   async function removeMember(workspaceId: number, userId: number) {
+    const version = beginManagement()
     await removeWorkspaceMember(workspaceId, userId)
-    await Promise.all([loadCurrent(workspaceId), loadMembers(workspaceId)])
+    if (version !== managementVersion) return
+    const wasPresent = members.value.some((member) => member.userId === userId)
+    members.value = members.value.filter((member) => member.userId !== userId)
+    if (wasPresent && currentWorkspace.value?.workspaceId === workspaceId) {
+      currentWorkspace.value = {
+        ...currentWorkspace.value,
+        memberCount: Math.max(1, currentWorkspace.value.memberCount - 1),
+      }
+      updateSummary(currentWorkspace.value)
+    }
+    // DELETE 已成功；读取失败不能向页面抛成移除失败。
+    await Promise.allSettled([loadCurrent(workspaceId, true), loadMembers(workspaceId)])
   }
 
   async function transferOwnership(workspaceId: number, targetUserId: number) {
+    const version = beginManagement()
     const workspace = (await transferWorkspaceOwnership(workspaceId, targetUserId)).data.data
+    if (version !== managementVersion) return workspace
     currentWorkspace.value = workspace
-    await Promise.all([loadWorkspaces(), loadMembers(workspaceId)])
+    updateSummary(workspace)
+    members.value = members.value.map((member) => ({
+      ...member,
+      role: member.userId === targetUserId ? 'OWNER' : 'MEMBER',
+    }))
+    clearInvitations()
+    await Promise.allSettled([loadWorkspaces(), loadMembers(workspaceId)])
     return workspace
   }
 
   async function archive(workspaceId: number) {
+    const version = beginManagement()
     const workspace = (await archiveWorkspace(workspaceId)).data.data
+    if (version !== managementVersion) return workspace
     currentWorkspace.value = workspace
-    currentInvitation.value = null
+    updateSummary(workspace)
+    clearInvitations()
     try {
       await loadWorkspaces()
     } catch {
@@ -242,19 +274,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function rename(workspaceId: number, name: string) {
+    const version = beginManagement()
     const workspace = (await renameWorkspace(workspaceId, name)).data.data
+    if (version !== managementVersion) return workspace
     if (currentWorkspace.value?.workspaceId === workspaceId) {
       currentWorkspace.value = workspace
     }
-    workspaces.value = workspaces.value.map((item) =>
-      item.workspaceId === workspaceId ? { ...item, name: workspace.name } : item,
-    )
+    updateSummary(workspace)
     return workspace
   }
 
   async function restore(workspaceId: number) {
+    const version = beginManagement()
     const workspace = (await restoreWorkspace(workspaceId)).data.data
+    if (version !== managementVersion) return workspace
     currentWorkspace.value = workspace
+    updateSummary(workspace)
     try {
       await loadWorkspaces()
     } catch {
@@ -264,6 +299,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearAll() {
+    managementVersion += 1
     sessionVersion += 1
     listRequestVersion += 1
     clearInvitations()
@@ -276,6 +312,27 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     membersError.value = ''
     loading.value = false
     membersLoading.value = false
+  }
+
+  function updateSummary(workspace: WorkspaceDetailResponseVO) {
+    workspaces.value = workspaces.value.map((item) =>
+      item.workspaceId === workspace.workspaceId ? { ...item, ...workspace } : item,
+    )
+  }
+
+  // 同空间切成员／设置页也会卸载：旧治理响应及其刷新不得进入新页面。
+  function invalidateManagement() {
+    beginManagement()
+  }
+
+  function beginManagement() {
+    managementVersion += 1
+    currentRequestVersion += 1
+    membersRequestVersion += 1
+    listRequestVersion += 1
+    loading.value = false
+    membersLoading.value = false
+    return managementVersion
   }
 
   return {
@@ -308,5 +365,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     clearCurrent,
     clearInvitations,
     clearAll,
+    invalidateManagement,
   }
 })

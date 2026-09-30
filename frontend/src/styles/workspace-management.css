@@ -1,0 +1,211 @@
+.management-heading {
+  padding-top: clamp(40px, 5vw, 60px);
+}
+.section-label {
+  color: var(--color-muted);
+  font: 11px var(--font-mono);
+  letter-spacing: 0.1em;
+}
+.section-label span {
+  color: var(--color-focus);
+}
+h1,
+h2 {
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.management-heading h1,
+.content-state h1 {
+  margin-top: 18px;
+  font-size: clamp(30px, 3vw, 42px);
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.management-heading > p:last-child,
+.content-state p {
+  max-width: 70ch;
+  margin-top: 14px;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.setting-block {
+  display: flex;
+  max-width: 920px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 44px;
+  padding: 26px 0;
+  border-top: 1px solid var(--color-border);
+}
+.setting-block > div:first-child {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.setting-block h2,
+.confirmation h2 {
+  font-size: 20px;
+  line-height: 1.5;
+}
+.setting-block p,
+.confirmation p {
+  max-width: 55ch;
+  margin-top: 8px;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.setting-block > span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.setting-block > strong {
+  font: 15px/1.8 var(--font-mono);
+}
+button {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-action);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--color-ink);
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+button:focus-visible,
+input:focus-visible,
+.confirmation:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--color-focus) 40%, transparent);
+  outline-offset: 3px;
+}
+.primary,
+.primary-action {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+.danger-action {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+.confirmation {
+  display: flex;
+  max-width: 920px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 30px;
+  padding: 22px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-danger);
+  background: var(--color-surface);
+}
+.confirmation > div:first-child {
+  min-width: 0;
+  flex: 1 1 280px;
+}
+.confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.feedback {
+  max-width: 920px;
+  margin-top: 20px;
+  color: var(--color-focus);
+  font-size: 13px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.feedback.error {
+  color: var(--color-danger);
+}
+.refresh-warning {
+  max-width: 920px;
+  margin-top: 20px;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-danger);
+  background: var(--color-surface);
+}
+.refresh-warning p {
+  margin-bottom: 12px;
+  color: var(--color-danger);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.archive-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 28px;
+  padding: 16px 0;
+  border-block: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.archive-notice strong {
+  color: var(--color-ink);
+}
+.content-state {
+  max-width: 720px;
+  padding-top: 70px;
+}
+.content-state button {
+  margin-top: 24px;
+}
+.loading-line {
+  width: min(540px, 80%);
+  height: 20px;
+  margin-bottom: 14px;
+  background: var(--color-border);
+  animation: pulse 1.4s ease-in-out infinite alternate;
+}
+.loading-line.short {
+  width: min(340px, 52%);
+}
+@keyframes pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-line {
+    animation: none;
+  }
+}
+@media (max-width: 700px) {
+  .management-heading {
+    padding-top: 32px;
+  }
+  .setting-block {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 18px;
+    margin-top: 32px;
+  }
+  .setting-block > div:first-child,
+  .confirmation > div:first-child {
+    flex-basis: auto;
+  }
+  .confirmation {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 18px;
+  }
+}

@@ -62,6 +62,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 - UI-05 概览定向脚本为 `npm.cmd run test:e2e:ui-overview`，在 frontend 运行并连接默认 test mock 后端；写入前检查前后端 test 探针及实际 MySQL catalog。`E2E_UI_PHASE=before` 记录原 OWNER／MEMBER／空／归档页面及参考，默认 after 验证真实关注数、服务端 20 条上限、七类事件与跳转、撤销隐藏、邀请当前／历史部分失败、复制成功／拒绝、生成／停用后 GET 重试、失败／并发变化、迟到生成／旧概览错误、重新进入后的角色变化和归档。输出默认 `ui-preview/ui-05`，支持 `E2E_UI_OUTPUT`；全部随机账号、空间／邀请／成员／研究数据及本轮新增无引用 mock 股票在 finally 精确清理为 0。
 
+UI-06 的成员／设置定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-management`，沿第 4 节在写入前检查两条 test 探针和实际 catalog。`E2E_UI_PHASE=before` 留编辑前正常与确认区基线，默认 `after` 验证真实成员生命周期、保存后 GET 失败只读重试、名称校验／同步／草稿、归档来源和六类迟到写入；截图与 JSON 默认在工作区 `ui-preview/ui-06`。治理归档分支只对本轮空间以 SQL 构造来源，并调用真实 restore API 检查 403，不替代 admin smoke；所有本轮账号、空间及关联记录 finally 精确清理。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：
