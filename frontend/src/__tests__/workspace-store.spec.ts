@@ -15,6 +15,7 @@ import {
   removeWorkspaceMember,
   renameWorkspace,
   restoreWorkspace,
+  revokeInvitation,
   transferWorkspaceOwnership,
 } from '@/api/workspace'
 import type { ApiResult } from '@/api/auth'
@@ -388,6 +389,74 @@ describe('workspace store', () => {
     expect(createInvitation).toHaveBeenCalledWith(12, 31)
     expect(store.currentInvitation?.inviteCode).toBe('D4E5F6')
     expect(store.invitationHistory).toHaveLength(2)
+  })
+
+  it('keeps the current invitation when only history reading fails', async () => {
+    vi.mocked(getCurrentInvitation).mockResolvedValueOnce(
+      response({ code: 'SUCCESS', message: '成功', data: currentInvitation }),
+    )
+    vi.mocked(listInvitationHistory).mockRejectedValueOnce(new Error('历史读取失败'))
+    const store = useWorkspaceStore()
+    await expect(store.loadInvitations(12)).rejects.toThrow('历史读取失败')
+    expect(store.currentInvitation?.inviteCode).toBe('A1B2C3')
+    expect(store.invitationError).toBe('历史读取失败')
+    expect(store.invitationLoading).toBe(false)
+  })
+
+  it('keeps the saved invitation after refresh failure without submitting twice', async () => {
+    vi.mocked(createInvitation).mockResolvedValueOnce(
+      response({ code: 'SUCCESS', message: '成功', data: currentInvitation }),
+    )
+    vi.mocked(getCurrentInvitation).mockRejectedValueOnce(new Error('刷新失败'))
+    vi.mocked(listInvitationHistory).mockRejectedValueOnce(new Error('刷新失败'))
+    const store = useWorkspaceStore()
+    await store.generateInvitation(12)
+    expect(store.currentInvitation?.invitationId).toBe(31)
+    expect(store.invitationError).toBe('刷新失败')
+    expect(createInvitation).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the revoked invitation even if refresh fails', async () => {
+    vi.mocked(revokeInvitation).mockResolvedValueOnce(
+      response({ code: 'SUCCESS', message: '成功', data: null }),
+    )
+    vi.mocked(getCurrentInvitation).mockRejectedValueOnce(new Error('刷新失败'))
+    vi.mocked(listInvitationHistory).mockRejectedValueOnce(new Error('刷新失败'))
+    const store = useWorkspaceStore()
+    store.currentInvitation = currentInvitation
+    await store.stopInvitation(12)
+    expect(store.currentInvitation).toBeNull()
+    expect(store.invitationError).toBe('刷新失败')
+    expect(revokeInvitation).toHaveBeenCalledWith(12, 31)
+  })
+
+  it('does not refresh or refill an invitation after its delayed creation leaves the page', async () => {
+    const pending = deferred<AxiosResponse<ApiResult<CurrentInvitationResponseVO>>>()
+    vi.mocked(createInvitation).mockReturnValueOnce(pending.promise)
+    const store = useWorkspaceStore()
+    const saving = store.generateInvitation(12)
+    store.clearInvitations()
+    store.currentInvitation = { ...currentInvitation, invitationId: 42, inviteCode: 'B7C8D9' }
+    pending.resolve(response({ code: 'SUCCESS', message: '成功', data: currentInvitation }))
+    await saving
+    expect(store.currentInvitation?.invitationId).toBe(42)
+    expect(getCurrentInvitation).not.toHaveBeenCalled()
+    expect(listInvitationHistory).not.toHaveBeenCalled()
+  })
+
+  it('does not clear a new invitation after a delayed old revocation', async () => {
+    const pending = deferred<AxiosResponse<ApiResult<null>>>()
+    vi.mocked(revokeInvitation).mockReturnValueOnce(pending.promise)
+    const store = useWorkspaceStore()
+    store.currentInvitation = currentInvitation
+    const stopping = store.stopInvitation(12)
+    store.clearCurrent()
+    store.currentInvitation = { ...currentInvitation, invitationId: 42, inviteCode: 'B7C8D9' }
+    pending.resolve(response({ code: 'SUCCESS', message: '成功', data: null }))
+    await stopping
+    expect(store.currentInvitation?.invitationId).toBe(42)
+    expect(getCurrentInvitation).not.toHaveBeenCalled()
+    expect(listInvitationHistory).not.toHaveBeenCalled()
   })
 
   it('loads members and refreshes workspace state after removing a member', async () => {

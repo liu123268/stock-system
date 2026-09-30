@@ -50,7 +50,7 @@
 ### 项目证据
 
 - `workspace Store` 的 `generateInvitation` 与 `stopInvitation`；
-- 邀请区域独立的 loading、error 和 action message；
+- 邀请区域独立的 loading、error 和 action message；UI-05 还以 `Promise.allSettled` 保留当前邀请码／历史各自成功的读取结果，失败部分保留 GET 重试，详见 [概览数据流](../../engineering/frontend.md#ui-05-中的独立读取与邀请生命周期)；
 - Store 单元测试与双账号真实浏览器闭环；最新闭环已继续覆盖成员退出、重新加入、移除和所有权转让。
 
 ## FRONTEND-05：前端为什么不能把所有 API 失败都当成“退出登录”？

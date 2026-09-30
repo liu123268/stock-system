@@ -38,6 +38,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let currentRequestVersion = 0
   let listRequestVersion = 0
   let invitationRequestVersion = 0
+  let invitationMutationVersion = 0
   let membersRequestVersion = 0
   let sessionVersion = 0
 
@@ -116,18 +117,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function clearCurrent() {
     currentRequestVersion += 1
-    invitationRequestVersion += 1
+    clearInvitations()
     membersRequestVersion += 1
     currentWorkspace.value = null
     loading.value = false
     errorMessage.value = ''
+    members.value = []
+    membersError.value = ''
+    membersLoading.value = false
+  }
+
+  function clearInvitations() {
+    invitationRequestVersion += 1
+    invitationMutationVersion += 1
     currentInvitation.value = null
     invitationHistory.value = []
     invitationError.value = ''
     invitationLoading.value = false
-    members.value = []
-    membersError.value = ''
-    membersLoading.value = false
   }
 
   async function loadInvitations(workspaceId: number) {
@@ -135,14 +141,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     invitationLoading.value = true
     invitationError.value = ''
     try {
-      const [currentResult, historyResult] = await Promise.all([
+      const [currentResult, historyResult] = await Promise.allSettled([
         getCurrentInvitation(workspaceId),
         listInvitationHistory(workspaceId),
       ])
       if (requestVersion === invitationRequestVersion) {
-        currentInvitation.value = currentResult.data.data
-        invitationHistory.value = historyResult.data.data
+        if (currentResult.status === 'fulfilled')
+          currentInvitation.value = currentResult.value.data.data
+        if (historyResult.status === 'fulfilled')
+          invitationHistory.value = historyResult.value.data.data
       }
+      if (currentResult.status === 'rejected') throw currentResult.reason
+      if (historyResult.status === 'rejected') throw historyResult.reason
     } catch (error) {
       if (requestVersion === invitationRequestVersion) {
         invitationError.value = error instanceof Error ? error.message : '邀请码加载失败'
@@ -154,9 +164,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function generateInvitation(workspaceId: number) {
+    const version = ++invitationMutationVersion
+    invitationRequestVersion += 1
     const result = (
       await createInvitation(workspaceId, currentInvitation.value?.invitationId ?? null)
     ).data.data
+    if (version !== invitationMutationVersion) return result
     currentInvitation.value = result
     try {
       await loadInvitations(workspaceId)
@@ -168,7 +181,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function stopInvitation(workspaceId: number) {
     if (!currentInvitation.value) return
+    const version = ++invitationMutationVersion
+    invitationRequestVersion += 1
     await revokeInvitation(workspaceId, currentInvitation.value.invitationId)
+    if (version !== invitationMutationVersion) return
     currentInvitation.value = null
     try {
       await loadInvitations(workspaceId)
@@ -250,19 +266,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function clearAll() {
     sessionVersion += 1
     listRequestVersion += 1
-    invitationRequestVersion += 1
+    clearInvitations()
     membersRequestVersion += 1
     currentRequestVersion += 1
     workspaces.value = []
     currentWorkspace.value = null
-    currentInvitation.value = null
-    invitationHistory.value = []
     errorMessage.value = ''
-    invitationError.value = ''
     members.value = []
     membersError.value = ''
     loading.value = false
-    invitationLoading.value = false
     membersLoading.value = false
   }
 
@@ -294,6 +306,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     rename,
     restore,
     clearCurrent,
+    clearInvitations,
     clearAll,
   }
 })

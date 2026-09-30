@@ -60,6 +60,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 - UI-04 的研究详情定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-research`，连接默认 test mock 后端，写入前检查两条环境探针和实际 MySQL catalog。`E2E_UI_PHASE=before` 留原页及参考截图，默认 after 验证 47 条观点跨三批／两周期、服务端成员／倾向／类型筛选、分页失败重试与去重、独立行情及价差边界、表单校验和禁用、写后 GET 失败只读重试、迟到 POST／GET／时间线、双成员周期变化与草稿确认、结束／重开、撤销正文隐藏和五分钟窗口、归档只读与锚点刷新。四种宽度检查溢出和真实图表坐标。默认输出 `ui-preview/ui-04`，支持 `E2E_UI_OUTPUT`；所有本轮 fixture 和新增无引用 mock 股票在 finally 精确清理并核对 0。mock 或受控报价响应只验证 UI 边界，不代替 directory／真实供应商准入验收。
 
+- UI-05 概览定向脚本为 `npm.cmd run test:e2e:ui-overview`，在 frontend 运行并连接默认 test mock 后端；写入前检查前后端 test 探针及实际 MySQL catalog。`E2E_UI_PHASE=before` 记录原 OWNER／MEMBER／空／归档页面及参考，默认 after 验证真实关注数、服务端 20 条上限、七类事件与跳转、撤销隐藏、邀请当前／历史部分失败、复制成功／拒绝、生成／停用后 GET 重试、失败／并发变化、迟到生成／旧概览错误、重新进入后的角色变化和归档。输出默认 `ui-preview/ui-05`，支持 `E2E_UI_OUTPUT`；全部随机账号、空间／邀请／成员／研究数据及本轮新增无引用 mock 股票在 finally 精确清理为 0。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：
