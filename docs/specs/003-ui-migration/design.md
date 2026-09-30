@@ -1,6 +1,6 @@
 # SPEC-003：迁移设计与差异映射
 
-本文回答怎样迁移；目标见 [requirements](requirements.md)，执行顺序与证据见 [tasks](tasks.md)。2026-09-29 以本地源码核对，尚未进行浏览器视觉验收。以下是待实施方案，不是当前页面已改造的描述。
+本文回答怎样迁移；目标见 [requirements](requirements.md)，执行顺序与证据见 [tasks](tasks.md)。2026-09-30 已在独立预览中进行当前源码的内容对齐；正式前端仍未改造，预览验收不等于真实后端联调完成。
 
 ## 1. 参考基线
 
@@ -8,7 +8,15 @@
 
 本轮读取的 SHA-256：`5AD1C1C1B2FADFBD7FD30896CDD793D0C82A1D2CDA122D0F3DB019FBB966AFA0`。
 
-该文件是本机外部参考，不导入生产源码、不修改原文件。开工先确认文件仍可读且没有未经辨认的版本变化；参考不可用时保留本计划，不假称逐像素核对完成。视觉规则在 [视觉规范](../../architecture/ui-design-system.md) 维护，外部文件中的演示脚本不成为业务实现。
+该文件是最初视觉参考，不导入生产源码、不修改原文件。当前内容对齐预览为 `D:\Java\stockweb\ui-preview\stock-workspace-demo-v2.html`；上次纯设计版保存在同目录 `stock-workspace-demo-v2-design-before-parity.html`，只供历史对照。新版生成机制与源码指纹见下节。视觉规则在 [视觉规范](../../architecture/ui-design-system.md) 维护，演示数据适配器不成为生产业务实现。
+
+### 独立预览怎样避免漏字段
+
+`ui-preview/parity/build.mjs` 只读编译现有 `frontend/src` 的业务 Vue 模板、Store、API 调用与图表组件；预览专用 `theme.css` 调整外观，`mock.js` 在 Axios adapter 处返回符合现有 VO 层次的内存示例。生成结果仍写入原 V2 文件，可通过 file URL 打开，不启动后端。预览说明见工作区 `ui-preview/README.md`。
+
+预览适配仅包括：独立 hash 路由、独立存储键、内存数据、用户确认的“基点”品牌文字、原轨道装饰替换为静态示意曲线及样式覆盖。业务表单与字段绑定不另抄一套。`source-manifest.json` 记录参与编译的源码路径及 SHA-256；正式源码变化后重新生成，不能把旧构建快照当成实时同步。
+
+所有示例都明确为演示数据，CSP 禁止网络连接，适配器未覆盖的调用返回错误而非回落到真实 HTTP。重新载入还原内存操作。它可以验证现有前端的呈现和调用链，但不证明后端权限、并发、事务、邀请码防猜测、供应商或真实数据正确；这些仍按每块正式验收执行。
 
 ## 2. 页面对应与具体取舍
 
@@ -39,10 +47,28 @@
 4. **字段文字**：预览“观察备注”适配为既有“关键观察条件（选填）”，“判断期限”按既有业务用语“关注周期”统一；不改变字段含义、可空性、长度和数值校验。
 5. **缺失接口字段**：预览的最近进入时间、行情页“较昨收”摘要、发起人等只在对应响应确实提供且语义匹配时展示。当前单股行情详情 VO 没有昨收或发起人字段，不从图表的不同日期数据猜值，不为装饰新增接口；保留最新报价、时间、来源及真实关注状态。
 6. **统计与演示**：首页示意图保留可辨认的演示说明；业务页不统一贴“示意数据”，按响应保留真正的模拟标识。预览的“腾讯行情”、固定价格和固定人名不硬编码到业务页。空间列表无归档时间字段时不伪造日期。
-7. **品牌文字**：预览标题明确注明品牌占位；本轮按现有“同研自选”适配相同字标排版，不把风格迁移扩大成产品更名。“房间”等修辞可在说明中使用，功能名称和反馈保持“空间”一致。
+7. **品牌文字**：2026-09-30 用户确认名称为“基点”，预览已使用该名称，正式页面随迁移更新；不是继续沿用“见微”占位或“同研自选”暂定名。“房间”等修辞可在说明中使用，功能名称和反馈保持“空间”一致。
 8. **角色**：不移植角色切换工具。普通用户与超级管理员沿用真实路由和后端授权；个人资料依然支持两种账号访问。
 
 ## 3. 样式与代码迁移方式
+
+### 字段归属与嵌套关系
+
+以下路径均相对 `frontend/src`，表中只说明绑定归属，不复制完整 DTO 定义。迁移时对照这些既有层次修改展示，不能为排版把多个对象揉成一份新业务数据。
+
+| 页面内容 | 原始字段与关系 | 现有使用者及边界 |
+| --- | --- | --- |
+| 空间身份、成员数、状态 | `workspace.currentWorkspace.role/memberCount/status` | `WorkspaceOverviewView`、`WorkspaceLayout`；不是研究接口字段 |
+| 正在关注数、近期动态 | `WorkspaceOverviewResponseVO.activeStockCount/recentActivities[]` | `WorkspaceOverviewView` 直接请求 `getWorkspaceOverview`；计数不取最近动态数量，动态不再标“规划中” |
+| 邀请码与历史 | `currentInvitation` 含完整代码；`invitationHistory[]` 无完整代码 | 仅活动空间 OWNER 展示管理区；生成、停用与生成历史保持各自状态 |
+| 自选卡片 | `WorkspaceStockListResponseVO` 的关注价快照、`latestOpinion*`、`opinionCount/participantCount` | `WorkspaceStocksView`；最近个人观点不变成空间共识；卡片的查看行情仍原位展开 |
+| 最新行情 | `WorkspaceStockMarketDetailResponseVO.price/quoteTime/source/simulated/trackingState` | 独立行情页和研究页；与周期开始快照分开，缺报价不丢股票身份 |
+| 当前周期与完整时间线 | `researchDetail.currentCycle`；独立 timeline 响应 `cycles[] → opinions[]`、`nextCursor` | `WorkspaceStockResearchView`；摘要不承载完整历史，跨批合并同一期；撤销保留占位而隐藏正文 |
+| 提交对象 | 追加观点含 `researchCycleId`；开始新周期含 `code`；撤销使用 `opinionId` | `StockInitialOpinionForm`、研究页及 `stock.ts`；不能因表单外观相近而合并为同一提交职责 |
+| 行情图 | K 线 `candlestickSeries.candlesticks[]`；分时 `intradaySeries.points[]/tradingSessions[]` | 三处复用 `StockMarketPanel`，继续用现有 ECharts；同一时刻只挂载一个活动面板 |
+| 治理详情 | 用户 `memberships[]`；空间 `members[]`；列表分页 `items/total/totalPages` | 三个 admin 页与 `AdminLayout`，只展示治理字段，不混入研究正文 |
+
+正式迁移使用原位 template/style 改动和现有业务逻辑，不把生成 HTML、内存 adapter 或压缩后的 Vue 包复制到 `frontend/src`。预览不是第二个生产前端。清理判断仍按下文“使用者及最后迁移批次”执行，不因为某字段在默认状态未显示就删除它。
 
 - 原有 `api → Store／页面逻辑 → Vue 模板` 数据链继续使用，优先改 template 和 style；脚本改动限于必要的展示派生状态、焦点及布局生命周期，不能整段替换而丢失竞态保护、重试、草稿或请求清理。
 - 第一块把新视觉应用到空间布局与空间选择，并建立最小公共控件规则。保留已有语义变量名；实施时在已迁移根容器下覆盖变量与限定公共选择器，避免全局 `button/h2/input` 直接污染未迁移页面。未迁移子页继续工作，不声称已完成视觉验收。
@@ -81,4 +107,4 @@
 
 分块变更以可独立审阅的 diff 交付，提供中文提交信息但不自动提交。发生回退只恢复当前块已确认由本次产生的改动，保护用户原有工作；已有提交时按明确授权处理，不使用全目录 reset／clean。每块结束保留可运行状态。
 
-测试与数据／进程清理只按 [测试规则](../../engineering/testing.md) 执行。本轮纯文档，不启动业务服务、不写测试数据；实施阶段默认用隔离 mock 行情验证 UI，不把接真实供应商作为每块前置，也不据此宣称真实供应商验收完成。
+测试与数据／进程清理只按 [测试规则](../../engineering/testing.md) 执行。独立预览只启动临时浏览器、不启动业务服务、不写数据库；正式实施阶段默认用隔离 mock 行情验证 UI，不把接真实供应商作为每块前置，也不据此宣称真实供应商验收完成。

@@ -1,8 +1,8 @@
-# 同研自选前端视觉设计系统
+# 基点前端视觉设计系统
 
 ## 当前目标：预览风格迁移
 
-2026-09-29 用户确定直接采用指定 `stock-workspace-demo-v1.html` 的视觉风格，由 AI 完成真实页面的排版、文字及功能差异适配，并分块迁移。本轮只有计划，当前生产源码仍为原视觉。实施范围与边界见 [SPEC-003 需求](../specs/003-ui-migration/requirements.md)，参考文件基线与页面对应见 [迁移设计](../specs/003-ui-migration/design.md)，顺序见 [任务](../specs/003-ui-migration/tasks.md)。
+2026-09-29 用户确定采用指定 `stock-workspace-demo-v1.html` 的视觉风格。2026-09-30 进一步要求预览的功能内容与当前系统一致，并将名称改为“基点”；独立 V2 预览已改为从现有页面源码生成，正式生产源码仍为原视觉。实施范围与边界见 [SPEC-003 需求](../specs/003-ui-migration/requirements.md)，参考基线、字段对应及预览机制见 [迁移设计](../specs/003-ui-migration/design.md)，顺序见 [任务](../specs/003-ui-migration/tasks.md)。
 
 以下是新迁移页面的视觉正文；不再要求用户重选审美。下方“旧视觉参考”中的 YAML 和正文是尚未迁移代码的参数／历史说明，不能用来否决本节已确认的新方向。
 
