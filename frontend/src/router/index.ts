@@ -130,9 +130,11 @@ export async function authenticationGuard(
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.requiresAuth && !authStore.sessionVerified) {
+    const session = authStore.sessionVersion
     try {
       await authStore.refreshCurrentUser()
     } catch (error) {
+      if (session !== authStore.sessionVersion) return false
       if (isAuthenticationFailure(error)) {
         authStore.logout()
         workspaceStore.clearAll()
@@ -143,6 +145,7 @@ export async function authenticationGuard(
       // 由页面已有的加载失败状态保留当前会话并提供重试入口。
       return true
     }
+    if (session !== authStore.sessionVersion) return false
   }
   if (to.meta.requiresAdmin && !authStore.isSuperAdmin) {
     return { name: 'workspaces' }

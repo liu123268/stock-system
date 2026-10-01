@@ -51,8 +51,8 @@
 | `views/workspace/WorkspaceMembersView.vue` | `view-members` | 行式成员信息、身份及操作，保留转让、移除、退出的确认、反馈和权限条件。 |
 | `views/workspace/WorkspaceSettingsView.vue` | `view-settings` | 采用分段设置布局；补回空间改名表单，保留归档／恢复的来源限制及危险操作确认。 |
 | `views/LandingView.vue` | `page-home` | 按预览构图迁移品牌、介绍、示意图及页脚；登录／注册接真实路由，登录后的入口按真实角色分流。无实际目标的下载／社交占位链接不保留为可点击操作。 |
-| `components/AuthLayout.vue`、`views/LoginView.vue`、`views/RegisterView.vue` | 预览只有模拟跳转，无完整表单 | 用预览顶栏、字体、细线和表单语言适配原有表单及校验，不重新设计业务流程或模拟登录成功。 |
-| `views/ProfileView.vue` | 无完整对应 | 沿用设置分段布局，保留昵称和密码表单、改密后清会话、按角色返回和错误反馈。 |
+| `components/AuthLayout.vue`、`views/LoginView.vue`、`views/RegisterView.vue` | 内容补齐副本的 `page-login`／`page-register`，原 V2 未提供完整表单 | 沿副本的顶栏、介绍／表单双区及手机单列接入原 Element Plus 表单；校验、提交和反馈使用真实 API，不迁入演示成功脚本。 |
+| `views/ProfileView.vue` | 内容补齐副本的 `page-profile` | 沿昵称／改密分段布局，保留真实表单、改密后清会话、按角色返回和错误反馈；账号资料不绑定空间 ID。 |
 | `components/admin/AdminLayout.vue` 与三个 admin 视图 | `page-admin` 三个治理页 | 暖白侧栏、筛选表格及详情布局；保留分页、目标详情、影响说明、二次确认、治理恢复限制和操作记录；不展示空间研究正文。 |
 | `views/DesignPreviewView.vue`、`components/DesignOrbit.vue` | 旧设计资产，无新功能对应 | 最后阶段退出旧预览路由；轨道在首页与认证等最后引用迁移后再删除，核对 CSS、资源与相关测试。历史文档不因此整段删掉。 |
 
@@ -160,7 +160,16 @@
 - 三处账号入口由 auth Store 的当前状态统一计算：匿名可登录／注册，普通账号进入空间选择，管理员进入治理后台。进入受保护页面后仍沿原守卫确认会话与服务端角色，公开首页不主动读取业务数据。
 - 首页四个已知 hash 在无历史位置时由路由定位，历史位置优先；不改变研究页异步时间线定位或其他页面策略。普通走马灯在悬浮／焦点下继续，减少动态时关闭动画、去掉视觉重复并完整换行展示。窄屏曲线／记录单列，工作流程由四列转两列；字体沿共享回退。
 
-教学见 [公开演示与真实入口](../../engineering/frontend.md#ui-07-中的公开演示与真实入口)，浏览器与清理证据见 [UI-07 任务](tasks.md#ui-07-正式迁移2026-10-01)。旧轨道仍由认证布局及旧预览引用，本块不删除。
+教学见 [公开演示与真实入口](../../engineering/frontend.md#ui-07-中的公开演示与真实入口)，浏览器与清理证据见 [UI-07 任务](tasks.md#ui-07-正式迁移2026-10-01)。UI-07 完成时旧轨道仍由认证布局及旧预览引用；UI-08 已移除认证引用，旧预览及组件退出仍按 UI-10。
+
+### UI-08 实施落点
+
+- AuthLayout 改用共享 research-theme、品牌顶栏、左侧说明／静态星标、右侧真实表单及自然流页脚。桌面最大宽度 1120px，表单列 420px；600px 以下转单列，320px 顶栏允许换行。登录／注册继续使用 Element Plus 的 Form、FormItem、Input，局部 auth-form.css 衔接标签、校验、焦点、提交中和失败状态，不把预览的模拟注册／登录迁入源码。
+- 个人资料采用最大宽度 880px 的分段布局，760px 以下说明和表单转单列。登录账号保持只读说明，昵称及密码沿原接口；普通／管理员返回入口分别去空间选择／治理后台。显示密码用原生 checkbox，输入保留明确 label、name、autocomplete，提交期间锁定控件；页面错误留在表单旁，成功消息挂在 body 时显式带主题和 fixed 定位。
+- 登录／注册切换的顶栏与表单链接保留 redirect，登录抓取本次目标，注册成功带回账号、registered 原因及目标；Enter 走唯一表单提交入口，并在异步校验前加锁。离页后的登录／注册回调不能恢复会话、弹旧提示或导航。
+- auth Store 及路由守卫以运行期会话版本约束登录、资料读取／更新及导航，改密成功只清理发起时仍存在的会话，已换账号时忽略旧回调。空间选择页的列表 load 接入既有访问错误分类：当前会话真实 401 清理，网络失败保留重试，卸载／旧会话回调忽略。此次不扩展为所有 API 的全局处理，也不改后端凭据版本规则。
+
+表单职责见 [前端教学](../../engineering/frontend.md#ui-08-中的真实表单与提交生命周期)，会话算法只在 [认证设计](../../architecture/authentication.md#ui-08旧回调与当前会话) 维护，实际修复纳入 [BUG-006](../../engineering/bugs/BUG-006-stale-session-response.md)。截图、视口、真实改密／跨账号和清理证据见 [UI-08 任务](tasks.md#ui-08-正式迁移2026-10-01)；治理布局仍按 UI-09，旧组件仍按 UI-10。
 
 ### 2026-09-30 开工前复核：容易遗漏的行为约束
 

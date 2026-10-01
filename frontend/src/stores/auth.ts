@@ -39,27 +39,43 @@ export const useAuthStore = defineStore('auth', () => {
   const sessionVerified = ref(false)
   const isAuthenticated = computed(() => Boolean(accessToken.value))
   const isSuperAdmin = computed(() => currentUser.value?.accountType === 'SUPER_ADMIN')
+  // 读取／资料回调属于发起时的会话；退出或重新登录后不能恢复旧账号。
+  const sessionVersion = ref(0)
+  let loginVersion = 0
+
+  function invalidateLogin() {
+    loginVersion += 1
+  }
 
   async function login(request: LoginRequestDTO) {
+    const version = ++loginVersion
+    const session = sessionVersion.value
     const result = (await loginRequest(request)).data
+    if (version !== loginVersion || session !== sessionVersion.value) return false
     if (result.code !== 'SUCCESS') throw new Error(result.message || '登录失败，请稍后重试')
     saveSession(result.data)
+    return true
   }
 
   async function refreshCurrentUser() {
+    const session = sessionVersion.value
     const result = (await getCurrentUser()).data
+    if (session !== sessionVersion.value) return
     if (result.code !== 'SUCCESS') throw new Error(result.message || '登录状态验证失败')
     saveCurrentUser(result.data)
     sessionVerified.value = true
   }
 
   async function updateNickname(nickname: string) {
+    const session = sessionVersion.value
     const result = (await updateNicknameRequest(nickname)).data
+    if (session !== sessionVersion.value) return null
     saveCurrentUser(result.data)
     return result.data
   }
 
   function saveSession(loginResponse: LoginResponseVO) {
+    sessionVersion.value += 1
     accessToken.value = loginResponse.accessToken
     window.localStorage.setItem(TOKEN_STORAGE_KEY, loginResponse.accessToken)
     saveCurrentUser(loginResponse)
@@ -79,6 +95,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    sessionVersion.value += 1
+    invalidateLogin()
     accessToken.value = null
     currentUser.value = null
     sessionVerified.value = false
@@ -92,9 +110,11 @@ export const useAuthStore = defineStore('auth', () => {
     accessToken,
     currentUser,
     sessionVerified,
+    sessionVersion,
     isAuthenticated,
     isSuperAdmin,
     login,
+    invalidateLogin,
     refreshCurrentUser,
     updateNickname,
     logout,

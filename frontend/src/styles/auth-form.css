@@ -1,159 +1,147 @@
-.auth-form-heading {
-  margin-bottom: 34px;
+/* UI-08：限定账号表单，保留 Element Plus 的标签与验证。 */
+.auth-page .auth-form-heading {
+  margin-bottom: 26px;
 }
-
-.auth-form-heading p {
-  margin-bottom: 13px;
+.auth-page .auth-form-heading h2 {
+  color: var(--color-heading);
+  font: 900 26px/1.4 var(--font-display);
+}
+.auth-page .auth-sheet .el-form-item {
+  margin-bottom: 23px;
+}
+.auth-page .auth-sheet .el-form-item__label {
+  padding-bottom: 8px;
+  height: auto;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
 }
-
-.auth-form-heading h2 {
-  margin-bottom: 13px;
-  color: var(--color-heading);
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.18;
-  text-wrap: balance;
-}
-
-.auth-form-heading > span {
-  display: block;
-  max-width: 42ch;
-  color: var(--color-muted);
-  font-size: 14px;
-  line-height: 1.7;
-  text-wrap: pretty;
-}
-
-.auth-sheet .el-form-item {
-  margin-bottom: 21px;
-}
-
-.auth-sheet .el-form-item__label {
-  padding-bottom: 8px;
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.auth-sheet .el-input__wrapper {
-  min-height: 52px;
+.auth-page .auth-sheet .el-input__wrapper {
+  min-height: 46px;
+  padding: 0 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   box-shadow: none;
-  transition:
-    border-color 180ms var(--ease-out),
-    box-shadow 180ms var(--ease-out);
+  transition: border-color 180ms var(--ease-out);
 }
-
-.auth-sheet .el-input__wrapper:hover {
+.auth-page .auth-sheet .el-input__wrapper:hover {
   border-color: var(--color-faint);
 }
-
-.auth-sheet .el-input__wrapper.is-focus {
-  border-color: var(--color-ink);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-focus) 16%, transparent);
+.auth-page .auth-sheet .el-input__wrapper.is-focus {
+  border-color: var(--color-focus);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  box-shadow: none;
 }
-
-.auth-sheet .el-input__inner::placeholder {
+.auth-page .auth-sheet .el-input__inner {
+  color: var(--color-ink);
+  font-size: 14px;
+}
+.auth-page .auth-sheet .el-input__inner::placeholder {
   color: var(--color-muted);
   opacity: 1;
 }
-
-.auth-sheet .el-form-item.is-error .el-input__wrapper {
+.auth-page .auth-sheet .el-input.is-disabled .el-input__wrapper {
+  background: var(--color-surface-secondary);
+  cursor: wait;
+}
+.auth-page .auth-sheet .el-input.is-disabled .el-input__inner {
+  -webkit-text-fill-color: var(--color-muted);
+}
+.auth-page .auth-sheet .el-form-item.is-error .el-input__wrapper {
   border-color: var(--color-danger);
 }
-
-.auth-sheet .el-form-item__error {
+.auth-page .auth-sheet .el-form-item__error {
+  position: static;
+  padding-top: 6px;
   color: var(--color-danger);
+  line-height: 1.5;
 }
-
-.auth-submit-button {
+.auth-page .password-visibility {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 8px 0 28px;
+  color: var(--color-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.auth-page .password-visibility input {
+  margin: 0;
+  accent-color: var(--color-focus);
+}
+.auth-page .auth-submit-button {
   display: flex;
   width: 100%;
-  height: 52px;
+  min-height: 44px;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  margin-top: 9px;
-  padding: 0 18px;
-  border: 0;
+  gap: 12px;
+  padding: 10px 18px;
+  border: 1px solid var(--color-ink);
   border-radius: var(--radius-action);
-  background: var(--color-ink);
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition:
-    background 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
-}
-
-.auth-submit-button:hover:not(:disabled) {
-  background: oklch(0.16 0.006 255);
-}
-
-.auth-submit-button:active:not(:disabled) {
-  transform: scale(0.995);
-}
-
-.auth-submit-button:disabled {
-  cursor: wait;
-  opacity: 0.64;
-}
-
-.auth-switch-note {
-  margin-top: 26px;
-  color: var(--color-muted);
-  text-align: left;
-  font-size: 13px;
-}
-
-.auth-switch-note button {
-  padding: 3px 0;
-  border: 0;
-  border-bottom: 1px solid var(--color-ink);
-  background: none;
+  background: transparent;
   color: var(--color-ink);
   cursor: pointer;
   font: inherit;
-  font-weight: 600;
+  font-size: 13px;
 }
-
-.auth-switch-note button:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--color-focus) 28%, transparent);
-  outline-offset: 3px;
+.auth-page .auth-submit-button:hover:not(:disabled) {
+  background: var(--color-surface-secondary);
 }
-
-.auth-security-note {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  margin-top: 34px;
-  padding-top: 18px;
-  border-top: 1px solid var(--color-border);
+.auth-page .auth-submit-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.auth-page .auth-switch-note {
+  margin-top: 22px;
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
-
-.auth-security-mark {
-  display: grid;
-  width: 17px;
-  height: 17px;
-  place-items: center;
-  border: 1px solid var(--color-faint);
-  border-radius: 50%;
+.auth-page .auth-switch-note a {
+  display: inline-block;
+  min-height: 32px;
+  padding-block: 3px;
+  margin-left: 4px;
+  color: var(--color-focus);
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.auth-page .auth-security-note {
+  margin-top: 24px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+.auth-page .account-feedback {
+  margin-bottom: 22px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-focus);
+  background: var(--color-surface);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.auth-page .account-feedback.error {
+  color: var(--color-danger);
+}
+/* ElMessage 挂到 body，显式应用同一主题并保留其固定定位。 */
+.account-message.research-theme {
+  position: fixed;
+  max-width: calc(100vw - 32px);
+  background-image: none;
+  --el-message-bg-color: var(--color-surface);
+  --el-message-border-color: var(--color-border);
+  --el-message-text-color: var(--color-ink);
+}
+.account-message.research-theme::before {
+  display: none;
+}
+.account-message .el-message__content {
   color: var(--color-ink);
-  font-size: 10px;
-}
-
-@media (max-width: 520px) {
-  .auth-form-heading h2 {
-    font-size: 29px;
-  }
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }

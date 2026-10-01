@@ -258,22 +258,20 @@ try {
 
   await page.goto(`${frontendUrl}/register`)
 
-  const registerInputs = page.locator('input')
-  await registerInputs.nth(0).fill(ownerUsername)
-  await registerInputs.nth(1).fill(ownerNickname)
-  await registerInputs.nth(2).fill(password)
-  await registerInputs.nth(3).fill(password)
+  await page.getByLabel('登录账号', { exact: true }).fill(ownerUsername)
+  await page.getByLabel('昵称', { exact: true }).fill(ownerNickname)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByLabel('确认密码', { exact: true }).fill(password)
   await page.locator('.auth-submit-button').click()
 
   await page.waitForURL((url) => url.pathname === '/login')
 
-  const loginInputs = page.locator('input')
-  const prefilledUsername = await loginInputs.nth(0).inputValue()
+  const prefilledUsername = await page.getByLabel('登录账号', { exact: true }).inputValue()
   if (prefilledUsername !== ownerUsername) {
     throw new Error('注册后的登录账号没有自动带入登录页')
   }
 
-  await loginInputs.nth(1).fill(password)
+  await page.getByLabel('密码', { exact: true }).fill(password)
   await page.locator('.auth-submit-button').click()
   await page.waitForURL((url) => url.pathname === '/workspaces')
 
@@ -518,14 +516,13 @@ try {
   const memberPage = await memberContext.newPage()
   captureApiResponses(memberPage)
   await memberPage.goto(`${frontendUrl}/register`)
-  const memberRegisterInputs = memberPage.locator('input')
-  await memberRegisterInputs.nth(0).fill(memberUsername)
-  await memberRegisterInputs.nth(1).fill(memberNickname)
-  await memberRegisterInputs.nth(2).fill(password)
-  await memberRegisterInputs.nth(3).fill(password)
+  await memberPage.getByLabel('登录账号', { exact: true }).fill(memberUsername)
+  await memberPage.getByLabel('昵称', { exact: true }).fill(memberNickname)
+  await memberPage.getByLabel('密码', { exact: true }).fill(password)
+  await memberPage.getByLabel('确认密码', { exact: true }).fill(password)
   await memberPage.locator('.auth-submit-button').click()
   await memberPage.waitForURL((url) => url.pathname === '/login')
-  await memberPage.locator('input').nth(1).fill(password)
+  await memberPage.getByLabel('密码', { exact: true }).fill(password)
   await memberPage.locator('.auth-submit-button').click()
   await memberPage.waitForURL((url) => url.pathname === '/workspaces')
 
@@ -887,8 +884,8 @@ try {
   if (await memberPage.evaluate(() => localStorage.getItem('stock-system-access-token'))) {
     throw new Error('改密成功后前端没有清除当前 JWT')
   }
-  await memberPage.locator('input').nth(0).fill(memberUsername)
-  await memberPage.locator('input').nth(1).fill('NewBrowserPass456')
+  await memberPage.getByLabel('登录账号', { exact: true }).fill(memberUsername)
+  await memberPage.getByLabel('密码', { exact: true }).fill('NewBrowserPass456')
   await memberPage.getByRole('button', { name: '进入空间' }).click()
   await memberPage.waitForURL((url) => url.pathname.startsWith('/workspaces'))
 

@@ -97,4 +97,31 @@ describe('authentication route guard', () => {
       }),
     ).resolves.toEqual({ name: 'workspaces' })
   })
+
+  it.each(['success', '401'] as const)(
+    'cancels old verification on %s after the session changes',
+    async (result) => {
+      const store = useAuthStore()
+      let release!: () => void
+      vi.spyOn(store, 'refreshCurrentUser').mockImplementation(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            release = () =>
+              result === 'success'
+                ? resolve()
+                : reject(new ApiError('UNAUTHENTICATED', '旧会话失效', 401, true))
+          }),
+      )
+      const pending = authenticationGuard(protectedRoute('/profile'))
+      store.logout()
+      // 模拟另一会话已登录，旧守卫不能清理它，也不能继续旧导航。
+      store.accessToken = 'new-account-token'
+      localStorage.setItem(TOKEN_STORAGE_KEY, 'new-account-token')
+      const clearAll = vi.spyOn(useWorkspaceStore(), 'clearAll')
+      release()
+      expect(await pending).toBe(false)
+      expect(store.isAuthenticated).toBe(true)
+      expect(clearAll).not.toHaveBeenCalled()
+    },
+  )
 })

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { handleWorkspaceApiError } from '@/utils/workspace-access'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,15 +23,19 @@ const archivedWorkspaces = computed(() =>
 let disposed = false
 
 async function load() {
+  const session = authStore.sessionVersion
   try {
     const items = await store.loadWorkspaces()
+    if (disposed || session !== authStore.sessionVersion) return
     const active = items.filter((item) => item.status === 'ACTIVE')
     const onlyWorkspace = active[0]
     if (!disposed && !route.query.reason && active.length === 1 && onlyWorkspace) {
       await openWorkspace(onlyWorkspace.workspaceId)
     }
-  } catch {
-    // Store 保存加载错误，重试只重新读取列表。
+  } catch (error) {
+    if (disposed || session !== authStore.sessionVersion) return
+    if (await handleWorkspaceApiError(error, router)) return
+    // 普通网络失败仍由 Store 保存错误，只读重试；真实 401 则清旧会话。
   }
 }
 

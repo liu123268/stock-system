@@ -387,6 +387,16 @@ UI-01 将账号区移到底部，但保留完整退出调用链；`auth.logout()
 
 复制沿浏览器 Clipboard API；成功才提示已复制，拒绝则保留可选中的代码并说明手动复制。重新生成请求携带页面所见的 `currentInvitationId`，由后端对照当前记录；另一会话已换码会收到 `INVITATION_CHANGED`，用户重新核对后手动操作，不自动重发 POST。所有权转让后重新进入概览会读取新身份；归档空间保留数量／动态读取，写入权限仍由后端判断。数量与最终验收统一见 [UI-05 任务证据](../specs/003-ui-migration/tasks.md#ui-05-正式迁移2026-10-01)。
 
+### UI-08 中的真实表单与提交生命周期
+
+AuthLayout 原来负责轨道装饰和双区外壳；Login／Register 负责 Element Plus 校验和真实提交；Profile 负责昵称／改密。迁移后外壳采用 V2 顶栏、说明与表单构图，资料页采用分段布局，三个页面仍沿原 API。不能把预览“点击就成功”的脚本放进正式组件，也不能因新按钮样式删掉 label、autocomplete、Enter 或错误反馈。
+
+登录／注册只使用 form submit 触发，取消重复 keyup Enter 入口；submitting 在 await validate 之前锁定，避免校验尚未结束时第二次提交进入。显示密码是原生 checkbox，不提交表单；按钮、输入和 checkbox 在请求期间禁用。校验失败解除锁定，后端错误以局部 alert 展示并保留草稿。注册成功回 login，带 username、registered 原因与本次 redirect；顶栏与表单里的登录／注册切换也保留 redirect，登录成功按原守卫检查角色后回目标，包含 query／hash。
+
+个人资料的 busy 同时约束昵称和密码，避免一边改密清会话、一边继续改昵称。昵称去首尾空白并检查 1～20 字符；新密码仍沿现有 4～64 字符和确认一致，原密码由后端核对。原密码错误不清会话；成功后提示重新登录并预填账号，新资料实例的密码字段为空。昵称响应在 Store 同步共享资料，页面只控制本地输入／反馈；会话与离页保护的完整算法集中在 [认证设计](../architecture/authentication.md#ui-08旧回调与当前会话)，不把页面卸载理解成取消服务器写入。
+
+auth-form.css 只作用于 auth-page；校验文案以正常流换行，320px 下不覆盖下一项。成功 ElMessage 被挂到 body，显式提供 research-theme 变量并恢复 fixed 定位，不能指望页面祖先样式传到它。测试定位由第几个 input 改为明确 label，保留原 auth smoke 断言和 finally 清理。截图与实际行为证据见 [UI-08 任务](../specs/003-ui-migration/tasks.md#ui-08-正式迁移2026-10-01)；可练习解释“为什么在 await validate 前加锁”和“注册切换后 redirect 为何仍存在”，测试通过不替代独立实现。
+
 ## 十一、共享自选首个前端闭环
 
 `CODE-204` 把此前只有后端能力的股票搜索和原子添加接入 `/workspaces/:workspaceId/stocks`。后来 CODE-211A 把“选择搜索候选”和“填写初始观点”拆开：页面负责交互，`stock Store` 分别保存列表、搜索、单股行情、图表和提交状态，`stock API` 描述请求契约，后端仍负责空间成员权限和可信字段。

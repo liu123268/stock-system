@@ -18,6 +18,7 @@
     "test:e2e:ui-overview": "node e2e/ui-overview-smoke.mjs",
     "test:e2e:ui-management": "node e2e/ui-management-smoke.mjs",
     "test:e2e:ui-landing": "node e2e/ui-landing-smoke.mjs",
+    "test:e2e:ui-account": "node e2e/ui-account-smoke.mjs",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:oxlint lint:eslint",

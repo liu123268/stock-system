@@ -66,6 +66,8 @@ UI-06 的成员／设置定向验收在 `frontend` 运行 `npm.cmd run test:e2e:
 
 UI-07 的公开首页验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-landing`，需要 test mock 后端，默认前后端为 18083／18082，可用 `FRONTEND_URL`／`BACKEND_URL` 指定。`E2E_UI_PHASE=before` 只采编辑前页面；默认 `after` 检查本地演示零 API 请求、真实匿名／普通／管理员入口、过期会话、锚点与历史位置、键盘、窄屏及动效偏好。截图与 JSON 默认在工作区 `ui-preview/ui-07`。写入前沿第 4 节核对两条探针及实际 SQL catalog；管理员仅以本轮随机测试账号构造，既有 super_admin 非空时拒绝搭建。finally 删除本轮管理员、账号、空间及关联数据并逐表核对 0，不替代 admin smoke 的治理写入闭环。
 
+UI-08 的认证／资料验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-account`，默认 test mock 18083／18082，也可用 FRONTEND_URL／BACKEND_URL 指定。`E2E_UI_PHASE=before` 只采编辑前 15 个视口，默认 after 检查真实校验／重复账号／错误凭据、提交锁定、回跳、角色返回、昵称同步与草稿、真实改密及另一个浏览器旧凭证，并暂停已由后端处理的响应，验证离页／换账号后的副作用归属。截图与 JSON 在工作区 ui-preview/ui-08；正常与减少动态偏好、键盘和 320px 表单均检查。沿第 4 节先验证两条探针与实际 catalog，只为本轮随机账号构造管理员关系，既有 super_admin 非空时拒绝搭建；finally 精确清理本轮账号、空间、管理员及关联记录，逐表剩余为 0。原 auth smoke 保留完整业务断言，仅将认证输入定位改为 label；本脚本不替代治理写入或供应商验收。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：

@@ -1,21 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ArrowRight, EditPen, Lock, User } from '@element-plus/icons-vue'
-import {
-  ElForm,
-  ElFormItem,
-  ElIcon,
-  ElInput,
-  ElMessage,
-  type FormInstance,
-  type FormRules,
-} from 'element-plus'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElForm, ElFormItem, ElInput, type FormInstance, type FormRules } from 'element-plus'
 import 'element-plus/es/components/form/style/css'
 import 'element-plus/es/components/form-item/style/css'
-import 'element-plus/es/components/icon/style/css'
 import 'element-plus/es/components/input/style/css'
-import 'element-plus/es/components/message/style/css'
 import { register } from '@/api/auth'
 import AuthLayout from '@/components/AuthLayout.vue'
 
@@ -27,8 +16,15 @@ interface RegisterForm {
 }
 
 const router = useRouter()
+const route = useRoute()
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
+const actionError = ref('')
+const showPassword = ref(false)
+let disposed = false
+const loginQuery = computed(() =>
+  typeof route.query.redirect === 'string' ? { redirect: route.query.redirect } : {},
+)
 const form = reactive<RegisterForm>({
   username: '',
   nickname: '',
@@ -63,11 +59,13 @@ const rules: FormRules<RegisterForm> = {
 }
 
 async function handleRegister() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-
+  if (submitting.value) return
   submitting.value = true
+  actionError.value = ''
   try {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid || disposed) return
+    const returnQuery = { ...loginQuery.value }
     const result = (
       await register({
         username: form.username,
@@ -75,37 +73,46 @@ async function handleRegister() {
         password: form.password,
       })
     ).data
+    if (disposed) return
     if (result.code !== 'SUCCESS') throw new Error(result.message || '注册失败，请稍后重试')
 
-    ElMessage.success('账号创建成功，请登录')
-    await router.replace({ name: 'login', query: { username: result.data.username } })
+    await router.replace({
+      name: 'login',
+      query: { ...returnQuery, username: result.data.username, reason: 'registered' },
+    })
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '暂时无法注册，请稍后重试')
+    if (!disposed)
+      actionError.value = error instanceof Error ? error.message : '暂时无法注册，请稍后重试'
   } finally {
     submitting.value = false
   }
 }
+onBeforeUnmount(() => {
+  disposed = true
+})
 </script>
 
 <template>
-  <AuthLayout>
+  <AuthLayout mode="register">
     <div class="auth-form-heading">
-      <p>开始记录</p>
       <h2>创建你的研究账号</h2>
-      <span>建立个人身份，再通过邀请加入家人或伙伴的共享空间。</span>
     </div>
 
     <el-form
       ref="formRef"
       :model="form"
       :rules="rules"
+      :disabled="submitting"
+      :aria-busy="submitting"
       label-position="top"
       @submit.prevent="handleRegister"
     >
       <el-form-item label="登录账号" prop="username">
         <el-input
           v-model="form.username"
-          :prefix-icon="User"
+          id="register-username"
+          name="username"
+          autocomplete="username"
           placeholder="4-20位字母、数字或下划线"
           size="large"
         />
@@ -114,7 +121,9 @@ async function handleRegister() {
       <el-form-item label="昵称" prop="nickname">
         <el-input
           v-model="form.nickname"
-          :prefix-icon="EditPen"
+          id="register-nickname"
+          name="nickname"
+          autocomplete="nickname"
           placeholder="伙伴们看到的称呼"
           size="large"
         />
@@ -123,37 +132,40 @@ async function handleRegister() {
       <el-form-item label="密码" prop="password">
         <el-input
           v-model="form.password"
-          :prefix-icon="Lock"
-          type="password"
+          id="register-password"
+          name="password"
+          autocomplete="new-password"
+          :type="showPassword ? 'text' : 'password'"
           placeholder="至少4个字符"
           size="large"
-          show-password
         />
       </el-form-item>
 
       <el-form-item label="确认密码" prop="confirmPassword">
         <el-input
           v-model="form.confirmPassword"
-          :prefix-icon="Lock"
-          type="password"
+          id="register-confirm"
+          name="confirmPassword"
+          autocomplete="new-password"
+          :type="showPassword ? 'text' : 'password'"
           placeholder="再次输入密码"
           size="large"
-          show-password
-          @keyup.enter="handleRegister"
         />
       </el-form-item>
 
+      <label class="password-visibility"
+        ><input v-model="showPassword" type="checkbox" :disabled="submitting" />显示密码</label
+      >
+      <p v-if="actionError" class="account-feedback error" role="alert">{{ actionError }}</p>
       <button class="auth-submit-button" type="submit" :disabled="submitting">
         <span>{{ submitting ? '正在创建…' : '创建账号' }}</span>
-        <el-icon v-if="!submitting"><ArrowRight /></el-icon>
+        <span v-if="!submitting" aria-hidden="true">→</span>
       </button>
     </el-form>
 
     <p class="auth-switch-note">
-      已有账号？<button type="button" @click="router.push('/login')">返回登录</button>
+      已有账号？<RouterLink :to="{ name: 'login', query: loginQuery }">返回登录</RouterLink>
     </p>
-    <div class="auth-security-note">
-      <span class="auth-security-mark">✓</span>账号状态和创建时间由系统自动管理
-    </div>
+    <div class="auth-security-note">昵称用于空间内展示，登录账号保持不变。</div>
   </AuthLayout>
 </template>
