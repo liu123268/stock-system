@@ -6,7 +6,7 @@
 
 认证、普通空间基础边界、超级管理员治理、空间改名、个人资料和邀请码防猜测完成至 [SPEC-001 CODE-010](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-209 时间线分批读取、CODE-210 空间概览动态、CODE-211A 未关注行情页、CODE-211B 研究详情行情和 CODE-212 共享列表研究摘要均已关闭。
 
-**当前状态：UI-01～06 已完成，下一块为 UI-07 公开首页。** 正式前端已迁移公共外壳、空间选择、共享自选、行情页／初始观点／共用图表、研究详情、概览、成员与设置。UI-06 完成真实移除／转让／退出、改名／归档恢复及来源限制，保存后读取失败与六类迟到写入已验证；教学数据流见 [前端工程](../engineering/frontend.md#ui-06-中的保存结果与页面归属)。参考仍是工作区 `ui-preview/stock-workspace-demo-v2-content-aligned.html`；按原 10 块顺序推进。实施与编辑前／后截图见 [SPEC-003 UI-06](../specs/003-ui-migration/tasks.md#ui-06-正式迁移2026-10-01)。
+**当前状态：UI-01～07 已完成，下一块为 UI-08 认证与个人资料。** 正式前端已迁移公共外壳、空间选择、共享自选、行情页／初始观点／共用图表、研究详情、概览、成员与设置，以及公开首页。UI-07 采用 V2 构图，本地示意不请求业务数据，真实入口沿原守卫按会话与角色进入；教学见 [公开演示与真实入口](../engineering/frontend.md#ui-07-中的公开演示与真实入口)。参考仍是工作区 `ui-preview/stock-workspace-demo-v2-content-aligned.html`；按原 10 块顺序推进。实施与编辑前／后截图见 [SPEC-003 UI-07](../specs/003-ui-migration/tasks.md#ui-07-正式迁移2026-10-01)。UI-08 先迁移登录／注册，再迁移个人资料，核对真实校验、回跳／角色分流、昵称与改密会话边界。
 
 原业务待办 [SPEC-002 CODE-206G](../specs/002-stock-research/tasks.md)（北交所与港股目录覆盖、每日幂等同步和失败追溯）及 CODE-206H（部署环境 sidecar 与行情权限验收）仍未完成，UI 改版不自动实施或关闭它们；之后按 V1 演示标准做跨模块收口，不能只凭逐项勾选宣称 Java 核心 V1 完成。跨阶段关系见 [路线](roadmap.md)。
 
@@ -28,13 +28,13 @@
 
 ## 环境快照
 
-开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。UI-01～06 临时 test 服务的关闭与端口核对只见对应任务证据；没有启动或改动 dev 服务。
+开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。UI-01～07 临时 test 服务的关闭与端口核对只见对应任务证据；没有启动或改动 dev 服务。
 
 2026-09-28 测试库 `stock_system_test` 和开发库 `stock_system` 已按顺序经 Flyway 升至 V10；开发库原有 2 个账号仍为 2 个，测试库本轮浏览器账号与 `research_attention_change` 均为 0 行。V10 只新增关注级别历史表；V9 邀请计数、V8 凭据版本及此前 V7 目录回填证据见对应 tasks；以后执行数据库操作仍须重新核对现场。
 
 ## 最近验证
 
-2026-10-01：UI-06 的 89 项／14 文件前端单元测试、类型、只读 lint、构建及 auth smoke 通过。成员／设置定向验收包含 31 个视口记录与 21 个行为检查，涵盖保存后读取失败只读重试、实际成员与归档流程、确认取消／焦点、改名／草稿、并发身份变化和六类迟到写入。测试数据精确清理为 0，临时 Java／Vite 已关闭且 18082／18083 释放，用户原 8082／8083 开发服务保留。本轮未运行完整后端、真实供应商、治理后台或其他 UI 专项；跨模块回归由 auth smoke 承接。详细证据见 [UI-06 任务](../specs/003-ui-migration/tasks.md#ui-06-正式迁移2026-10-01)，旧阶段结果保留在 tasks。
+2026-10-01：UI-07 的 95 项／14 文件前端单元测试、类型、只读 lint、构建及 auth smoke 通过。首页定向验收共 28 项，涵盖 16 个视口记录及本地零 API、示意键盘切换、静态／正常走马灯、锚点／历史位置、真实普通／管理员入口与过期会话。测试数据精确清理为 0，临时 Java／Vite 已关闭且 18082／18083 释放，用户原 8082／8083 开发服务保留。本轮未运行完整后端、真实供应商、治理写入闭环或其他 UI 专项；跨模块回归由 auth smoke 承接。详细证据见 [UI-07 任务](../specs/003-ui-migration/tasks.md#ui-07-正式迁移2026-10-01)，旧阶段结果保留在 tasks。
 
 以下保留已完成业务实施的最近验收记录：
 

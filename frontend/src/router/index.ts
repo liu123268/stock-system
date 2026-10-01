@@ -8,6 +8,13 @@ const router = createRouter({
   scrollBehavior(to, _from, savedPosition) {
     // 研究时间线由页面在异步数据和报价布局完成后定位，路由不能再把它滚回顶部。
     if (to.name === 'workspace-stock-research' && to.hash === '#research-timeline') return false
+    // 首页介绍区已同步渲染；直达锚点与刷新可由路由定位，历史返回仍用保存位置。
+    if (
+      to.name === 'home' &&
+      !savedPosition &&
+      ['#desk', '#features', '#room', '#workflow'].includes(to.hash)
+    )
+      return { el: to.hash, top: 24 }
     return savedPosition ?? { top: 0 }
   },
   routes: [

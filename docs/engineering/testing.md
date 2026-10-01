@@ -64,6 +64,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 UI-06 的成员／设置定向验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-management`，沿第 4 节在写入前检查两条 test 探针和实际 catalog。`E2E_UI_PHASE=before` 留编辑前正常与确认区基线，默认 `after` 验证真实成员生命周期、保存后 GET 失败只读重试、名称校验／同步／草稿、归档来源和六类迟到写入；截图与 JSON 默认在工作区 `ui-preview/ui-06`。治理归档分支只对本轮空间以 SQL 构造来源，并调用真实 restore API 检查 403，不替代 admin smoke；所有本轮账号、空间及关联记录 finally 精确清理。
 
+UI-07 的公开首页验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-landing`，需要 test mock 后端，默认前后端为 18083／18082，可用 `FRONTEND_URL`／`BACKEND_URL` 指定。`E2E_UI_PHASE=before` 只采编辑前页面；默认 `after` 检查本地演示零 API 请求、真实匿名／普通／管理员入口、过期会话、锚点与历史位置、键盘、窄屏及动效偏好。截图与 JSON 默认在工作区 `ui-preview/ui-07`。写入前沿第 4 节核对两条探针及实际 SQL catalog；管理员仅以本轮随机测试账号构造，既有 super_admin 非空时拒绝搭建。finally 删除本轮管理员、账号、空间及关联数据并逐表核对 0，不替代 admin smoke 的治理写入闭环。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：
