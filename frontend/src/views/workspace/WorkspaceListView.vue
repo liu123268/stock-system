@@ -131,7 +131,7 @@ onBeforeUnmount(() => {
       <section v-else-if="store.errorMessage" class="picker-state" role="alert">
         <h2>空间暂时没有加载出来</h2>
         <p>{{ store.errorMessage }}</p>
-        <button class="primary-action" type="button" @click="load">重新加载</button>
+        <button class="ui-button primary-action" type="button" @click="load">重新加载</button>
       </section>
       <div v-else class="picker-grid">
         <section class="workspace-list-section" aria-label="我的空间">
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
                 保存时会删除空白字符，最终长度为 1 到 30 个字符。
               </p>
               <p id="workspace-name-error" class="form-error" role="alert">{{ formError }}</p>
-              <button class="primary-action" type="submit" :disabled="busy">
+              <button class="ui-button primary-action" type="submit" :disabled="busy">
                 {{ creating ? '正在创建…' : '创建空间' }}
               </button>
             </form>
@@ -218,7 +218,7 @@ onBeforeUnmount(() => {
               @input="normalizeInviteCode"
             />
             <p id="invite-code-error" class="form-error" role="alert">{{ joinError }}</p>
-            <button class="primary-action" type="submit" :disabled="busy">
+            <button class="ui-button primary-action" type="submit" :disabled="busy">
               {{ joining ? '正在加入…' : '使用邀请码加入' }}
               <span v-if="!joining" aria-hidden="true">↗</span>
             </button>
@@ -340,7 +340,6 @@ onBeforeUnmount(() => {
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: background-color 180ms ease-out;
 }
 .workspace-row:hover {
   background: var(--color-surface-secondary);
@@ -484,10 +483,6 @@ onBeforeUnmount(() => {
   color: var(--color-surface);
   font-size: 12px;
   cursor: pointer;
-  transition: background-color 180ms ease-out;
-}
-.primary-action:hover:not(:disabled) {
-  background: #373229;
 }
 .primary-action:disabled {
   border-color: var(--color-muted);

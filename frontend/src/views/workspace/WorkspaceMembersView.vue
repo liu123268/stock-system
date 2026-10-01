@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
     <h1>成员列表暂时没有加载出来</h1>
     <p>{{ pageError }}</p>
     <p v-if="actionMessage" class="feedback">{{ actionMessage }}</p>
-    <button class="primary" type="button" @click="load">重新加载</button>
+    <button class="ui-button primary" type="button" @click="load">重新加载</button>
   </section>
   <template v-else-if="workspace">
     <section class="members-heading management-heading">
@@ -182,9 +182,10 @@ onBeforeUnmount(() => {
         <p>{{ confirmationText }}</p>
       </div>
       <div class="confirmation-actions">
-        <button type="button" :disabled="actionLoading" @click="cancelAction">取消</button
+        <button class="ui-button" type="button" :disabled="actionLoading" @click="cancelAction">
+          取消</button
         ><button
-          class="danger-action"
+          class="ui-button danger-action"
           type="button"
           :disabled="actionLoading"
           @click="confirmAction"
@@ -197,7 +198,7 @@ onBeforeUnmount(() => {
     <p v-if="actionMessage" class="feedback" role="status">{{ actionMessage }}</p>
     <div v-if="refreshWarning" class="refresh-warning" role="alert">
       <p>{{ refreshWarning }}</p>
-      <button type="button" @click="load">重新读取</button>
+      <button class="ui-button" type="button" @click="load">重新读取</button>
     </div>
     <section class="member-list" aria-label="有效成员列表">
       <article
@@ -219,13 +220,14 @@ onBeforeUnmount(() => {
         <time :datetime="member.lastJoinedAt">最近加入 {{ member.lastJoinedAt.slice(0, 10) }}</time>
         <div v-if="isOwner && !isArchived && member.role === 'MEMBER'" class="member-actions">
           <button
+            class="ui-button"
             type="button"
             :disabled="actionLoading || !!refreshWarning"
             @click="requestAction('transfer', $event, member)"
           >
             转让所有权</button
           ><button
-            class="danger-action"
+            class="ui-button danger-action"
             type="button"
             :disabled="actionLoading || !!refreshWarning"
             @click="requestAction('remove', $event, member)"
@@ -244,7 +246,7 @@ onBeforeUnmount(() => {
         <p>退出后立即失去访问权，重新加入需要有效邀请码。OWNER 需先转让所有权，再退出空间。</p>
       </div>
       <button
-        class="danger-action"
+        class="ui-button danger-action"
         type="button"
         :disabled="isOwner || actionLoading || !!refreshWarning"
         :title="isOwner ? 'OWNER 需先转让所有权' : undefined"

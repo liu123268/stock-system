@@ -41,7 +41,7 @@ onMounted(() => void load())
     </header>
     <div v-if="store.error" class="admin-error" role="alert">
       <p>{{ store.error }}</p>
-      <button class="admin-button" type="button" :disabled="store.loading" @click="load">
+      <button class="ui-button admin-button" type="button" :disabled="store.loading" @click="load">
         重试读取
       </button>
     </div>
@@ -62,7 +62,9 @@ onMounted(() => void load())
             <option value="FAILED">失败</option>
           </select></label
         >
-        <button class="admin-button primary" type="submit" :disabled="store.loading">查询</button>
+        <button class="ui-button admin-button primary" type="submit" :disabled="store.loading">
+          查询
+        </button>
       </form>
       <p v-if="store.loading && !store.operationLogs.items.length" class="admin-state">
         正在读取操作记录…
@@ -108,7 +110,7 @@ onMounted(() => void load())
       <div class="admin-pagination">
         <span class="admin-muted">共 {{ store.operationLogs.total }} 条</span
         ><button
-          class="admin-button"
+          class="ui-button admin-button"
           type="button"
           :disabled="page <= 1 || store.loading"
           @click="changePage(page - 1)"
@@ -117,7 +119,7 @@ onMounted(() => void load())
         ><span
           >{{ store.operationLogs.page }} / {{ Math.max(store.operationLogs.totalPages, 1) }}</span
         ><button
-          class="admin-button"
+          class="ui-button admin-button"
           type="button"
           :disabled="page >= store.operationLogs.totalPages || store.loading"
           @click="changePage(page + 1)"

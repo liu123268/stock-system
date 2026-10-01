@@ -85,7 +85,12 @@ onMounted(() => void load())
 
     <div v-if="store.error && !pending" class="admin-error" role="alert">
       <p>{{ refreshFailed ? '操作已完成，但列表刷新失败。' : '' }}{{ store.error }}</p>
-      <button class="admin-button" type="button" :disabled="store.loading || busy" @click="load">
+      <button
+        class="ui-button admin-button"
+        type="button"
+        :disabled="store.loading || busy"
+        @click="load"
+      >
         重试读取
       </button>
     </div>
@@ -112,7 +117,11 @@ onMounted(() => void load())
             <option value="DISABLED">已禁用</option>
           </select></label
         >
-        <button class="admin-button primary" type="submit" :disabled="store.loading || busy">
+        <button
+          class="ui-button admin-button primary"
+          type="submit"
+          :disabled="store.loading || busy"
+        >
           查询
         </button>
       </form>
@@ -171,7 +180,7 @@ onMounted(() => void load())
               <td @click.stop>
                 <button
                   v-if="user.status === 'ACTIVE'"
-                  class="admin-button"
+                  class="ui-button admin-button"
                   type="button"
                   :disabled="busy || user.accountType === 'SUPER_ADMIN'"
                   :title="user.accountType === 'SUPER_ADMIN' ? '唯一治理账号不能禁用' : undefined"
@@ -181,7 +190,7 @@ onMounted(() => void load())
                 </button>
                 <button
                   v-else
-                  class="admin-button"
+                  class="ui-button admin-button"
                   type="button"
                   :disabled="busy"
                   @click="requestStatus(user, 'ACTIVE', $event)"
@@ -197,7 +206,7 @@ onMounted(() => void load())
       <div class="admin-pagination">
         <span class="admin-muted">共 {{ store.users.total }} 条</span>
         <button
-          class="admin-button"
+          class="ui-button admin-button"
           type="button"
           :disabled="page <= 1 || store.loading || busy"
           @click="changePage(page - 1)"
@@ -206,7 +215,7 @@ onMounted(() => void load())
         </button>
         <span>{{ store.users.page }} / {{ Math.max(store.users.totalPages, 1) }}</span>
         <button
-          class="admin-button"
+          class="ui-button admin-button"
           type="button"
           :disabled="page >= store.users.totalPages || store.loading || busy"
           @click="changePage(page + 1)"

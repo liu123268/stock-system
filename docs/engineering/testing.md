@@ -73,6 +73,8 @@ UI-10 全站检查在 `frontend` 运行 `npm.cmd run test:e2e:ui-final`，默认
 
 九块专项与原 auth／admin 串行回归使用 `npm.cmd run test:e2e:ui-regression`，每个原脚本继续独立检查与清理。输出默认工作区 ui-preview/ui-10/regression-*，总结果在 regression-verification.json，失败即停，不把未运行项算通过。目录模式仍另启 test directory 后端并运行原 test:e2e:directory，不能并入 mock 套件假称已验证真实目录；切换与最终清理按第 5 节。实际 UI-10 结果只见 SPEC-003 tasks。
 
+UI 交互补验使用 `npm.cmd run test:e2e:ui-interactions`：正常动态下分别采默认／悬浮／实际按住的状态，并检查十四页四宽度悬浮边界、选中对比度、真实请求锁定、键盘、实际触摸与取消、reduce 即时反馈及边缘点击。`E2E_UI_PHASE=before` 只能在编辑前留基线；默认 after，输出工作区 ui-preview/ui-interactions，支持 E2E_UI_OUTPUT／FRONTEND_URL／BACKEND_URL。生产构建可指向独立 preview，另存 production。沿第 4 节核对两条探针与实际 catalog，拒绝覆盖已有管理员；随机三账号、两空间和研究／成员／邀请／管理员关系 finally 精确清理。原业务专项的断言和清理仍保留，实际证据只见 SPEC-003 tasks 的交互补验。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：

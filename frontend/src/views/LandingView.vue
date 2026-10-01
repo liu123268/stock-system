@@ -75,12 +75,12 @@ const workflow = [
         <RouterLink :to="{ name: 'home', hash: '#workflow' }">开始</RouterLink>
       </nav>
       <nav class="landing-actions" aria-label="账号入口">
-        <RouterLink v-if="authStore.isAuthenticated" class="nav-cta" :to="entry"
+        <RouterLink v-if="authStore.isAuthenticated" class="ui-button nav-cta" :to="entry"
           >{{ entryLabel }} <span aria-hidden="true">↗</span></RouterLink
         >
         <template v-else
           ><RouterLink class="login-link" :to="{ name: 'login' }">登录</RouterLink
-          ><RouterLink class="nav-cta" :to="{ name: 'register' }"
+          ><RouterLink class="ui-button nav-cta" :to="{ name: 'register' }"
             >注册 <span aria-hidden="true">↗</span></RouterLink
           ></template
         >
@@ -335,10 +335,6 @@ const workflow = [
   padding: 8px 18px;
   gap: 12px;
   font: 12px var(--font-mono);
-}
-.nav-cta:hover {
-  background: var(--color-ink);
-  color: var(--color-surface);
 }
 .firstscreen {
   display: flex;
@@ -805,6 +801,15 @@ em {
   -webkit-text-stroke: 1px var(--color-border);
   font: 900 clamp(60px, 10vw, 150px)/1 var(--font-display);
   user-select: none;
+  transition:
+    color 600ms var(--ease-out),
+    -webkit-text-stroke-color 600ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .foot-mark:hover {
+    color: var(--color-ink);
+    -webkit-text-stroke-color: transparent;
+  }
 }
 .foot-links {
   display: flex;

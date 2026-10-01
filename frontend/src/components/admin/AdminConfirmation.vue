@@ -22,11 +22,11 @@ onMounted(() => {
     <h3 id="admin-confirm-title">{{ title }}</h3>
     <div id="admin-confirm-description"><slot /></div>
     <div class="admin-confirm-actions">
-      <button class="admin-button" type="button" :disabled="busy" @click="emit('cancel')">
+      <button class="ui-button admin-button" type="button" :disabled="busy" @click="emit('cancel')">
         取消
       </button>
       <button
-        class="admin-button"
+        class="ui-button admin-button"
         :class="{ danger }"
         type="button"
         :disabled="busy"

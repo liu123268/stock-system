@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
     <h1>暂时无法打开这只股票</h1>
     <p>{{ stockStore.marketDetailError || '股票行情不存在' }}</p>
     <div class="state-actions">
-      <button class="primary" type="button" @click="load">重新加载</button>
+      <button class="ui-button primary" type="button" @click="load">重新加载</button>
       <RouterLink :to="backToStocks">返回股票搜索</RouterLink>
     </div>
   </section>
@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
         <strong>{{ formatPrice(market.price, market.currency) }}</strong>
         <RouterLink
           v-if="market.trackingState === 'ACTIVE' && market.workspaceStockId"
-          class="primary action-link"
+          class="ui-button primary action-link"
           :to="{
             name: 'workspace-stock-research',
             params: { workspaceId, workspaceStockId: market.workspaceStockId },
@@ -245,7 +245,7 @@ onBeforeUnmount(() => {
         <button
           v-else
           ref="addButton"
-          class="primary"
+          class="ui-button primary"
           type="button"
           :disabled="!canStartResearch"
           @click="openOpinionForm"
@@ -387,9 +387,6 @@ onBeforeUnmount(() => {
   text-decoration: none;
   cursor: pointer;
   font-size: 12px;
-}
-.primary:hover {
-  background: var(--color-text);
 }
 .primary:disabled {
   cursor: not-allowed;

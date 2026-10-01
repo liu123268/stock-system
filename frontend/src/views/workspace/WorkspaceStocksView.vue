@@ -216,8 +216,10 @@ onBeforeUnmount(() => {
     <h1>暂时无法进入这个空间</h1>
     <p>{{ workspaceStore.errorMessage }}</p>
     <div class="state-actions">
-      <button class="primary" type="button" @click="load">重新加载</button>
-      <button type="button" @click="router.push('/workspaces')">选择其他空间</button>
+      <button class="ui-button primary" type="button" @click="load">重新加载</button>
+      <button class="ui-button" type="button" @click="router.push('/workspaces')">
+        选择其他空间
+      </button>
     </div>
   </section>
 
@@ -261,7 +263,7 @@ onBeforeUnmount(() => {
             autocomplete="off"
             placeholder="例如 600519、腾讯或 tbdg"
           />
-          <button class="primary" type="submit" :disabled="stockStore.searchLoading">
+          <button class="ui-button primary" type="submit" :disabled="stockStore.searchLoading">
             {{ stockStore.searchLoading ? '正在搜索…' : '搜索股票' }}
           </button>
         </div>
@@ -307,7 +309,7 @@ onBeforeUnmount(() => {
 
     <p v-if="stockStore.refreshWarning" class="inline-error" role="alert">
       {{ stockStore.refreshWarning }}
-      <button type="button" @click="retryPageData">只重新加载页面数据</button>
+      <button class="ui-button" type="button" @click="retryPageData">只重新加载页面数据</button>
     </p>
 
     <section class="list-section" aria-labelledby="shared-list-title">
@@ -317,6 +319,7 @@ onBeforeUnmount(() => {
           <h2 id="shared-list-title">正在关注</h2>
         </div>
         <button
+          class="ui-button"
           v-if="stockStore.listError"
           type="button"
           :disabled="stockStore.listLoading"
@@ -377,7 +380,7 @@ onBeforeUnmount(() => {
             <div class="stock-action-controls">
               <button
                 v-if="!isArchived"
-                class="attention-toggle"
+                class="ui-button attention-toggle"
                 type="button"
                 :disabled="stockStore.attentionUpdatingStockId !== null"
                 @click="toggleAttention(item)"
@@ -391,7 +394,7 @@ onBeforeUnmount(() => {
                 }}
               </button>
               <button
-                class="kline-toggle"
+                class="ui-button kline-toggle"
                 type="button"
                 :aria-expanded="expandedStockId === item.workspaceStockId"
                 :aria-controls="`stock-chart-${item.workspaceStockId}`"
@@ -448,7 +451,13 @@ onBeforeUnmount(() => {
           <p class="section-label">历史研究</p>
           <h2 id="ended-title">已结束关注</h2>
         </div>
-        <button v-if="endedError" type="button" :disabled="endedLoading" @click="retryEnded">
+        <button
+          class="ui-button"
+          v-if="endedError"
+          type="button"
+          :disabled="endedLoading"
+          @click="retryEnded"
+        >
           重新加载历史研究
         </button>
       </div>
@@ -487,10 +496,6 @@ button {
   color: var(--color-text);
   cursor: pointer;
   font-size: 12px;
-}
-button:hover {
-  border-color: var(--color-focus);
-  color: var(--color-focus);
 }
 button:disabled {
   cursor: wait;
@@ -599,10 +604,6 @@ input:focus-visible {
 .primary {
   border-color: var(--color-ink);
   color: var(--color-ink);
-}
-.primary:hover {
-  background: var(--color-ink);
-  color: var(--color-surface);
 }
 .search-results {
   margin-top: 18px;

@@ -91,7 +91,12 @@ onMounted(() => void load())
     </header>
     <div v-if="store.error && !pending" class="admin-error" role="alert">
       <p>{{ refreshFailed ? '操作已完成，但列表刷新失败。' : '' }}{{ store.error }}</p>
-      <button class="admin-button" type="button" :disabled="store.loading || busy" @click="load">
+      <button
+        class="ui-button admin-button"
+        type="button"
+        :disabled="store.loading || busy"
+        @click="load"
+      >
         重试读取
       </button>
     </div>
@@ -117,7 +122,11 @@ onMounted(() => void load())
             <option value="ARCHIVED_BY_SUPER_ADMIN">治理归档</option>
           </select></label
         >
-        <button class="admin-button primary" type="submit" :disabled="store.loading || busy">
+        <button
+          class="ui-button admin-button primary"
+          type="submit"
+          :disabled="store.loading || busy"
+        >
           查询
         </button>
       </form>
@@ -182,7 +191,7 @@ onMounted(() => void load())
               <td @click.stop>
                 <button
                   v-if="workspace.status === 'ACTIVE'"
-                  class="admin-button"
+                  class="ui-button admin-button"
                   type="button"
                   :disabled="busy"
                   @click="requestStatus(workspace, 'ARCHIVED_BY_SUPER_ADMIN', $event)"
@@ -190,7 +199,7 @@ onMounted(() => void load())
                   治理归档</button
                 ><button
                   v-else-if="workspace.status === 'ARCHIVED_BY_SUPER_ADMIN'"
-                  class="admin-button"
+                  class="ui-button admin-button"
                   type="button"
                   :disabled="busy"
                   @click="requestStatus(workspace, 'ACTIVE', $event)"
@@ -205,7 +214,7 @@ onMounted(() => void load())
       <div class="admin-pagination">
         <span class="admin-muted">共 {{ store.workspaces.total }} 条</span
         ><button
-          class="admin-button"
+          class="ui-button admin-button"
           type="button"
           :disabled="page <= 1 || store.loading || busy"
           @click="changePage(page - 1)"
@@ -213,7 +222,7 @@ onMounted(() => void load())
           上一页</button
         ><span>{{ store.workspaces.page }} / {{ Math.max(store.workspaces.totalPages, 1) }}</span
         ><button
-          class="admin-button"
+          class="ui-button admin-button"
           type="button"
           :disabled="page >= store.workspaces.totalPages || store.loading || busy"
           @click="changePage(page + 1)"

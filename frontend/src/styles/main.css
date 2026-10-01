@@ -16,6 +16,8 @@
   --radius-control: 4px;
   --radius-action: 999px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast: 160ms;
+  --motion-hover: 250ms;
   --font-display: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
   --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
   --layer-sticky: 10;
@@ -120,7 +122,7 @@ a:focus-visible {
   color: var(--color-muted);
   cursor: pointer;
 }
-.ui-text-action:hover {
+.ui-text-action:hover:not(:disabled) {
   color: var(--color-ink);
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -148,6 +150,118 @@ a:focus-visible {
   transform: none;
 }
 
+/* 交互状态集中维护；ui-button 只标识操作按钮，列表与图表另保留各自语义。 */
+.research-theme :where(button, a, input, select, textarea) {
+  transition:
+    color var(--motion-hover) var(--ease-out),
+    background-color var(--motion-hover) var(--ease-out),
+    border-color var(--motion-hover) var(--ease-out),
+    translate var(--motion-fast) var(--ease-out),
+    scale var(--motion-fast) var(--ease-out);
+}
+.research-theme .ui-button:not(:disabled):not([aria-disabled='true']):focus-visible {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+.research-theme .ui-button:is(.danger, .danger-action):not(:disabled):focus-visible {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-surface);
+}
+.research-theme :where(.workspace-row, .archived-row, .workspace-nav nav a) > span,
+.research-theme :where(.search-results a, .ended-list a) > span,
+.research-theme .feature-row > * {
+  transition:
+    translate var(--motion-hover) var(--ease-out),
+    color var(--motion-hover) var(--ease-out);
+}
+.research-theme :where(.workspace-row, .archived-row, .feature-row, .admin-table tr) {
+  transition: background-color var(--motion-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .research-theme .ui-button:not(:disabled):not([aria-disabled='true']):hover {
+    border-color: var(--color-ink);
+    background: var(--color-ink);
+    color: var(--color-surface);
+    translate: 0 -1px;
+  }
+  .research-theme .ui-button:is(.danger, .danger-action):not(:disabled):hover {
+    border-color: var(--color-danger);
+    background: var(--color-danger);
+    color: var(--color-surface);
+  }
+  .research-theme .period-switch button:not(:disabled):hover {
+    border-color: var(--color-accent);
+    translate: 0 -1px;
+  }
+  .research-theme :where(.workspace-row, .archived-row):hover > span {
+    translate: 12px 0;
+  }
+  .research-theme .workspace-nav nav a:hover > span {
+    translate: 4px 0;
+  }
+  .research-theme .search-results a:hover > span:first-child {
+    translate: 8px 0;
+  }
+  .research-theme .ended-list a:hover > span:first-child {
+    translate: 10px 0;
+  }
+  .research-theme .feature-row:hover > * {
+    translate: 16px 0;
+  }
+  .research-theme :where(.workspace-row, .archived-row):hover .row-enter,
+  .research-theme .search-results a:hover .result-action {
+    color: var(--color-focus);
+  }
+  .research-theme .feature-row:hover {
+    background: var(--color-surface-secondary);
+  }
+  .research-theme .line-link:hover {
+    gap: 16px;
+  }
+  .research-theme .hero-bottom .line-link:hover {
+    gap: 18px;
+  }
+}
+.research-theme
+  :is(.ui-button, .period-switch button, .research-note):not(:disabled):not(
+    [aria-disabled='true']
+  ):is(:active, [data-touch-pressed]) {
+  translate: 0 1px;
+  scale: 0.98;
+  transition-duration: 80ms;
+}
+.research-theme
+  .ui-button:not(:disabled):not([aria-disabled='true']):is(:active, [data-touch-pressed]) {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+.research-theme
+  .ui-button:is(.danger, .danger-action):not(:disabled):not([aria-disabled='true']):is(
+    :active,
+    [data-touch-pressed]
+  ) {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-surface);
+}
+.research-theme :where(button):disabled,
+.research-theme :where([aria-disabled='true']) {
+  translate: none;
+  scale: none;
+  transition: none;
+}
+.research-theme :where(input, select, textarea):not(:disabled):focus-visible {
+  border-color: var(--color-focus);
+}
+.research-theme .line-link {
+  transition:
+    gap var(--motion-hover) var(--ease-out),
+    color var(--motion-hover) var(--ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -156,5 +270,15 @@ a:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  .research-theme :where(.ui-button, .period-switch button, .research-note),
+  .research-theme :where(.workspace-row, .archived-row, .workspace-nav nav a) > span,
+  .research-theme :where(.search-results a, .ended-list a) > span,
+  .research-theme .feature-row > * {
+    translate: none !important;
+    scale: none !important;
+  }
+  .research-theme .line-link:hover {
+    gap: 10px !important;
   }
 }

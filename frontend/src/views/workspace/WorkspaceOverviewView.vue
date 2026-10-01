@@ -197,8 +197,10 @@ onBeforeUnmount(() => {
     <h1>暂时无法进入这个空间。</h1>
     <p>{{ store.errorMessage }}</p>
     <div class="state-actions">
-      <button class="primary" type="button" @click="load">重新加载</button
-      ><button type="button" @click="router.push('/workspaces')">选择其他空间</button>
+      <button class="ui-button primary" type="button" @click="load">重新加载</button
+      ><button class="ui-button" type="button" @click="router.push('/workspaces')">
+        选择其他空间
+      </button>
     </div>
   </section>
   <template v-else-if="workspace">
@@ -246,7 +248,12 @@ onBeforeUnmount(() => {
           <p class="section-label">( 成员邀请 · OWNER 可见 )</p>
           <h2 id="invitation-title">邀请成员进入这个空间。</h2>
         </div>
-        <button type="button" :disabled="invitationBusy" @click="changeInvitation(false)">
+        <button
+          class="ui-button"
+          type="button"
+          :disabled="invitationBusy"
+          @click="changeInvitation(false)"
+        >
           {{
             invitationActionLoading
               ? '正在处理…'
@@ -284,11 +291,16 @@ onBeforeUnmount(() => {
           </dl>
         </div>
         <div class="invitation-actions">
-          <button type="button" :disabled="invitationBusy" @click="copyInvitation">
+          <button
+            class="ui-button"
+            type="button"
+            :disabled="invitationBusy"
+            @click="copyInvitation"
+          >
             {{ copyLoading ? '正在复制…' : '复制邀请码' }}</button
           ><button
             type="button"
-            class="danger"
+            class="ui-button danger"
             :disabled="invitationBusy"
             @click="changeInvitation(true)"
           >
@@ -307,13 +319,18 @@ onBeforeUnmount(() => {
           {{ invitationMessage ? '操作已经完成，但邀请信息刷新失败。' : '邀请信息暂未完整读取。' }}
           {{ store.invitationError }}
         </p>
-        <button type="button" :disabled="invitationBusy" @click="reloadInvitations">
+        <button
+          class="ui-button"
+          type="button"
+          :disabled="invitationBusy"
+          @click="reloadInvitations"
+        >
           只重新读取邀请信息
         </button>
       </div>
       <div v-if="invitationActionError" class="invitation-error" role="alert">
         <p>{{ invitationActionError }}</p>
-        <button type="button" :disabled="invitationBusy" @click="load">
+        <button class="ui-button" type="button" :disabled="invitationBusy" @click="load">
           重新核对空间与邀请信息
         </button>
       </div>
@@ -367,7 +384,7 @@ onBeforeUnmount(() => {
       <p v-if="overviewLoading" class="recent-state" aria-live="polite">正在读取近期动态</p>
       <div v-else-if="overviewError" class="recent-state error-state" role="alert">
         <p>{{ overviewError }}</p>
-        <button type="button" @click="loadOverview">重试近期动态</button>
+        <button class="ui-button" type="button" @click="loadOverview">重试近期动态</button>
       </div>
       <p v-else-if="!overviewData?.recentActivities.length" class="recent-state">
         还没有研究动态。前往共享自选添加第一只股票。
@@ -506,13 +523,6 @@ button {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background-color 0.15s;
-}
-button:hover:not(:disabled) {
-  border-color: var(--color-ink);
-  background: var(--color-surface-secondary);
 }
 button:focus-visible,
 a:focus-visible {

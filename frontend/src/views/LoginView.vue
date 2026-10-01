@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
         ><input v-model="showPassword" type="checkbox" :disabled="submitting" />显示密码</label
       >
       <p v-if="actionError" class="account-feedback error" role="alert">{{ actionError }}</p>
-      <button class="auth-submit-button" type="submit" :disabled="submitting">
+      <button class="ui-button auth-submit-button" type="submit" :disabled="submitting">
         <span>{{ submitting ? '正在登录…' : '进入空间' }}</span>
         <span v-if="!submitting" aria-hidden="true">→</span>
       </button>

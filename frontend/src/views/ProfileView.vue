@@ -131,7 +131,7 @@ onBeforeUnmount(() => {
             aria-describedby="nickname-hint nickname-feedback"
           />
           <p id="nickname-hint" class="field-hint">用于成员列表和观点中的展示，最多 20 个字符。</p>
-          <button class="profile-submit" type="submit" :disabled="busy">
+          <button class="ui-button profile-submit" type="submit" :disabled="busy">
             {{ nicknameSaving ? '正在保存…' : '保存昵称' }}
           </button>
           <div id="nickname-feedback">
@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
           <label class="password-visibility"
             ><input v-model="showPasswords" type="checkbox" :disabled="busy" />显示密码</label
           >
-          <button class="profile-submit" type="submit" :disabled="busy">
+          <button class="ui-button profile-submit" type="submit" :disabled="busy">
             {{ passwordSaving ? '正在保存…' : '修改密码并重新登录' }}
           </button>
           <div id="password-feedback">
@@ -310,9 +310,6 @@ input[aria-invalid='true'] {
   cursor: pointer;
   font: inherit;
   font-size: 13px;
-}
-.profile-submit:hover:not(:disabled) {
-  background: var(--color-surface-secondary);
 }
 .profile-submit:disabled {
   opacity: 0.6;

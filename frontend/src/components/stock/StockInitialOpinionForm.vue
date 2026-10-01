@@ -84,7 +84,9 @@ defineExpose({ focusHeading })
           记录对 {{ stockName }} 的初始观点
         </h2>
       </div>
-      <button type="button" :disabled="loading" @click="emit('cancel')">取消填写</button>
+      <button class="ui-text-action" type="button" :disabled="loading" @click="emit('cancel')">
+        取消填写
+      </button>
     </div>
 
     <fieldset class="opinion-fields" :disabled="loading">
@@ -166,7 +168,7 @@ defineExpose({ focusHeading })
     </p>
     <div class="submit-row">
       <span>关注价格将由后端重新读取，不采用页面当前显示值。</span>
-      <button class="primary" type="submit" :disabled="loading">
+      <button class="ui-button primary" type="submit" :disabled="loading">
         {{ loading ? '正在保存…' : restarting ? '重新关注并保存观点' : '加入关注并保存观点' }}
       </button>
     </div>
@@ -326,9 +328,6 @@ textarea:disabled {
   color: var(--color-surface);
   cursor: pointer;
   font-size: 12px;
-}
-.primary:hover {
-  background: var(--color-text);
 }
 .inline-error {
   margin-top: 18px;

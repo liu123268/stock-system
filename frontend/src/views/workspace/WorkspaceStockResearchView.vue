@@ -586,7 +586,7 @@ onBeforeUnmount(() => {
       }}
     </h1>
     <p>{{ pageRefreshWarning || stockStore.refreshWarning || stockStore.researchError }}</p>
-    <button type="button" @click="retryResearchData">重新加载页面数据</button>
+    <button class="ui-button" type="button" @click="retryResearchData">重新加载页面数据</button>
   </section>
   <template v-else-if="stockStore.researchDetail">
     <header class="research-header">
@@ -603,19 +603,19 @@ onBeforeUnmount(() => {
     <p v-if="successMessage" class="success-message" aria-live="polite">{{ successMessage }}</p>
     <p v-if="operationError || stockStore.researchError" class="error-message" role="alert">
       {{ operationError || stockStore.researchError }}
-      <button type="button" :disabled="operationBusy" @click="retryResearchData">
+      <button class="ui-button" type="button" :disabled="operationBusy" @click="retryResearchData">
         重新加载研究数据
       </button>
     </p>
     <p v-if="stockStore.refreshWarning" class="error-message" role="alert">
       {{ stockStore.refreshWarning }}
-      <button type="button" :disabled="operationBusy" @click="retryResearchData">
+      <button class="ui-button" type="button" :disabled="operationBusy" @click="retryResearchData">
         只重新加载页面数据
       </button>
     </p>
     <p v-if="pageRefreshWarning" class="error-message" role="alert">
       {{ pageRefreshWarning }}
-      <button type="button" :disabled="operationBusy" @click="retryResearchData">
+      <button class="ui-button" type="button" :disabled="operationBusy" @click="retryResearchData">
         只重新加载页面数据
       </button>
     </p>
@@ -627,7 +627,8 @@ onBeforeUnmount(() => {
           <h2 id="research-market-title">最新报价与价格变化</h2>
           <p v-if="marketLoading">正在读取行情…</p>
           <p v-else-if="marketError" role="alert">
-            {{ marketError }} <button type="button" @click="retryMarket">重试行情</button>
+            {{ marketError }}
+            <button class="ui-button" type="button" @click="retryMarket">重试行情</button>
           </p>
           <template v-else-if="market">
             <strong class="latest-price">{{
@@ -656,8 +657,11 @@ onBeforeUnmount(() => {
           </template>
         </div>
         <div class="market-controls">
-          <button type="button" :disabled="marketLoading" @click="retryMarket">刷新行情</button>
+          <button class="ui-button" type="button" :disabled="marketLoading" @click="retryMarket">
+            刷新行情
+          </button>
           <button
+            class="ui-button"
             type="button"
             :aria-expanded="chartExpanded"
             aria-controls="research-market-chart"
@@ -694,7 +698,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="!endConfirming" class="current-action-controls">
         <button
-          class="compose-toggle"
+          class="ui-button compose-toggle"
           type="button"
           :disabled="operationBusy"
           :aria-expanded="composeExpanded"
@@ -705,7 +709,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           v-if="currentCycle"
-          class="danger-link"
+          class="ui-button danger-link"
           type="button"
           :disabled="operationBusy"
           @click="openEndConfirmation"
@@ -715,8 +719,17 @@ onBeforeUnmount(() => {
       </div>
       <div v-else class="confirm-end">
         <span>结束后本周期永久只读。</span>
-        <button type="button" :disabled="operationBusy" @click="endConfirming = false">取消</button>
-        <button type="button" :disabled="operationBusy" @click="endResearch">确认结束</button>
+        <button
+          class="ui-button"
+          type="button"
+          :disabled="operationBusy"
+          @click="endConfirming = false"
+        >
+          取消
+        </button>
+        <button class="ui-button" type="button" :disabled="operationBusy" @click="endResearch">
+          确认结束
+        </button>
       </div>
     </section>
 
@@ -810,6 +823,7 @@ onBeforeUnmount(() => {
           {{ formError }}
         </p>
         <button
+          class="ui-button"
           v-if="currentCycle && composeCycleId !== currentCycle.id"
           type="button"
           :disabled="operationBusy"
@@ -817,7 +831,7 @@ onBeforeUnmount(() => {
         >
           确认当前周期，保留草稿
         </button>
-        <button class="primary" type="submit" :disabled="operationBusy">
+        <button class="ui-button primary" type="submit" :disabled="operationBusy">
           {{ operationBusy ? '正在提交…' : currentCycle ? '发表到时间线' : '重新开启关注' }}
         </button>
       </form>
@@ -859,7 +873,8 @@ onBeforeUnmount(() => {
         正在读取研究时间线…
       </p>
       <p v-else-if="timelineError && !timelineCycles.length" class="empty-filter" role="alert">
-        {{ timelineError }} <button type="button" @click="loadTimeline(true)">重试</button>
+        {{ timelineError }}
+        <button class="ui-button" type="button" @click="loadTimeline(true)">重试</button>
       </p>
       <p v-else-if="!timelineCycles.length" class="empty-filter">当前筛选条件下没有观点。</p>
       <article
@@ -944,7 +959,7 @@ onBeforeUnmount(() => {
                 <button
                   v-if="!isArchived && canWithdrawNow(item)"
                   type="button"
-                  class="withdraw-link"
+                  class="ui-button withdraw-link"
                   :disabled="operationBusy"
                   @click="withdrawOpinion(item)"
                 >
@@ -966,12 +981,13 @@ onBeforeUnmount(() => {
         </p>
       </article>
       <p v-if="timelineError && timelineCycles.length" class="empty-filter" role="alert">
-        {{ timelineError }} <button type="button" @click="loadTimeline(false)">重试</button>
+        {{ timelineError }}
+        <button class="ui-button" type="button" @click="loadTimeline(false)">重试</button>
       </p>
       <button
         v-if="timelineNextCursor"
         type="button"
-        class="load-more"
+        class="ui-button load-more"
         :disabled="timelineLoading"
         @click="loadTimeline(false)"
       >
@@ -1039,9 +1055,6 @@ button {
   color: var(--color-ink);
   font-size: 12px;
   cursor: pointer;
-}
-button:hover:not(:disabled) {
-  border-color: var(--color-ink);
 }
 button:disabled {
   cursor: default;

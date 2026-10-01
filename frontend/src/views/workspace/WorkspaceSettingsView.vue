@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
     <h1>空间设置暂时没有加载出来</h1>
     <p>{{ pageError }}</p>
     <p v-if="actionMessage" class="feedback">{{ actionMessage }}</p>
-    <button class="primary-action" type="button" @click="load(true)">重新加载</button>
+    <button class="ui-button primary-action" type="button" @click="load(true)">重新加载</button>
   </section>
   <template v-else-if="workspace">
     <section class="settings-heading management-heading">
@@ -216,7 +216,7 @@ onBeforeUnmount(() => {
             :disabled="busy || !!pendingAction || !!refreshWarning"
             aria-describedby="rename-hint"
           /><button
-            class="primary-action"
+            class="ui-button primary-action"
             type="submit"
             :disabled="busy || !!pendingAction || !!refreshWarning"
           >
@@ -239,7 +239,7 @@ onBeforeUnmount(() => {
       </div>
       <button
         v-if="isActive && isOwner"
-        class="danger-action"
+        class="ui-button danger-action"
         type="button"
         :disabled="busy || !!refreshWarning"
         @click="requestAction('archive', $event)"
@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
       </button>
       <button
         v-else-if="canOwnerRestore"
-        class="primary-action"
+        class="ui-button primary-action"
         type="button"
         :disabled="busy || !!refreshWarning"
         @click="requestAction('restore', $event)"
@@ -276,8 +276,9 @@ onBeforeUnmount(() => {
         <p v-else>恢复后空间重新允许正常写入，但旧邀请码不会自动恢复，需要重新生成。</p>
       </div>
       <div class="confirmation-actions">
-        <button type="button" :disabled="busy" @click="cancelAction">取消</button
+        <button class="ui-button" type="button" :disabled="busy" @click="cancelAction">取消</button
         ><button
+          class="ui-button"
           :class="pendingAction.type === 'archive' ? 'danger-action' : 'primary-action'"
           type="button"
           :disabled="busy"
@@ -297,7 +298,7 @@ onBeforeUnmount(() => {
     <p v-if="actionMessage" class="feedback" role="status">{{ actionMessage }}</p>
     <div v-if="refreshWarning" class="refresh-warning" role="alert">
       <p>{{ refreshWarning }}</p>
-      <button type="button" @click="load(true)">重新读取</button>
+      <button class="ui-button" type="button" @click="load(true)">重新读取</button>
     </div>
     <section class="recovery-section setting-block">
       <div>

@@ -352,8 +352,10 @@ onBeforeUnmount(() => {
   font-family: var(--font-mono);
   font-size: 11px;
 }
-.period-switch button:hover {
-  color: var(--color-ink);
+@media (hover: hover) and (pointer: fine) {
+  .period-switch button:hover:where(:not(:disabled)) {
+    color: var(--color-ink);
+  }
 }
 .period-switch button.active {
   border-color: var(--color-accent);
