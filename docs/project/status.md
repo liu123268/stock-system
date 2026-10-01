@@ -6,7 +6,7 @@
 
 认证、普通空间基础边界、超级管理员治理、空间改名、个人资料和邀请码防猜测完成至 [SPEC-001 CODE-010](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-209 时间线分批读取、CODE-210 空间概览动态、CODE-211A 未关注行情页、CODE-211B 研究详情行情和 CODE-212 共享列表研究摘要均已关闭。
 
-**当前状态：UI-01～08 已完成，下一块为 UI-09 治理后台。** 正式前端已迁移公共外壳、空间选择、共享自选、行情页／初始观点／共用图表、研究详情、概览、成员与设置、公开首页，以及登录／注册／个人资料。UI-08 沿 V2 双区认证与分段资料布局接入真实表单，保留回跳／角色返回和错误草稿，补齐迟到响应的会话归属及选择页列表真实 401 处理；教学见 [真实表单](../engineering/frontend.md#ui-08-中的真实表单与提交生命周期) 与 [认证设计](../architecture/authentication.md#ui-08旧回调与当前会话)。参考仍是工作区 ui-preview/stock-workspace-demo-v2-content-aligned.html，按原 10 块顺序推进；前后截图与验收见 [SPEC-003 UI-08](../specs/003-ui-migration/tasks.md#ui-08-正式迁移2026-10-01)。UI-09 先治理布局／用户治理，再空间治理／操作记录；旧预览与组件退出仍按 UI-10。
+**当前状态：UI-01～09 已完成，下一块为 UI-10 全站回归与旧实现退出。** 正式前端已迁移公共外壳、空间选择、共享自选、行情与研究、概览、成员与设置、公开首页、认证与资料，以及治理布局／用户／空间／操作记录。UI-09 保留权限、状态来源、真实筛选与确认，补齐保存后只读重试及治理异步归属；教学见 [治理数据流](../engineering/frontend.md#ui-09-中的治理目标保存结果与访问错误)。真实中文昵称搜索发现的字符集错误沿 [BUG-004](../engineering/bugs/BUG-004-stock-search-character-set.md#ui-09-补充账号与昵称联合搜索2026-10-01) 修复，不改表结构。参考仍是工作区 ui-preview/stock-workspace-demo-v2-content-aligned.html；前后截图与证据见 [SPEC-003 UI-09](../specs/003-ui-migration/tasks.md#ui-09-正式迁移2026-10-01)。UI-10 核对全部正式路由并退出旧预览／轨道及无引用过渡资源，完成跨角色、跨空间、研究流程与全站视觉回归；保留独立 V2 参考和各块证据。
 
 原业务待办 [SPEC-002 CODE-206G](../specs/002-stock-research/tasks.md)（北交所与港股目录覆盖、每日幂等同步和失败追溯）及 CODE-206H（部署环境 sidecar 与行情权限验收）仍未完成，UI 改版不自动实施或关闭它们；之后按 V1 演示标准做跨模块收口，不能只凭逐项勾选宣称 Java 核心 V1 完成。跨阶段关系见 [路线](roadmap.md)。
 
@@ -28,13 +28,13 @@
 
 ## 环境快照
 
-开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。UI-01～08 临时 test 服务的关闭与端口核对只见对应任务证据；没有启动或改动 dev 服务，用户现场已有开发服务保留。
+开发默认 longbridge 并启用 Redis；test 默认 mock 且关闭 Redis。开发／测试端口、Windows 与 WSL Redis 隔离、环境变量和启停方式只见 [开发环境](../engineering/development.md)，sidecar 服务账号与生产前置见 [部署说明](../engineering/deployment.md)。UI-01～09 临时 test 服务的关闭与端口核对只见对应任务证据；用户现场已有开发服务保留。UI-09 改了 Java 查询源码，用户当前开发后端需重启才加载中文搜索修复，未自动停止原进程。
 
 2026-09-28 测试库 `stock_system_test` 和开发库 `stock_system` 已按顺序经 Flyway 升至 V10；开发库原有 2 个账号仍为 2 个，测试库本轮浏览器账号与 `research_attention_change` 均为 0 行。V10 只新增关注级别历史表；V9 邀请计数、V8 凭据版本及此前 V7 目录回填证据见对应 tasks；以后执行数据库操作仍须重新核对现场。
 
 ## 最近验证
 
-2026-10-01：UI-08 最终前端 102 项／14 文件单元测试、类型、只读 lint、构建及原 auth smoke 通过。认证／资料专项最终 36 项通过，包括 20 个视口记录与 16 个行为检查，覆盖真实注册／登录／改密、昵称刷新、角色返回、键盘／窄屏及离页／跨账号迟到响应。测试数据精确清理为 0，临时 Java／Vite 已关闭且 18082／18083 释放，用户 8082／8083 开发服务保留。本轮未运行完整后端、真实供应商、治理写入闭环或其他 UI 专项；详细证据见 [UI-08 任务](../specs/003-ui-migration/tasks.md#ui-08-正式迁移2026-10-01)，旧阶段结果只在 tasks 保留。
+2026-10-01：UI-09 前端 116 项／14 文件全量测试、类型、只读 lint、构建通过；真实 MySQL 治理／日志事务定向后端 8 项、原 admin smoke 与 auth smoke 通过。治理专项最终 58 项（42 个视口／状态、16 个行为）覆盖真实分页／筛选／详情、禁用恢复、归档来源／邀请码撤销、保存后 GET 重试、迟到响应与真实 401／FORBIDDEN。测试数据精确清理为 0，开发库原 2 账号不变；临时 Java／Vite 已关闭且 18082／18083 释放，用户 8082／8083 服务保留。未运行完整后端、全站／其他 UI 专项、directory 或真实供应商；证据见 [UI-09 任务](../specs/003-ui-migration/tasks.md#ui-09-正式迁移2026-10-01)，旧阶段结果只在 tasks 保留。
 
 以下保留已完成业务实施的最近验收记录：
 

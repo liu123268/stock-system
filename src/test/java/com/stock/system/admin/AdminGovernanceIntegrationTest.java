@@ -136,6 +136,29 @@ class AdminGovernanceIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void searchesUnicodeNicknamesAndKeepsAccountMatchingCaseSensitive() throws Exception {
+        initializerService.initialize("unicode_admin", "AdminPass123", "搜索管理员");
+        authService.register(new RegisterRequestDTO(
+                "unicode_owner", "OwnerPass123", "中文研究成员%😀"));
+        String adminToken = login("unicode_admin", "AdminPass123");
+
+        for (String keyword : java.util.List.of("中文", "unicode_owner", "%", "😀")) {
+            mockMvc.perform(get("/api/admin/users").param("keyword", keyword)
+                            .header("Authorization", bearer(adminToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.total").value(1))
+                    .andExpect(jsonPath("$.data.items[0].username").value("unicode_owner"));
+        }
+        for (String keyword : java.util.List.of("找不到的账号", "UNICODE_OWNER")) {
+            mockMvc.perform(get("/api/admin/users").param("keyword", keyword)
+                            .header("Authorization", bearer(adminToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.total").value(0))
+                    .andExpect(jsonPath("$.data.items").isEmpty());
+        }
+    }
+
+    @Test
     void preventsTheOnlySuperAdminFromDisablingItself() {
         Long adminUserId = initializerService.initialize(
                 "protected_admin", "AdminPass123", "受保护管理员");

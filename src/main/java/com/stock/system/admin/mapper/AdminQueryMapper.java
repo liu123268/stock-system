@@ -33,7 +33,8 @@ public interface AdminQueryMapper {
               AND u.status = #{status}
             </if>
             <if test="keyword != null and keyword != ''">
-              AND (LOCATE(#{keyword}, u.username) &gt; 0 OR LOCATE(#{keyword}, u.nickname) &gt; 0)
+              AND (LOCATE(#{keyword}, CONVERT(u.username USING utf8mb4) COLLATE utf8mb4_bin) &gt; 0
+                   OR LOCATE(#{keyword}, u.nickname) &gt; 0)
             </if>
             GROUP BY u.id, u.username, u.nickname, u.status, sa.user_id, u.created_at
             ORDER BY u.created_at DESC, u.id DESC
@@ -55,7 +56,8 @@ public interface AdminQueryMapper {
               AND u.status = #{status}
             </if>
             <if test="keyword != null and keyword != ''">
-              AND (LOCATE(#{keyword}, u.username) &gt; 0 OR LOCATE(#{keyword}, u.nickname) &gt; 0)
+              AND (LOCATE(#{keyword}, CONVERT(u.username USING utf8mb4) COLLATE utf8mb4_bin) &gt; 0
+                   OR LOCATE(#{keyword}, u.nickname) &gt; 0)
             </if>
             </script>
             """)

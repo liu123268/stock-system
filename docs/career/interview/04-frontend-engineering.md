@@ -56,6 +56,7 @@ UI-07 的本地演示、真实入口与历史位置边界见 [首页数据流](.
 - `workspace Store` 的 `generateInvitation` 与 `stopInvitation`；
 - 邀请区域独立的 loading、error 和 action message；UI-05 还以 `Promise.allSettled` 保留当前邀请码／历史各自成功的读取结果，失败部分保留 GET 重试，详见 [概览数据流](../../engineering/frontend.md#ui-05-中的独立读取与邀请生命周期)；
 - Store 单元测试与双账号真实浏览器闭环；UI-06 将同一原则用于移除／转让／退出：保存后 GET 失败不显示事务失败，结果保留并只读重试，见 [成员与设置数据流](../../engineering/frontend.md#ui-06-中的保存结果与页面归属)。
+- UI-09 将同一原则用于真实禁用／治理归档，成功结果与列表 GET 错误分别保留，重试不重复状态 POST，见 [治理数据流](../../engineering/frontend.md#ui-09-中的治理目标保存结果与访问错误)。
 
 ## FRONTEND-05：前端为什么不能把所有 API 失败都当成“退出登录”？
 
@@ -70,6 +71,7 @@ UI-07 的本地演示、真实入口与历史位置边界见 [首页数据流](.
 - 单元测试分别验证 401 与成员关系失效；
 - 退出登录使用 `clearAll()`，切换空间使用 `clearCurrent()`，两者不会改变后端成员关系。
 - UI-08 真实改密延迟验证发现选择页列表读取将 401 当普通失败，现已接入既有访问分类；旧会话／离页回调保护与当前 401 清理同时保留，见 [BUG-006](../../engineering/bugs/BUG-006-stale-session-response.md#ui-08-补充认证与资料回调2026-10-01)。
+- 治理页仅在 FORBIDDEN 时重新读取 me 核对角色，业务恢复来源 403 保留原会话，当前 401 清理；真实撤销管理员关系和跨账号旧 401 已验证，见 [治理数据流](../../engineering/frontend.md#ui-09-中的治理目标保存结果与访问错误)。
 
 ## FRONTEND-06：为什么类型检查通过，数字表单仍可能在浏览器报错？
 

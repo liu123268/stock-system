@@ -75,6 +75,9 @@ async function verifyEnvironment() {
       throw new Error(`拒绝浏览器写入：${baseUrl}实际环境为${JSON.stringify(result?.data)}`)
     }
   }
+  if ((await sql('SELECT DATABASE()')) !== 'stock_system_test') {
+    throw new Error('拒绝操作：SQL 客户端实际连接不是 stock_system_test')
+  }
   if (Number(await sql('SELECT COUNT(*) FROM super_admin')) !== 0) {
     throw new Error('测试库已有超级管理员，拒绝覆盖非本轮数据')
   }
@@ -147,9 +150,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
 
   await page.goto(`${frontendUrl}/login`)
-  const inputs = page.locator('input')
-  await inputs.nth(0).fill(adminUsername)
-  await inputs.nth(1).fill(password)
+  await page.getByLabel('登录账号', { exact: true }).fill(adminUsername)
+  await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '进入空间' }).click()
   await page.waitForURL('**/admin/users')
   await page.getByRole('heading', { name: '用户治理' }).waitFor()

@@ -140,3 +140,13 @@
 - 脏读、不可重复读和幻读分别是什么？
 - `READ COMMITTED` 与 `REPEATABLE READ` 的 Read View 有什么区别？
 - 已经使用 `REPEATABLE READ`，为什么检查后修改仍可能需要 `SELECT ... FOR UPDATE`？
+
+## DB-10：数据库用 UTF-8，为什么中文搜索仍报字符集错误？
+
+### 完整回答
+
+> 数据库默认字符集不覆盖每个列的字符集。项目账号列使用 ASCII 保存标准登录身份，搜索同时匹配中文昵称；LOCATE 在账号分支按表达式规则尝试把中文参数转成 ASCII，出现 MySQL 3854。修复只把比较表达式转换为 utf8mb4，存储约束保留；还需明确 utf8mb4_bin，否则默认不区分大小写的排序规则会改变原账号匹配。列表和 count 查询必须一致。参数绑定避免 SQL 注入，不解决字符集比较问题；OR 也不能保证不计算另一分支。
+
+### 项目证据与追问
+
+真实 MySQL／MockMvc 覆盖中文、emoji、英文账号、字面百分号、无匹配和大写账号边界；根因和 SQL 只见 [BUG-004 的治理搜索补充](../../engineering/bugs/BUG-004-stock-search-character-set.md#ui-09-补充账号与昵称联合搜索2026-10-01)。可追问字符集与 collation 分别负责什么、为什么不直接改账号列、LOCATE 是否保证使用索引；本修复没有性能收益结论。
