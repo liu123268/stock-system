@@ -69,6 +69,10 @@ UI-07 的公开首页验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-landin
 
 UI-08 的认证／资料验收在 `frontend` 运行 `npm.cmd run test:e2e:ui-account`，默认 test mock 18083／18082，也可用 FRONTEND_URL／BACKEND_URL 指定。`E2E_UI_PHASE=before` 只采编辑前 15 个视口，默认 after 检查真实校验／重复账号／错误凭据、提交锁定、回跳、角色返回、昵称同步与草稿、真实改密及另一个浏览器旧凭证，并暂停已由后端处理的响应，验证离页／换账号后的副作用归属。截图与 JSON 在工作区 ui-preview/ui-08；正常与减少动态偏好、键盘和 320px 表单均检查。沿第 4 节先验证两条探针与实际 catalog，只为本轮随机账号构造管理员关系，既有 super_admin 非空时拒绝搭建；finally 精确清理本轮账号、空间、管理员及关联记录，逐表剩余为 0。原 auth smoke 保留完整业务断言，仅将认证输入定位改为 label；本脚本不替代治理写入或供应商验收。
 
+UI-10 全站检查在 `frontend` 运行 `npm.cmd run test:e2e:ui-final`，默认连接 test mock 18083／18082。只有编辑前才用 E2E_UI_PHASE=before 保存旧正式页面和旧预览；默认 after 核对十四个正式页、四宽度、共享主题、主要内容语义、标题／图标、未知地址返回、换空间／账号、归档、研究刷新及后台懒加载样式。沿第 4 节检查实际 catalog 与两条探针；随机三账号、两空间、管理员及研究关联数据 finally 精确清理。生产构建可本地 preview 到独立端口，再用 FRONTEND_URL 指向它，E2E_UI_OUTPUT 单独存 production，避免覆盖开发证据；本地预览不属于部署。
+
+九块专项与原 auth／admin 串行回归使用 `npm.cmd run test:e2e:ui-regression`，每个原脚本继续独立检查与清理。输出默认工作区 ui-preview/ui-10/regression-*，总结果在 regression-verification.json，失败即停，不把未运行项算通过。目录模式仍另启 test directory 后端并运行原 test:e2e:directory，不能并入 mock 套件假称已验证真实目录；切换与最终清理按第 5 节。实际 UI-10 结果只见 SPEC-003 tasks。
+
 ## 4. 测试数据清理
 
 数据库职责固定如下：

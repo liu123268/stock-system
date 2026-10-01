@@ -20,6 +20,8 @@
     "test:e2e:ui-landing": "node e2e/ui-landing-smoke.mjs",
     "test:e2e:ui-account": "node e2e/ui-account-smoke.mjs",
     "test:e2e:ui-governance": "node e2e/ui-governance-smoke.mjs",
+    "test:e2e:ui-final": "node e2e/ui-final-smoke.mjs",
+    "test:e2e:ui-regression": "node e2e/ui-regression-suite.mjs",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:oxlint lint:eslint",

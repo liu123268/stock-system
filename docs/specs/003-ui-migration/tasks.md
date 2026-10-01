@@ -1,6 +1,6 @@
 # SPEC-003：分块任务与验收
 
-2026-10-01：原 V2 及内容补齐副本保留，源码生成预览已撤回；正式源码已完成 UI-01～09，下一块为 UI-10。需求见 [requirements](requirements.md)，页面与字段关系见 [design](design.md)，正式验收见本文末尾；历史预览检查不替代真实接口验收。
+2026-10-01：UI-01～10 已完成正式迁移与收口。原 V2、内容补齐副本及各块前后证据保留，旧 Vue 预览／轨道退出生产。需求见 [requirements](requirements.md)，页面与字段关系见 [design](design.md)，正式验收见本文末尾；不将 UI 完成解释为目录同步、部署或 Java 核心 V1 全部完成。
 
 ## 1. 执行顺序
 
@@ -48,7 +48,7 @@ UI-01 是第一个可见结果，不单独做一个长期看不到页面的“�
 - [x] UI-07：公开首页。
 - [x] UI-08：认证与个人资料。
 - [x] UI-09：治理后台。
-- [ ] UI-10：全站回归与旧实现退出。
+- [x] UI-10：全站回归与旧实现退出。
 
 2026-09-29 规划阶段：未改前端、未运行业务测试、未启动服务、未创建测试数据。当时文档检查 `python scripts/check-docs.py` 通过（48 个 Markdown 文件、346 个本地链接），`git diff --check` 通过；这是历史文档验证，不代表实施场景已验收。
 
@@ -172,3 +172,14 @@ UI-01 是第一个可见结果，不单独做一个长期看不到页面的“�
 - **清理与边界**：所有写入先核对前后端 test 探针及实际 SQL catalog。每轮本块 23 账号、22 空间及成员／邀请／管理员／日志 finally 按本轮 ID 清理为 0，失败轮也清理；原 smoke 清理通过。结束实际查询测试库 users／admin／spaces／members／invites／logs 均为 0，开发库原 2 个账号仍为 2 个。Chrome 全部关闭。本轮测试 Java 18208（17:03:05）为加载 SQL 修复核对身份后关闭，再启动 Java 30428（17:35:32）；最终 Java 30428、Vite 23504（17:03:14）确认身份后关闭，18082／18083 无监听。用户 Java 46968（15:31:23）／Vite 41408（15:31:58）及 8082／8083 保留。用户开发后端仍是修改前进程，重新启动后才加载 SQL 修复；没有自动停止它。默认 dev、开发库与供应商配置未改，没有真实 Longbridge、directory、完整后端／全站回归、Git 提交或生产部署。
 
 下一块为 UI-10：核对全部正式路由，退出旧 /design-preview、轨道和无引用过渡资源，完成跨角色、跨空间、研究流程及全站视觉回归。保留原独立 V2 设计与各块前后证据；CODE-206G～H 仍是另行未完成边界。
+
+## UI-10 正式收口（2026-10-01）
+
+- **开工与退出范围**：UI-09 已由用户提交至 345ccfc，开工 Git 干净。确认 DesignOrbit 只被旧 DesignPreviewView 引用后，删除两者及旧 /design-preview 生产路由、旧 favicon.ico。未知路由统一回首页，旧预览地址也不再显示演示。浏览器标题原“拾光自选”改为“基点 · 共享股票研究”，补代码原生 SVG 图标。main.css 合并旧根／新页面两组变量为单一 :root，research-theme 仅保留网格、纹理与表面；保留仍被认证表单使用的 ease-out，删除无引用 header-height。App 根改 div，各正式页面保留一个 main。没有重排前九块业务页面，也未修改 API、后端或表结构。
+- **全站与生产构建**：编辑源码前 runId=mupd29o9 共 60 项（14 个正式页面 × 四宽度，加旧预览四视口）通过；最终开发 runId=mupd5zvp、生产构建 runId=mupdchci 各 66 项通过（60 个页面／状态视口、6 个行为）。覆盖首页、登录、注册、空间选择、概览、自选、独立行情、研究、成员、设置、资料和三页治理，1440／960／390／320px 无页面横向溢出、可见控件越界或 pageerror。真实浏览器核对 title、favicon、旧／未知地址返回、同组件换空间、研究 hash 刷新、归档只读、OWNER 退出后 MEMBER 不残留另一空间，以及治理 CSS 加载后返回普通自选。生产测试通过本地 Vite preview 读取实际 dist，仍经测试后端；不声称已部署。
+- **截图与静态依据**：工作区 [正式页面总览](../../../../ui-preview/ui-10/site-overview.png)、[十四页／前后／手机画廊](../../../../ui-preview/ui-10/index.html)、[编辑前记录](../../../../ui-preview/ui-10/before-verification.json)、[开发验收](../../../../ui-preview/ui-10/after-verification.json)、[生产验收](../../../../ui-preview/ui-10/production/after-verification.json) 可核对。UI-10 前后正式布局基本相同，画廊不把退出旧演示描述成正式页面重做；随机账号、ID 与日期不同。源码及最终 dist 搜索确认无旧组件／旧预览／preview 变量与旧品牌，构建不再产生 DesignPreviewView 模块。原独立 V2 SHA-256 仍为 910BAA8D95D0F7ECD57B560501E46DEE5D4FB0A67C2EFB5EB24671FADB93FE72；未覆盖原参考或 UI-01～09 前后证据。画廊原图加载、手机宽度及代表生产截图人工查看通过。
+- **回归与检查**：前端 116 项／14 文件全量测试、type-check、只读 lint:check、build-only 通过。九块专项以 after 串行重跑，共 394 条验收记录：shell 50、stocks 35、market 46、research 53、overview 36、management 52、landing 28、account 36、governance 58；原 auth／admin 流程也通过。汇总见 [regression-verification](../../../../ui-preview/ui-10/regression-verification.json)，本轮独立目录保存结果，没有覆盖旧块证据。切换临时 test 后端为 directory，再运行原 directory smoke，简／繁／英文／拼音／代码／BSE、null 报价／UNKNOWN 状态准入、只读行情、研究零写入及桌面／手机通过，CLEANUP_REMAINING=0，见 [目录命令记录](../../../../ui-preview/ui-10/directory-command.log)。未删除或放宽旧业务断言；新脚本搭建时遗漏邀请请求体及成员标题定位已修正，失败轮也清理。文档本地链接、锚点与 git diff --check 通过。
+- **文档与教学**：视觉规范退出旧 YAML／旧构图冲突，保留现行 V2、可访问性和组件职责；历史液态／轨道教学明确已删除，设计令牌示例对应现源码。README、产品需求／原则、数据模型标题及功能地图统一基点名称；历史任务证据不批量改写。主题继承、浮层定位、生产构建与退出依据的新增教学见 [UI-10 前端说明](../../engineering/frontend.md#ui-10退出旧实现与合并主题)，前端面试沿原 FRONTEND-03 衔接，不新增重复题。需求、目录同步和部署边界不因清理文档而删去。
+- **数据与服务清理**：写入前核对直连／代理 test 探针及实际 MySQL catalog。全站脚本每轮随机三账号、两空间、成员／邀请码及一条共享研究／周期／观点，专项和原 smoke 自带 fixture，均按本轮 ID／来源 finally 精确清理为 0；目录四只本轮股票也删除，失败轮同样清理。结束测试库 users／spaces／members／invitations／workspace_stock／cycles／opinions／attention／admin／logs 全部 0，DIR_QA 来源 0；开发库原 2 个账号不变。Chrome 全部关闭。本轮 mock Java 27436（17:53:09）为切换 directory 核对身份后关闭，directory Java 44760（18:07:12）、Vite 46344（17:53:18）、构建预览 Vite 13988（18:05:19）最终按身份关闭，18082／18083／18084 无监听；用户 Java 46968（15:31:23）／Vite 41408（15:31:58）及 8082／8083 保留。默认 dev／开发库／供应商配置未改。本轮没有完整后端测试、真实 Longbridge、Redis 外部探测、Git 提交或生产部署；未改 Java，因此没有额外重启用户开发后端。
+
+SPEC-003 到此完成。后续回到 SPEC-002 CODE-206G～H 的目录覆盖／每日同步与部署验收，实施前重新核对各自前置；UI 收口不等于这些任务或 Java 核心 V1 已完成。现有认证、事务／SQL、缓存与测试的学习／独立练习继续按原实习路线，不因页面完成自动标记掌握。

@@ -1,23 +1,27 @@
 :root {
   color-scheme: light;
-  --color-canvas: oklch(0.992 0 0);
-  --color-surface: oklch(1 0 0);
-  --color-heading: oklch(0.24 0.006 255);
-  --color-ink: oklch(0.24 0.006 255);
-  --color-text: oklch(0.35 0.008 255);
-  --color-muted: oklch(0.49 0.01 255);
-  --color-faint: oklch(0.74 0.008 255);
-  --color-border: oklch(0.86 0.006 255);
-  --color-focus: oklch(0.48 0.075 185);
-  --color-danger: oklch(0.48 0.17 28);
-  --gutter: clamp(20px, 4vw, 64px);
-  --header-height: 74px;
-  --radius-control: 10px;
+  --color-canvas: #faf8f4;
+  --color-surface: #fffdf9;
+  --color-surface-secondary: #f3efe7;
+  --color-heading: #191510;
+  --color-ink: #191510;
+  --color-text: #373229;
+  --color-muted: #6f6759;
+  --color-faint: #827867;
+  --color-border: #e3ddd1;
+  --color-accent: #6e9fc4;
+  --color-focus: #4e6e88;
+  --color-danger: #b42318;
+  --gutter: clamp(20px, 4vw, 56px);
+  --radius-control: 4px;
   --radius-action: 999px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-display: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+  --layer-sticky: 10;
   color: var(--color-text);
   background: var(--color-canvas);
-  font-family: 'Microsoft YaHei UI', 'PingFang SC', 'Segoe UI Variable', system-ui, sans-serif;
+  font-family: 'Space Grotesk', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -74,25 +78,8 @@ a:focus-visible {
   background: color-mix(in oklab, var(--color-focus) 20%, transparent);
 }
 
-/* UI-01：覆盖已迁移入口的语义变量；旧公开、认证及治理页仍使用根令牌。 */
+/* 共享令牌在 :root 维护；页面主题只负责网格、纹理与内容表面。 */
 .research-theme {
-  --color-canvas: #faf8f4;
-  --color-surface: #fffdf9;
-  --color-surface-secondary: #f3efe7;
-  --color-heading: #191510;
-  --color-ink: #191510;
-  --color-text: #373229;
-  --color-muted: #6f6759;
-  --color-faint: #827867;
-  --color-border: #e3ddd1;
-  --color-accent: #6e9fc4;
-  --color-focus: #4e6e88;
-  --color-danger: #b42318;
-  --gutter: clamp(20px, 4vw, 56px);
-  --radius-control: 4px;
-  --font-display: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
-  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
-  --layer-sticky: 10;
   position: relative;
   isolation: isolate;
   color: var(--color-ink);
@@ -101,7 +88,6 @@ a:focus-visible {
     linear-gradient(rgba(25, 21, 16, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(25, 21, 16, 0.025) 1px, transparent 1px);
   background-size: 64px 64px;
-  font-family: 'Space Grotesk', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   line-height: 1.7;
 }
 .research-theme::before {

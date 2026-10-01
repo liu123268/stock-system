@@ -113,9 +113,8 @@ const router = createRouter({
       meta: { guestOnly: true },
     },
     {
-      path: '/design-preview',
-      name: 'design-preview',
-      component: () => import('@/views/DesignPreviewView.vue'),
+      path: '/:pathMatch(.*)*',
+      redirect: { name: 'home' },
     },
   ],
 })

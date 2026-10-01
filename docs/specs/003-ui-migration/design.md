@@ -54,7 +54,7 @@
 | `components/AuthLayout.vue`、`views/LoginView.vue`、`views/RegisterView.vue` | 内容补齐副本的 `page-login`／`page-register`，原 V2 未提供完整表单 | 沿副本的顶栏、介绍／表单双区及手机单列接入原 Element Plus 表单；校验、提交和反馈使用真实 API，不迁入演示成功脚本。 |
 | `views/ProfileView.vue` | 内容补齐副本的 `page-profile` | 沿昵称／改密分段布局，保留真实表单、改密后清会话、按角色返回和错误反馈；账号资料不绑定空间 ID。 |
 | `components/admin/AdminLayout.vue` 与三个 admin 视图 | `page-admin` 三个治理页 | 暖白侧栏、筛选表格及详情布局；保留分页、目标详情、影响说明、二次确认、治理恢复限制和操作记录；不展示空间研究正文。 |
-| `views/DesignPreviewView.vue`、`components/DesignOrbit.vue` | 旧设计资产，无新功能对应 | 最后阶段退出旧预览路由；轨道在首页与认证等最后引用迁移后再删除，核对 CSS、资源与相关测试。历史文档不因此整段删掉。 |
+| 原 `views/DesignPreviewView.vue`、`components/DesignOrbit.vue` | 已于 UI-10 退出的旧设计资产 | 旧预览生产路由及无引用轨道已删除，独立 V2 参考与各块前后证据保留。历史组件职责教学仍可查，不是现行视觉规范。 |
 
 ### 已识别的差异处理
 
@@ -178,6 +178,14 @@
 - AdminConfirmation 沿原内联确认改为可聚焦的自然流说明区，绑定明确目标，Escape 与取消返回触发按钮；提交期间锁定。保存成功与列表读取失败分别呈现，只读重试不重新 POST。useAdminPage 共用会话／离页与治理身份错误处理，admin Store 约束各资源请求、旧写入和写前 GET。
 
 完整算法与教学见 [治理数据流](../../engineering/frontend.md#ui-09-中的治理目标保存结果与访问错误)，异步和中文搜索根因分别沿 BUG-006／BUG-004；浏览器、SQL 回归与截图证据只见 [UI-09 任务](tasks.md#ui-09-正式迁移2026-10-01)。剩余旧预览及过渡资源退出按 UI-10，不因此提前删除独立 V2 设计证据。
+
+### UI-10 收口落点
+
+十四个正式页面已经沿前九块迁移完成，本块保持其结构，退出旧 Vue 演示路由／组件和旧图标。通用未匹配路由回首页，旧预览地址不保留另一份界面。独立 V2、内容补齐副本和各块截图继续作为设计／验收证据保留，不进入生产模块。
+
+共享语义变量统一到 main.css 的 :root，research-theme 只负责背景表面；仍被表单使用的缓动保留。挂 body 的提示继承统一颜色，但沿自己的固定定位／库变量映射；App 根 div 由页面自己的 main 表达主要内容。浏览器标题与原生 SVG 图标统一基点。现行视觉只见 [设计系统](../../architecture/ui-design-system.md)，历史组件教学明确已退出。
+
+数据流与构建区别见 [前端说明](../../engineering/frontend.md#ui-10退出旧实现与合并主题)，最终开发／生产四宽度、跨角色／空间、九块专项和目录回归证据只见 [UI-10 任务](tasks.md#ui-10-正式收口2026-10-01)。这不是生产部署或真实供应商验收。
 
 ### 2026-09-30 开工前复核：容易遗漏的行为约束
 

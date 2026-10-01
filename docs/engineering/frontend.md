@@ -175,10 +175,10 @@ Vite会把登录页拆成独立文件。用户访问登录页时才加载登录�
 
 ```css
 :root {
-  --color-canvas: oklch(0.992 0 0);
-  --color-ink: oklch(0.24 0.006 255);
-  --color-border: oklch(0.86 0.006 255);
-  --radius-control: 10px;
+  --color-canvas: #faf8f4;
+  --color-ink: #191510;
+  --color-border: #e3ddd1;
+  --radius-control: 4px;
 }
 ```
 
@@ -186,9 +186,17 @@ Vite会把登录页拆成独立文件。用户访问登录页时才加载登录�
 
 这叫“单一事实来源”：同一项设计决定尽量只在一个地方定义，减少不同页面逐渐变得不一致的问题。
 
+### UI-10：退出旧实现与合并主题
+
+最后一个使用者迁移后，旧 DesignPreviewView／DesignOrbit 与旧图标才退出。判断依据包括生产路由、静态导入、资源引用、构建产物和浏览器直达；只搜到零引用并不能证明动态引用不存在。通用未知路由回到首页，旧预览地址也不再打开演示；独立 V2 设计和前后截图保留在工作区，二者不属于生产构建。
+
+迁移时 :root 保留旧颜色，research-theme 覆盖新颜色，便于逐块过渡；全部正式页面迁移后，main.css 将新令牌集中到 :root，主题类只控制坐标纸、纹理和表面。CSS 变量可继承到 body 下的提示，页面 scoped 不隔离继承；合并变量不等于提示自动取得正确 fixed 定位，account-message 仍保留库变量映射与自己的定位／背景规则。应用根改为 div，各页保留自己的 main，避免辅助技术遇到嵌套主要内容区域。
+
+开发浏览器通过不代表生产构建可用：Vite 开发时按需转换源码，build 生成独立模块与资源，preview 在本地提供构建结果。收口分别验证两者、完整前端检查、前九块专项及 auth／admin 流程，并检查懒加载后台 CSS 后返回普通空间。具体命令、截图与未执行边界只见 [UI-10 任务](../specs/003-ui-migration/tasks.md#ui-10-正式收口2026-10-01)；本地 preview 不是生产部署，也不能代替供应商或部署环境验收。
+
 ### 3. 旧版液态背景组件（已删除）
 
-早期视觉方案曾用 `LiquidBackdrop.vue` 组合液态视频、裁剪形状、柔和色散和自主 CSS 动画。Landing、认证和工作台改用 `DesignOrbit.vue` 等当前视觉组件后，这个旧组件及 `frontend/public/media/liquid-glass.mp4` 已在 2026-09-13 删除，不再作为项目素材保留。
+早期视觉方案曾用 `LiquidBackdrop.vue` 组合液态视频、裁剪形状、柔和色散和自主 CSS 动画。2026-09-13 改用轨道视觉后，液态组件与 `frontend/public/media/liquid-glass.mp4` 已删除；2026-10-01 UI-10 在首页与认证引用已迁移后，再退出旧预览页和 DesignOrbit。此处只保留组件隔离与动效理由，当前视觉见设计系统。
 
 旧方案特别删除了 Canvas 等高线和全部鼠标监听：
 
@@ -208,13 +216,13 @@ Vite会把登录页拆成独立文件。用户访问登录页时才加载登录�
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  .optical-passage {
+  .marquee-track {
     animation: none;
   }
 }
 ```
 
-当前 `DesignOrbit.vue` 和行情图表等仍使用同一个偏好。减少动态时关闭对应 CSS 动画或图表动画，保留静态构图和必要内容。这样不是隐藏内容，而是只移除持续运动。
+当前首页走马灯和行情图表等仍响应同一个偏好；旧 DesignOrbit 已退出。减少动态时关闭对应 CSS 动画或图表动画，保留静态构图和必要内容。这样不是隐藏内容，而是只移除持续运动。
 
 ### 5. 历史认证阶段：为什么视觉重构没有影响认证功能
 
