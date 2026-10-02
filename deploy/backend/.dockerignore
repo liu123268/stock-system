@@ -1,0 +1,6 @@
+# 只允许程序与构建文件，不将密码、Token 或其他工作区文件带入镜像。
+**
+!Dockerfile
+!app.jar
+!bin/
+!bin/longbridge
