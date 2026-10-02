@@ -78,7 +78,7 @@ describe('workspace access error handling', () => {
       archivedAt: null,
       createdAt: '2026-09-04T12:00:00',
     }
-    vi.spyOn(workspaceStore, 'loadWorkspaces').mockRejectedValue(new Error('network'))
+    const loadList = vi.spyOn(workspaceStore, 'loadWorkspaces')
     const replace = vi.fn<(to: unknown) => Promise<void>>().mockResolvedValue(undefined)
 
     const handled = await handleWorkspaceApiError(
@@ -88,6 +88,7 @@ describe('workspace access error handling', () => {
 
     expect(handled).toBe(true)
     expect(workspaceStore.currentWorkspace).toBeNull()
+    expect(loadList).not.toHaveBeenCalled()
     expect(replace).toHaveBeenCalledWith({
       name: 'workspaces',
       query: { reason: 'access-lost' },

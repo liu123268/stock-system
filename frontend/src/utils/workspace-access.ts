@@ -22,22 +22,13 @@ export async function handleWorkspaceApiError(error: unknown, router: Router) {
 
   if (error.code === 'WORKSPACE_MEMBERSHIP_INACTIVE' || error.code === 'WORKSPACE_NOT_FOUND') {
     workspaceStore.clearCurrent()
-    try {
-      await workspaceStore.loadWorkspaces()
-    } catch {
-      // 返回选择页后沿用 Store 的加载错误与重试入口。
-    }
+    // 列表由选择页加载并处理重试；跳转前等待 GET 会让旧处理流程干扰后续导航。
     await router.replace({ name: 'workspaces', query: { reason: 'access-lost' } })
     return true
   }
 
   if (error.code === 'WORKSPACE_ARCHIVED') {
     workspaceStore.clearCurrent()
-    try {
-      await workspaceStore.loadWorkspaces()
-    } catch {
-      // 返回选择页后沿用 Store 的加载错误与重试入口。
-    }
     await router.replace({ name: 'workspaces', query: { reason: 'archived' } })
     return true
   }

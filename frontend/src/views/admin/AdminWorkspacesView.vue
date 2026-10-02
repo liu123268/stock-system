@@ -25,7 +25,12 @@ function statusLabel(status: string) {
   )
 }
 async function load() {
-  const result = await run(() => store.loadWorkspaces({ page: page.value, size: 20, ...filters }))
+  let result = await run(() => store.loadWorkspaces({ page: page.value, size: 20, ...filters }))
+  // 状态操作可能使筛选结果少一页；修正页码后只 GET，不重复提交保存。
+  while (result && active() && page.value > Math.max(1, result.totalPages)) {
+    page.value = Math.max(1, result.totalPages)
+    result = await run(() => store.loadWorkspaces({ page: page.value, size: 20, ...filters }))
+  }
   if (active()) refreshFailed.value = !result && !!successMessage.value
   return result
 }

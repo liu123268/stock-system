@@ -608,6 +608,65 @@ describe('stock store', () => {
     ])
   })
 
+  it.each([
+    ['workspace', 'success'],
+    ['workspace', 'failure'],
+    ['directory', 'success'],
+    ['directory', 'failure'],
+  ] as const)(
+    'continues %s historical reads after a period change and an old %s',
+    async (target, outcome) => {
+      const oldHistory = deferred<AxiosResponse<ApiResult<StockCandlestickSeriesVO>>>()
+      const newHistory = deferred<AxiosResponse<ApiResult<StockCandlestickSeriesVO>>>()
+      const week = { ...candlestickSeries, period: 'week' as const }
+      const olderWeek = {
+        ...week,
+        hasMore: false,
+        nextBefore: null,
+        candlesticks: [{ ...week.candlesticks[0]!, time: '2026-08-28T15:00:00' }],
+      }
+      const api = vi.mocked(
+        target === 'workspace' ? getWorkspaceStockCandlesticks : getWorkspaceMarketStockCandlesticks,
+      )
+      api
+        .mockResolvedValueOnce(response({ code: 'SUCCESS', message: '成功', data: candlestickSeries }))
+        .mockReturnValueOnce(oldHistory.promise)
+        .mockResolvedValueOnce(response({ code: 'SUCCESS', message: '成功', data: week }))
+        .mockReturnValueOnce(newHistory.promise)
+      const store = useStockStore()
+      const load = (period: 'day' | 'week') => target === 'workspace'
+        ? store.loadCandlesticks(12, 21, period)
+        : store.loadMarketCandlesticks(12, '600519.SH', period)
+      const older = () => target === 'workspace'
+        ? store.loadOlderCandlesticks(12, 21)
+        : store.loadOlderMarketCandlesticks(12, '600519.SH')
+
+      await load('day')
+      const oldRead = older().catch(() => null)
+      expect(store.candlestickLoadingOlder).toBe(true)
+      await load('week')
+      expect(store.candlestickLoadingOlder).toBe(false)
+      const newRead = older()
+      expect(api).toHaveBeenCalledTimes(4)
+      expect(store.candlestickLoadingOlder).toBe(true)
+      if (outcome === 'success') {
+        oldHistory.resolve(response({ code: 'SUCCESS', message: '成功', data: candlestickSeries }))
+      } else oldHistory.reject(new Error('旧日 K 补载失败'))
+      await oldRead
+      // 旧补载既不能写入日 K，也不能结束正在进行的周 K 补载。
+      expect(store.candlestickSeries).toEqual(week)
+      expect(store.candlestickHistoryError).toBe('')
+      expect(store.candlestickLoadingOlder).toBe(true)
+      newHistory.resolve(response({ code: 'SUCCESS', message: '成功', data: olderWeek }))
+      await newRead
+      expect(store.candlestickLoadingOlder).toBe(false)
+      expect(store.candlestickSeries?.period).toBe('week')
+      expect(store.candlestickSeries?.candlesticks.map((item) => item.time)).toEqual([
+        '2026-08-28T15:00:00', '2026-09-04T15:00:00',
+      ])
+    },
+  )
+
   it('does not reload an old workspace after its delayed attention write finishes off-page', async () => {
     const pending =
       deferred<

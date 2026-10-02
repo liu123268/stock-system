@@ -413,6 +413,8 @@ export const useStockStore = defineStore('stock', () => {
   ) {
     const targetKey = marketReadTargetKey(workspaceId, target)
     const requestVersion = ++candlestickRequestVersion
+    // 新周期拥有自己的补载状态；旧补载的 finally 仍由版本检查隔离。
+    candlestickLoadingOlder.value = false
     if (candlestickTargetKey !== targetKey) {
       candlestickTargetKey = targetKey
       candlestickSeries.value = null

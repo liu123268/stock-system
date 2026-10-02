@@ -24,6 +24,7 @@ const code = computed(() =>
 const market = computed(() => stockStore.marketDetail)
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
 const pageLoading = ref(true)
+const workspaceLoadError = ref('')
 const showOpinionForm = ref(false)
 const formError = ref('')
 const addButton = ref<HTMLButtonElement | null>(null)
@@ -115,6 +116,8 @@ async function load() {
   }
 
   pageLoading.value = true
+  workspaceLoadError.value = ''
+  let workspaceReady = false
   showOpinionForm.value = false
   formError.value = ''
   stockStore.clearMarketDetail()
@@ -123,9 +126,13 @@ async function load() {
   try {
     await workspaceStore.ensureCurrent(requestedWorkspace)
     if (disposed || version !== loadVersion) return
+    workspaceReady = true
     await stockStore.loadMarketDetail(requestedWorkspace, requestedCode)
   } catch (error) {
-    if (!disposed && version === loadVersion) await handleWorkspaceApiError(error, router)
+    if (disposed || version !== loadVersion) return
+    if (await handleWorkspaceApiError(error, router)) return
+    if (!workspaceReady)
+      workspaceLoadError.value = error instanceof Error ? error.message : '空间信息读取失败'
   } finally {
     if (!disposed && version === loadVersion) pageLoading.value = false
   }
@@ -189,10 +196,14 @@ onBeforeUnmount(() => {
     <p>正在读取股票行情</p>
   </section>
 
-  <section v-else-if="stockStore.marketDetailError || !market" class="content-state" role="alert">
+  <section
+    v-else-if="workspaceLoadError || stockStore.marketDetailError || !market"
+    class="content-state"
+    role="alert"
+  >
     <p class="section-label">加载失败</p>
-    <h1>暂时无法打开这只股票</h1>
-    <p>{{ stockStore.marketDetailError || '股票行情不存在' }}</p>
+    <h1>{{ workspaceLoadError ? '暂时无法进入这个空间' : '暂时无法打开这只股票' }}</h1>
+    <p>{{ workspaceLoadError || stockStore.marketDetailError || '股票行情不存在' }}</p>
     <div class="state-actions">
       <button class="ui-button primary" type="button" @click="load">重新加载</button>
       <RouterLink :to="backToStocks">返回股票搜索</RouterLink>

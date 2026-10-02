@@ -26,10 +26,11 @@ import { useStockStore } from '@/stores/stock'
 import { useWorkspaceStore } from '@/stores/workspace'
 import WorkspaceListView from '@/views/workspace/WorkspaceListView.vue'
 import WorkspaceStockResearchView from '@/views/workspace/WorkspaceStockResearchView.vue'
+import WorkspaceStockMarketView from '@/views/workspace/WorkspaceStockMarketView.vue'
 
 const { route, router } = vi.hoisted(() => ({
   route: {
-    params: { workspaceId: '12', workspaceStockId: '1' },
+    params: { workspaceId: '12', workspaceStockId: '1', code: '600000.SH' },
     query: { reason: 'switch' },
     hash: '',
   },
@@ -103,6 +104,47 @@ beforeEach(() => {
       activeResearchCycleId: null,
     }),
   )
+})
+
+describe('standalone market page recovery', () => {
+  it('shows the failed workspace precondition and retries both reads without a write', async () => {
+    vi.mocked(getWorkspace).mockRejectedValueOnce(new Error('空间信息暂时不可用'))
+    const wrapper = mount(WorkspaceStockMarketView, options)
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('空间信息暂时不可用')
+    expect(wrapper.get('h1').text()).toBe('暂时无法进入这个空间')
+    expect(wrapper.text()).not.toContain('股票行情不存在')
+    expect(getWorkspaceStockMarketDetail).not.toHaveBeenCalled()
+    expect(useAuthStore().isAuthenticated).toBe(true)
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(getWorkspace).toHaveBeenCalledTimes(2)
+    expect(getWorkspaceStockMarketDetail).toHaveBeenCalledWith(12, '600000.SH')
+    expect(wrapper.get('h1').text()).toBe(research.name)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(addWorkspaceStock).not.toHaveBeenCalled()
+    expect(createWorkspaceStockOpinion).not.toHaveBeenCalled()
+    expect(endWorkspaceStockResearch).not.toHaveBeenCalled()
+  })
+
+  it('keeps a market read failure distinct from a workspace read failure', async () => {
+    vi.mocked(getWorkspaceStockMarketDetail).mockRejectedValueOnce(new Error('行情读取失败'))
+    const wrapper = mount(WorkspaceStockMarketView, options)
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('暂时无法打开这只股票')
+    expect(wrapper.get('[role="alert"]').text()).toContain('行情读取失败')
+    expect(useAuthStore().isAuthenticated).toBe(true)
+  })
+
+  it('still expires the current session on a workspace 401', async () => {
+    vi.mocked(getWorkspace).mockRejectedValueOnce(new ApiError('UNAUTHENTICATED', '登录已过期', 401))
+    mount(WorkspaceStockMarketView, options)
+    await flushPromises()
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull()
+    expect(router.replace).toHaveBeenCalledWith({ name: 'login', query: { reason: 'expired' } })
+    expect(getWorkspaceStockMarketDetail).not.toHaveBeenCalled()
+  })
 })
 
 describe('workspace picker recovery', () => {
