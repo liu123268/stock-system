@@ -6,10 +6,28 @@
   color: var(--color-heading);
   font: 900 26px/1.4 var(--font-display);
 }
-.auth-page .auth-sheet .el-form-item {
+.auth-page .auth-fields {
+  /* 两页共用字段区；额外字段不会把操作区推到另一条基线上。 */
+  --auth-field-rows: 2;
+  --auth-field-height: calc(13px * 1.6 + 8px + 46px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 23px 16px;
+  align-content: start;
+  min-height: calc(
+    var(--auth-field-rows) * var(--auth-field-height) + (var(--auth-field-rows) - 1) * 23px
+  );
   margin-bottom: 23px;
 }
+.auth-page .auth-fields--paired {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.auth-page .auth-fields .el-form-item {
+  min-width: 0;
+  margin-bottom: 0;
+}
 .auth-page .auth-sheet .el-form-item__label {
+  margin-bottom: 0;
   padding-bottom: 8px;
   height: auto;
   color: var(--color-muted);
@@ -124,6 +142,14 @@
 }
 .auth-page .account-feedback.error {
   color: var(--color-danger);
+}
+.auth-page .auth-status {
+  margin-top: 24px;
+}
+@media (max-width: 600px) {
+  .auth-page .auth-fields {
+    column-gap: 12px;
+  }
 }
 /* ElMessage 挂到 body，显式应用同一主题并保留其固定定位。 */
 .account-message.research-theme {

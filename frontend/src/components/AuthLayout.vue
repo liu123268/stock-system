@@ -91,6 +91,7 @@ const accountQuery = computed(() =>
 }
 .auth-copy h1 {
   max-width: 9em;
+  min-height: 2lh;
   margin: 16px 0 24px;
   font: 900 44px/1.22 var(--font-display);
   letter-spacing: -0.025em;
@@ -98,6 +99,7 @@ const accountQuery = computed(() =>
 }
 .auth-copy > p:last-of-type {
   max-width: 32em;
+  min-height: 2lh;
   color: var(--color-muted);
   font-size: 15px;
   line-height: 1.9;

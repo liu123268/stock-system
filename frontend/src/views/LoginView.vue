@@ -89,15 +89,6 @@ onBeforeUnmount(() => {
 
 <template>
   <AuthLayout>
-    <p v-if="route.query.reason === 'password-changed'" class="account-feedback" role="status">
-      密码已更新，请使用新密码重新登录。
-    </p>
-    <p v-else-if="route.query.reason === 'registered'" class="account-feedback" role="status">
-      账号已创建，请使用刚才设置的密码登录。
-    </p>
-    <p v-else-if="route.query.reason === 'expired'" class="account-feedback" role="status">
-      登录已过期，请重新登录后继续。
-    </p>
     <div class="auth-form-heading">
       <h2>登录你的研究空间</h2>
     </div>
@@ -111,29 +102,30 @@ onBeforeUnmount(() => {
       label-position="top"
       @submit.prevent="handleLogin"
     >
-      <el-form-item label="登录账号" prop="username">
-        <el-input
-          v-model="form.username"
-          id="login-username"
-          name="username"
-          autocomplete="username"
-          placeholder="请输入登录账号"
-          size="large"
-        />
-      </el-form-item>
+      <div class="auth-fields">
+        <el-form-item label="登录账号" prop="username">
+          <el-input
+            v-model="form.username"
+            id="login-username"
+            name="username"
+            autocomplete="username"
+            placeholder="请输入登录账号"
+            size="large"
+          />
+        </el-form-item>
 
-      <el-form-item label="密码" prop="password">
-        <el-input
-          v-model="form.password"
-          id="login-password"
-          name="password"
-          autocomplete="current-password"
-          :type="showPassword ? 'text' : 'password'"
-          placeholder="请输入密码"
-          size="large"
-        />
-      </el-form-item>
-
+        <el-form-item label="密码" prop="password">
+          <el-input
+            v-model="form.password"
+            id="login-password"
+            name="password"
+            autocomplete="current-password"
+            :type="showPassword ? 'text' : 'password'"
+            placeholder="请输入密码"
+            size="large"
+          />
+        </el-form-item>
+      </div>
       <label class="password-visibility"
         ><input v-model="showPassword" type="checkbox" :disabled="submitting" />显示密码</label
       >
@@ -148,5 +140,26 @@ onBeforeUnmount(() => {
       还没有账号？<RouterLink :to="registerRoute">创建账号</RouterLink>
     </p>
     <div class="auth-security-note">使用个人账号进入，空间内保留各自的判断。</div>
+    <p
+      v-if="route.query.reason === 'password-changed'"
+      class="account-feedback auth-status"
+      role="status"
+    >
+      密码已更新，请使用新密码重新登录。
+    </p>
+    <p
+      v-else-if="route.query.reason === 'registered'"
+      class="account-feedback auth-status"
+      role="status"
+    >
+      账号已创建，请使用刚才设置的密码登录。
+    </p>
+    <p
+      v-else-if="route.query.reason === 'expired'"
+      class="account-feedback auth-status"
+      role="status"
+    >
+      登录已过期，请重新登录后继续。
+    </p>
   </AuthLayout>
 </template>

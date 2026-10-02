@@ -107,52 +107,54 @@ onBeforeUnmount(() => {
       label-position="top"
       @submit.prevent="handleRegister"
     >
-      <el-form-item label="登录账号" prop="username">
-        <el-input
-          v-model="form.username"
-          id="register-username"
-          name="username"
-          autocomplete="username"
-          placeholder="4-20位字母、数字或下划线"
-          size="large"
-        />
-      </el-form-item>
+      <div class="auth-fields auth-fields--paired">
+        <el-form-item label="登录账号" prop="username">
+          <el-input
+            v-model="form.username"
+            id="register-username"
+            name="username"
+            autocomplete="username"
+            placeholder="4–20位账号"
+            aria-description="登录账号为4到20位字母、数字或下划线"
+            size="large"
+          />
+        </el-form-item>
 
-      <el-form-item label="昵称" prop="nickname">
-        <el-input
-          v-model="form.nickname"
-          id="register-nickname"
-          name="nickname"
-          autocomplete="nickname"
-          placeholder="伙伴们看到的称呼"
-          size="large"
-        />
-      </el-form-item>
+        <el-form-item label="昵称" prop="nickname">
+          <el-input
+            v-model="form.nickname"
+            id="register-nickname"
+            name="nickname"
+            autocomplete="nickname"
+            placeholder="伙伴看到的称呼"
+            size="large"
+          />
+        </el-form-item>
 
-      <el-form-item label="密码" prop="password">
-        <el-input
-          v-model="form.password"
-          id="register-password"
-          name="password"
-          autocomplete="new-password"
-          :type="showPassword ? 'text' : 'password'"
-          placeholder="至少4个字符"
-          size="large"
-        />
-      </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input
+            v-model="form.password"
+            id="register-password"
+            name="password"
+            autocomplete="new-password"
+            :type="showPassword ? 'text' : 'password'"
+            placeholder="至少4个字符"
+            size="large"
+          />
+        </el-form-item>
 
-      <el-form-item label="确认密码" prop="confirmPassword">
-        <el-input
-          v-model="form.confirmPassword"
-          id="register-confirm"
-          name="confirmPassword"
-          autocomplete="new-password"
-          :type="showPassword ? 'text' : 'password'"
-          placeholder="再次输入密码"
-          size="large"
-        />
-      </el-form-item>
-
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input
+            v-model="form.confirmPassword"
+            id="register-confirm"
+            name="confirmPassword"
+            autocomplete="new-password"
+            :type="showPassword ? 'text' : 'password'"
+            placeholder="再次输入密码"
+            size="large"
+          />
+        </el-form-item>
+      </div>
       <label class="password-visibility"
         ><input v-model="showPassword" type="checkbox" :disabled="submitting" />显示密码</label
       >
