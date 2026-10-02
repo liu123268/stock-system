@@ -141,6 +141,18 @@
 - `READ COMMITTED` 与 `REPEATABLE READ` 的 Read View 有什么区别？
 - 已经使用 `REPEATABLE READ`，为什么检查后修改仍可能需要 `SELECT ... FOR UPDATE`？
 
+## DB-10：redo log、undo log 和 binlog 分别解决什么问题？
+
+### 完整回答
+
+> `undo log` 保存撤销修改和构造旧版本所需的信息，支撑事务回滚与 MVCC；`redo log` 是 InnoDB 的重做日志，先记录数据页修改，崩溃恢复时重放已提交变化，是持久性的核心机制；`binlog` 属于 MySQL Server 层，记录已提交的数据变更，主要用于复制和基于备份的时间点恢复，不能代替 undo 回滚或 redo 崩溃恢复。项目邀请码加入在同一事务中修改成员和使用次数：失败时依靠事务与 undo 撤销，提交后依靠 redo 保证崩溃恢复；若数据库启用 binlog，提交变更还会进入 binlog。redo 与 binlog 由 MySQL 的提交协议协调，应用代码不直接写这三种日志。
+
+### 可能追问
+
+- 为什么提交事务时不直接等待所有数据页写回磁盘？
+- redo log 与 binlog 为什么不能互相替代？
+- ACID 的原子性、隔离性和持久性分别由哪些机制共同保证？
+
 ## DB-10：数据库用 UTF-8，为什么中文搜索仍报字符集错误？
 
 ### 完整回答

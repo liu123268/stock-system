@@ -190,6 +190,66 @@ describe('workspace store', () => {
     expect(listWorkspaces).not.toHaveBeenCalled()
   })
 
+  it.each(['create', 'join'] as const)(
+    'keeps the newly selected space when a delayed %s finishes after leaving the picker',
+    async (action) => {
+      const write = deferred<AxiosResponse<ApiResult<WorkspaceDetailResponseVO>>>()
+      const joining = deferred<AxiosResponse<ApiResult<JoinWorkspaceResponseVO>>>()
+      vi.mocked(createWorkspace).mockReturnValueOnce(write.promise)
+      vi.mocked(joinWorkspace).mockReturnValueOnce(joining.promise)
+      const next = { ...detail, workspaceId: 13, name: '后来进入的空间' }
+      vi.mocked(getWorkspace).mockResolvedValueOnce(
+        response({ code: 'SUCCESS', message: '成功', data: next }),
+      )
+      const store = useWorkspaceStore()
+      const pending = action === 'create' ? store.create('家庭研究组') : store.join('A1B2C3')
+      store.invalidateEntryRequests()
+      await store.loadCurrent(13)
+      write.resolve(response({ code: 'SUCCESS', message: '成功', data: detail }))
+      joining.resolve(
+        response({
+          code: 'SUCCESS',
+          message: '成功',
+          data: { workspace: summary, newlyJoined: true },
+        }),
+      )
+      await pending
+      expect(store.currentWorkspace).toEqual(next)
+      expect(store.errorMessage).toBe('')
+      expect(listWorkspaces).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'ignores a post-save selector refresh that %ss after leaving the picker',
+    async (outcome) => {
+      const refresh = deferred<AxiosResponse<ApiResult<WorkspaceSummaryResponseVO[]>>>()
+      vi.mocked(createWorkspace).mockResolvedValueOnce(
+        response({ code: 'SUCCESS', message: '成功', data: detail }),
+      )
+      vi.mocked(listWorkspaces).mockReturnValueOnce(refresh.promise)
+      const store = useWorkspaceStore()
+      store.workspaces = [summary]
+      const pending = store.create('家庭研究组')
+      // POST 已返回，但它发起的 GET 仍未返回，此时用户进入另一个空间。
+      await vi.waitFor(() => expect(listWorkspaces).toHaveBeenCalledTimes(1))
+      store.invalidateEntryRequests()
+      const next = { ...detail, workspaceId: 13, name: '后来进入的空间' }
+      vi.mocked(getWorkspace).mockResolvedValueOnce(
+        response({ code: 'SUCCESS', message: '成功', data: next }),
+      )
+      await store.loadCurrent(13)
+      if (outcome === 'resolve')
+        refresh.resolve(response({ code: 'SUCCESS', message: '成功', data: [] }))
+      else refresh.reject(new Error('旧列表读取失败'))
+      await expect(pending).resolves.toEqual(detail)
+      expect(store.currentWorkspace).toEqual(next)
+      expect(store.workspaces).toEqual([summary])
+      expect(store.errorMessage).toBe('')
+      expect(store.loading).toBe(false)
+    },
+  )
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()

@@ -60,6 +60,7 @@ const formError = ref('')
 const successMessage = ref('')
 const pageRefreshWarning = ref('')
 const pageLoading = ref(true)
+const workspaceLoadError = ref('')
 const actionBusy = ref(false)
 const operationBusy = computed(
   () => actionBusy.value || stockStore.researchSubmitting || stockStore.submitLoading,
@@ -232,9 +233,12 @@ let enteringResearchView = true
 async function load() {
   const requested = captureTarget()
   pageLoading.value = true
-  // 只承接从行情页带来的保存结果，参数切换不沿用上一只股票的提示。
-  const savedRefreshWarning = enteringResearchView ? stockStore.refreshWarning : ''
+  // 首次进入承接保存结果；空间读取失败的重试保留它，参数切换不沿用上一只股票的提示。
+  const savedRefreshWarning =
+    enteringResearchView || workspaceLoadError.value ? stockStore.refreshWarning : ''
   enteringResearchView = false
+  workspaceLoadError.value = ''
+  let workspaceReady = false
   const requestedWorkspaceId = workspaceId.value
   const requestedStockId = workspaceStockId.value
   if (
@@ -251,6 +255,7 @@ async function load() {
   try {
     await workspaceStore.ensureCurrent(requestedWorkspaceId)
     if (!isCurrent(requested)) return
+    workspaceReady = true
     const detail = await stockStore.loadResearch(requestedWorkspaceId, requestedStockId)
     if (!isCurrent(requested)) return
     const quoteRead = loadMarket(requestedWorkspaceId, requestedStockId, detail.code)
@@ -273,7 +278,9 @@ async function load() {
     ) {
       stockStore.refreshWarning = savedRefreshWarning
     }
-    await handleWorkspaceApiError(error, router)
+    if (await handleWorkspaceApiError(error, router)) return
+    if (!workspaceReady)
+      workspaceLoadError.value = error instanceof Error ? error.message : '空间信息读取失败'
   } finally {
     if (isCurrent(requested)) pageLoading.value = false
   }
@@ -526,6 +533,7 @@ watch(
     formError.value = ''
     successMessage.value = ''
     operationError.value = ''
+    workspaceLoadError.value = ''
     stockStore.clearResearchView()
     chartExpanded.value = route.hash !== '#research-timeline'
     marketRequestVersion += 1
@@ -576,6 +584,15 @@ onBeforeUnmount(() => {
 <template>
   <section v-if="pageLoading || stockStore.researchLoading" class="page-state" aria-live="polite">
     正在读取研究记录…
+  </section>
+  <section v-else-if="workspaceLoadError" class="page-state" role="alert">
+    <h1>
+      {{ stockStore.refreshWarning ? '操作已经保存，空间信息暂未读取' : '暂时无法进入这个空间' }}
+    </h1>
+    <p v-if="stockStore.refreshWarning">{{ stockStore.refreshWarning }}</p>
+    <p>{{ workspaceLoadError }}</p>
+    <button class="ui-button" type="button" @click="load">重新加载空间与研究数据</button>
+    <RouterLink :to="{ name: 'workspaces', query: { reason: 'switch' } }">选择其他空间</RouterLink>
   </section>
   <section v-else-if="stockStore.researchError && !stockStore.researchDetail" class="page-state">
     <h1>

@@ -46,11 +46,15 @@ async function create() {
     formError.value = '请输入空间名称'
     return
   }
+  const session = authStore.sessionVersion
   creating.value = true
   try {
     const workspace = await store.create(name.value)
-    if (!disposed) await openWorkspace(workspace.workspaceId)
+    if (!disposed && session === authStore.sessionVersion)
+      await openWorkspace(workspace.workspaceId)
   } catch (error) {
+    if (disposed || session !== authStore.sessionVersion) return
+    if (await handleWorkspaceApiError(error, router)) return
     formError.value = error instanceof Error ? error.message : '空间创建失败'
   } finally {
     creating.value = false
@@ -71,11 +75,15 @@ async function join() {
     joinError.value = '请输入 6 位大写字母或数字'
     return
   }
+  const session = authStore.sessionVersion
   joining.value = true
   try {
     const result = await store.join(inviteCode.value)
-    if (!disposed) await openWorkspace(result.workspace.workspaceId)
+    if (!disposed && session === authStore.sessionVersion)
+      await openWorkspace(result.workspace.workspaceId)
   } catch (error) {
+    if (disposed || session !== authStore.sessionVersion) return
+    if (await handleWorkspaceApiError(error, router)) return
     joinError.value = error instanceof Error ? error.message : '加入空间失败'
   } finally {
     joining.value = false
@@ -95,6 +103,7 @@ function logout() {
 onMounted(load)
 onBeforeUnmount(() => {
   disposed = true
+  store.invalidateEntryRequests()
 })
 </script>
 
@@ -161,8 +170,10 @@ onBeforeUnmount(() => {
               <span class="row-enter" aria-hidden="true">进入 →</span>
             </button>
           </div>
-          <div v-else class="empty-layout">
-            <h2>建立你们的第一个空间。</h2>
+          <section class="create-section" aria-labelledby="create-workspace-title">
+            <h2 id="create-workspace-title">
+              {{ activeWorkspaces.length ? '创建另一个研究空间。' : '建立你们的第一个空间。' }}
+            </h2>
             <p>创建后，你将成为空间所有者，可以邀请成员共同研究。</p>
             <form class="create-form" :aria-busy="creating" @submit.prevent="create">
               <label for="workspace-name">空间名称</label>
@@ -184,7 +195,7 @@ onBeforeUnmount(() => {
                 {{ creating ? '正在创建…' : '创建空间' }}
               </button>
             </form>
-          </div>
+          </section>
           <section v-if="archivedWorkspaces.length" class="archived-section">
             <h2>( 已归档 · 只读 )</h2>
             <button
@@ -412,7 +423,7 @@ onBeforeUnmount(() => {
   background: var(--color-surface);
 }
 .join-section h2,
-.empty-layout h2 {
+.create-section h2 {
   margin-top: 10px;
   font-family: var(--font-display);
   font-size: 24px;
@@ -497,10 +508,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.8;
 }
-.empty-layout {
+.create-section {
   padding-top: 24px;
 }
-.empty-layout > p {
+.create-section > p {
   margin-top: 10px;
   color: var(--color-muted);
   font-size: 14px;

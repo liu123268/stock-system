@@ -42,6 +42,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let membersRequestVersion = 0
   let managementVersion = 0
   let sessionVersion = 0
+  let entryRequestVersion = 0
 
   async function loadWorkspaces() {
     const requestVersion = ++listRequestVersion
@@ -63,8 +64,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function create(name: string) {
     const requestSession = sessionVersion
+    const entryVersion = entryRequestVersion
     const result = (await createWorkspace(name)).data
-    if (requestSession !== sessionVersion) return result.data
+    if (requestSession !== sessionVersion || entryVersion !== entryRequestVersion)
+      return result.data
     currentWorkspace.value = result.data
     try {
       await loadWorkspaces()
@@ -76,8 +79,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function join(inviteCode: string) {
     const requestSession = sessionVersion
+    const entryVersion = entryRequestVersion
     const result = (await joinWorkspace(inviteCode)).data.data
-    if (requestSession !== sessionVersion) return result
+    if (requestSession !== sessionVersion || entryVersion !== entryRequestVersion) return result
     try {
       await loadWorkspaces()
     } catch {
@@ -301,6 +305,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function clearAll() {
     managementVersion += 1
     sessionVersion += 1
+    entryRequestVersion += 1
     listRequestVersion += 1
     clearInvitations()
     membersRequestVersion += 1
@@ -318,6 +323,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     workspaces.value = workspaces.value.map((item) =>
       item.workspaceId === workspace.workspaceId ? { ...item, ...workspace } : item,
     )
+  }
+
+  // 选择页已离开：保存结果仍返回，但旧写入与列表刷新不能改变后续页面。
+  function invalidateEntryRequests() {
+    entryRequestVersion += 1
+    listRequestVersion += 1
+    loading.value = false
   }
 
   // 同空间切成员／设置页也会卸载：旧治理响应及其刷新不得进入新页面。
@@ -365,6 +377,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     clearCurrent,
     clearInvitations,
     clearAll,
+    invalidateEntryRequests,
     invalidateManagement,
   }
 })

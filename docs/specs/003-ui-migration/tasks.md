@@ -2,13 +2,35 @@
 
 2026-10-01：UI-01～10 已完成正式迁移与收口。原 V2、内容补齐副本及各块前后证据保留，旧 Vue 预览／轨道退出生产。需求见 [requirements](requirements.md)，页面与字段关系见 [design](design.md)，正式验收见本文末尾；不将 UI 完成解释为目录同步、部署或 Java 核心 V1 全部完成。
 
+## 2026-10-02：迁移代码复审与修复（已关闭）
+
+对照迁移前 `982e8f3^` 至 `1c5fcbd` 的源码、规格及测试，重点核对 Router／权限、API→Store→页面、写后读取与异步归属、图表清理及旧实现引用。初次复审只记录三项问题；用户随后要求修复，本节合并记录修复与实际验证，不以历史迁移验收代替本次回归。
+
+| 优先级 | 已复现的问题与原因 | 归属及修复结果 |
+| --- | --- | --- |
+| P2 | 创建请求未返回时进入既有归档空间，随后创建响应仍把 `workspace.ts` 的 currentWorkspace 换成新空间；URL 保持归档空间，侧栏回到“研究空间”、概览正文变空。选择页 disposed 只阻止导航，Store 只检查会话版本，未检查当前选择是否变化。 | 已修复 UI-01 离页保护：选择页卸载同时废弃旧保存回调与列表 GET，创建／加入不覆盖后来进入的空间或继续旧刷新，页面也检查会话及访问错误。该赋值逻辑迁移前已有；迁移后只保护导航造成共享状态失配。根因承接 [BUG-006 补充](../../engineering/bugs/BUG-006-stale-session-response.md#ui-01-补充同账号离开空间选择页2026-10-02)。 |
+| P2 | 刷新或直接打开研究详情时，首个空间详情 GET 网络失败；ensureCurrent 保存的是 workspace.errorMessage，页面 catch 只调用访问错误处理，模板却只展示 stockStore.researchError，导致正文为空且没有重试按钮。 | 已修复迁移前已有的失败状态缺口：独立错误区提供完整读取重试及选择其他空间入口，普通网络失败保留账号，真实 401 仍清理；连续失败时保留已保存提示。 |
+| P2 | 已有活动空间时，选择页 create-form 位于 activeWorkspaces 的 v-else，因此没有继续创建空间的入口；reason=switch 也只保留选择页。 | 已修复迁移前已有的功能缺口：零／一／多个活动空间均可创建，已有空间显示额外创建表单，保留首次空状态引导及唯一空间默认自动进入。满足 [SPEC-001 WS-010](../001-workspace/requirements.md)；design 中承接旧条件的两处映射同步修正。 |
+
+**初次复审证据**：type-check、只读 lint:check、build-only 通过；图表计时用例首次超时后，单独 5 项及独立全量 116 项／14 文件重跑通过，未改断言或超时。Chrome 读取实际 dist、截获全部 API 复现三项问题，并确认注册页键盘跳过链接正常；1440×900 与 320×600 的 [复现脚本](../../../../ui-preview/ui-code-review/browser-probe.mjs) 和 [观察结果](../../../../ui-preview/ui-code-review/browser-probe.json) 保留。这一阶段没有真实后端或数据库操作。
+
+**修复代码验证**：type-check、只读 lint:check、build-only 通过；新增 14 项回归后，全量 130 项／15 文件通过。Store 验证选择页离开后的迟到 POST，以及保存后 GET 的迟到成功／失败；实际组件测试验证卸载、零／一／多空间创建、完整只读重试、连续失败的保存提示及当前真实 401。原业务断言保留；新测试 mock router 函数最初缺类型参数，按 lint 要求修正后通过，未降低规则。
+
+**实际浏览器验证**：在后端及前端代理均核对 test 探针和实际 MySQL catalog 后，原 `ui-shell-smoke.mjs` 使用生产 dist 完成 54 项，原 `ui-research-smoke.mjs` 使用隔离开发前端完成 58 项；两份脚本保留原流程并补充实际提交后挂起创建／加入响应、进入归档空间再释放，以及空间详情连续失败后的完整 GET 重试。额外创建经界面真正保存，写后 GET 失败仍只 POST 一次。生产构建补充检查完成 6 项：四宽度的空间错误区、连续只读重试恢复、当前会话 401 清理。1440／960／390／320px 无横向溢出，桌面与最窄页面截图已人工查看。证据见 [空间报告](../../../../ui-preview/ui-code-review/fix-shell/after-verification.json)、[研究报告](../../../../ui-preview/ui-code-review/fix-research/after-verification.json)、[生产补充脚本](../../../../ui-preview/ui-code-review/browser-fix-probe.mjs) 与 [生产补充报告](../../../../ui-preview/ui-code-review/browser-fix-probe.json)。生产补充仅使用受控 API，不能当作真实后端证据。
+
+**验证过程与边界**：扩充 shell 首次漏写成员会话变量，修正脚本后完整重跑通过；research 首次在 dist 上运行，其已有 ECharts 内部布局检查依赖 Vite 开发模块而失败，随后在隔离开发前端完整通过，生产故障恢复另行验证，没有删除图表断言。失败运行同样执行 finally 清理。未修改 Java／接口／数据库结构，未执行全后端测试、完整全站回归、目录同步或真实供应商探测，未提交或部署。
+
+**数据与进程清理**：真实 smoke 仅在 `stock_system_test` 创建本轮唯一标识的账号、空间、邀请、成员与研究数据；finally 按引用精确清理，并逐表核对为 0，仅按原脚本条件清理本轮 mock 目录行。最终只读复核 browser_ui 账号和测试空间均为 0，开发库仍 2 个账号。浏览器关闭；本轮 test 后端 PID 38120、开发前端 PID 13048、dist 预览 PID 15080 在核对名称、启动时间和监听归属后关闭，18082／18083／18084 释放，用户 8082 PID 26300 与 8083 PID 41408 保持运行。默认 profile 仍 dev、开发 catalog 仍 stock_system，test 行情仍 mock。
+
+**旧实现清理核对**：DesignOrbit、DesignPreviewView、旧预览生产路由及旧图标已退出；原 auth／admin／directory 测试业务断言保留。没有确认应删除的生产死代码；图表清理、请求版本和 press-feedback 监听均有实际用途。创建区的旧 empty-layout 选择器随模板同步替换，没有留下无引用样式；原静态预览与复审前证据未覆盖。
+
 ## 1. 执行顺序
 
 顺序为 UI-01 → UI-02 → UI-03 → UI-04 → UI-05 → UI-06 → UI-07 → UI-08 → UI-09 → UI-10。按公共依赖、核心研究链路、空间管理、公开与账号、治理、清理组织；每块完成后展示结果，用户可按块提出修正。尚未处理的页面可以暂时保留旧外观，但必须可用。
 
 | 编号 | 迁移块与源码范围（相对 frontend/src） | 当块必须验收的行为与边界 |
 | --- | --- | --- |
-| UI-01 | 公共视觉、空间外壳与选择页：`styles/main.css`、`components/workspace/WorkspaceLayout.vue`、`views/workspace/WorkspaceListView.vue`；按需增加最小公共样式 | 登录后选空间、无活动空间时创建、邀请码加入、归档只读进入、切空间、个人资料入口与退出。长空间名、失败重试、手机导航；抽查所有旧空间子页无布局遮挡或功能回退。 |
+| UI-01 | 公共视觉、空间外壳与选择页：`styles/main.css`、`components/workspace/WorkspaceLayout.vue`、`views/workspace/WorkspaceListView.vue`；按需增加最小公共样式 | 登录后选空间、首次与额外创建、邀请码加入、归档只读进入、切空间、个人资料入口与退出。长空间名、失败重试、离页旧响应、手机导航；抽查所有旧空间子页无布局遮挡或功能回退。 |
 | UI-02 | 共享自选：`views/workspace/WorkspaceStocksView.vue` | 搜索与 query 恢复、无结果／无报价、最新未撤回观点摘要、本期统计、关注级别切换、历史入口；名称进入研究页，全部观点定位时间线，列表内图表仍可展开／收起，归档不可写。 |
 | UI-03 | 行情与初始观点：`WorkspaceStockMarketView.vue`、`StockMarketPanel.vue`、`StockInitialOpinionForm.vue`、两个 ECharts 组件及必要主题配置 | 未关注查看不写入，加入／重新关注展开表单并提交；已有活动周期进入研究；重复加入草稿边界。全部现有 K 线周期、左拖历史、分时日期、成交量、百分比轴、失败重试、折叠与离页停止刷新。共用图表在列表及旧研究页保持可用。 |
 | UI-04 | 研究详情：`views/workspace/WorkspaceStockResearchView.vue` | 当前报价和本期价差边界、行情独立失败、观点更新／复盘、结束与重开、撤销窗口和隐藏正文、服务端筛选、加载更早记录、跨周期合并、草稿、旧响应保护、锚点定位和归档只读。 |

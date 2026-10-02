@@ -136,6 +136,64 @@ async function saveWithFailedRefresh(page, mutationPath, action) {
     await page.unroute('**/api/workspaces**', handler)
   }
 }
+
+async function saveAfterLeavingPicker(page, mutationPath, fill, action, archivedName) {
+  let release
+  let savedOnServer
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const saved = new Promise((resolve) => {
+    savedOnServer = resolve
+  })
+  let writes = 0
+  let obsoleteReads = 0
+  let released = false
+  const handler = async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method() === 'POST' && path === mutationPath) {
+      const response = await route.fetch()
+      assert.ok(response.ok())
+      writes += 1
+      savedOnServer()
+      await gate
+      await route.fulfill({ response })
+    } else {
+      if (released && path === '/api/workspaces' && route.request().method() === 'GET')
+        obsoleteReads += 1
+      await route.continue()
+    }
+  }
+  await page.goto(`${frontendUrl}/workspaces?reason=switch`)
+  await page.locator('.archived-row').waitFor()
+  await page.route('**/api/workspaces**', handler)
+  try {
+    await fill()
+    const responseReceived = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === mutationPath && response.request().method() === 'POST',
+    )
+    await action()
+    await saved
+    await page.locator('.archived-row').click()
+    await page.getByRole('heading', { name: archivedName, exact: true }).waitFor()
+    const currentUrl = page.url()
+    released = true
+    release()
+    await responseReceived
+    await page.waitForTimeout(100)
+    assert.equal(page.url(), currentUrl)
+    assert.equal(await page.locator('.workspace-content h1').innerText(), archivedName)
+    assert.ok((await page.locator('.switcher').innerText()).includes(archivedName))
+    assert.equal(writes, 1)
+    assert.equal(obsoleteReads, 0, '离页后的保存响应不能再发起旧列表刷新')
+    checks.push({ name: `${mutationPath}-late-save-keeps-selected-archived-space`, passed: true })
+  } finally {
+    release()
+    await page.unroute('**/api/workspaces**', handler)
+  }
+}
+
 async function capture(page, name, widths = [1440, 390]) {
   for (const width of widths) {
     await page.setViewportSize({ width, height: 1000 })
@@ -204,7 +262,16 @@ try {
     'POST',
     { expectedInvitationId: null },
   )
-  const second = await api('/workspaces', owner.accessToken, 'POST', { name: `第二空间${runId}` })
+  let second
+  if (phase === 'after') {
+    await page.goto(`${frontendUrl}/workspaces?reason=switch`)
+    await page.getByLabel('空间名称', { exact: true }).waitFor()
+    await page.getByLabel('空间名称', { exact: true }).fill(`第二空间${runId}`)
+    await saveWithFailedRefresh(page, '/api/workspaces', submitCreate)
+    await page.getByRole('heading', { name: `第二空间${runId}`, exact: true }).waitFor()
+    second = { workspaceId: Number(new URL(page.url()).pathname.split('/')[2]) }
+    checks.push({ name: 'create-another-space-with-an-existing-active-space', passed: true })
+  } else second = await api('/workspaces', owner.accessToken, 'POST', { name: `第二空间${runId}` })
   await page.goto(`${frontendUrl}/workspaces`)
   await page.getByRole('button').filter({ hasText: workspaceName }).waitFor()
   await capture(page, 'picker', [1440, 960, 390, 320])
@@ -237,6 +304,10 @@ try {
     await memberPage.waitForURL(/\/workspaces\?reason=switch$/)
     await memberPage.getByRole('button').filter({ hasText: workspaceName }).waitFor()
     assert.ok(await memberPage.getByLabel('邀请码').isVisible(), '单空间主动切换后加入入口必须可见')
+    assert.ok(
+      await memberPage.getByLabel('空间名称', { exact: true }).isVisible(),
+      '单空间主动切换后创建入口必须可见',
+    )
     checks.push({ name: 'join-and-explicit-single-workspace-switch', passed: true })
 
     const stock = await api(`/workspaces/${workspaceId}/stocks`, owner.accessToken, 'POST', {
@@ -333,6 +404,33 @@ try {
     await page.getByRole('link', { name: '个人资料', exact: true }).click()
     await page.waitForURL(/\/profile$/)
     checks.push({ name: 'archived-readonly-and-profile', passed: true })
+
+    const archivedName = '用于验证很长空间名称能够换行并保持导航和控件正常使用的研究组'
+    await saveAfterLeavingPicker(
+      page,
+      '/api/workspaces',
+      () => page.getByLabel('空间名称', { exact: true }).fill(`迟到空间${runId}`),
+      () => page.getByRole('button', { name: '创建空间', exact: true }).click(),
+      archivedName,
+    )
+    const secondInvitation = await api(
+      `/workspaces/${second.workspaceId}/invitations`,
+      owner.accessToken,
+      'POST',
+      { expectedInvitationId: null },
+    )
+    await saveAfterLeavingPicker(
+      memberPage,
+      '/api/workspaces/join',
+      () => memberPage.getByLabel('邀请码', { exact: true }).fill(secondInvitation.inviteCode),
+      () => memberPage.getByRole('button', { name: '使用邀请码加入', exact: true }).click(),
+      archivedName,
+    )
+    const memberSession = await api('/auth/login', null, 'POST', {
+      username: usernames[1],
+      password,
+    })
+    await api(`/workspaces/${second.workspaceId}/leave`, memberSession.accessToken, 'POST')
 
     let releaseOldResponse
     let oldRequestStarted

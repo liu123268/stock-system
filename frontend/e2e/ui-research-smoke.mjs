@@ -251,6 +251,46 @@ try {
       contentType: 'application/json',
       body: JSON.stringify({ code: 'TEMPORARY_UNAVAILABLE', message, data: null }),
     })
+    // 首个空间 GET 失败时也必须有恢复入口；成功重试只读取，不再发表／关注。
+    const workspacePath = `**/api/workspaces/${id}`
+    let workspaceReads = 0
+    let recoveryWrites = 0
+    const recordWrite = (request) => {
+      if (
+        new URL(request.url()).pathname.startsWith('/api/workspaces/') &&
+        request.method() !== 'GET'
+      )
+        recoveryWrites += 1
+    }
+    const failWorkspace = async (route) => {
+      workspaceReads += 1
+      await route.fulfill(error503('验收：空间详情暂时不可用'))
+    }
+    page.on('request', recordWrite)
+    await page.route(workspacePath, failWorkspace)
+    try {
+      await page.reload()
+      await page.getByRole('heading', { name: '暂时无法进入这个空间', exact: true }).waitFor()
+      assert.ok(await page.evaluate(() => localStorage.getItem('stock-system-access-token')))
+      assert.ok(await page.getByRole('link', { name: '选择其他空间', exact: true }).isVisible())
+      await capture(page, 'initial-workspace-error', [1440, 960, 390, 320])
+      await page.getByRole('button', { name: '重新加载空间与研究数据', exact: true }).click()
+      await page.getByRole('heading', { name: '暂时无法进入这个空间', exact: true }).waitFor()
+      assert.equal(workspaceReads, 2)
+      await page.unroute(workspacePath, failWorkspace)
+      await page.getByRole('button', { name: '重新加载空间与研究数据', exact: true }).click()
+      await page.locator('.research-header h1').waitFor()
+      await page.locator('.opinion-item').first().waitFor()
+      await page.locator('.market-panel canvas').waitFor()
+      assert.equal(recoveryWrites, 0)
+      checks.push({
+        name: 'initial-workspace-error-repeated-get-only-retry-recovers-research',
+        passed: true,
+      })
+    } finally {
+      page.off('request', recordWrite)
+      await page.unroute(workspacePath, failWorkspace)
+    }
     const countOpinions = () =>
       Number(
         sql(
