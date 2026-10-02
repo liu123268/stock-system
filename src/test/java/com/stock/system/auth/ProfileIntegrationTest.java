@@ -5,6 +5,8 @@ import com.stock.system.auth.dto.RegisterRequestDTO;
 import com.stock.system.auth.service.AuthService;
 import com.stock.system.support.MySqlIntegrationTest;
 import com.stock.system.user.service.UserService;
+import com.stock.system.user.entity.AppUser;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -31,6 +33,53 @@ class ProfileIntegrationTest extends MySqlIntegrationTest {
     @Autowired private AuthService authService;
     @Autowired private UserService userService;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private PasswordEncoder passwordEncoder;
+
+    @Test
+    void shouldLetLegacyFourCharacterPasswordLoginAndUpgradeWithoutLosingAccount() throws Exception {
+        // 直接构造历史账号，不能用新注册接口创建已禁止的四位密码。
+        AppUser legacy = new AppUser();
+        legacy.setUsername("legacy_password");
+        legacy.setNickname("历史账号");
+        legacy.setStatus("ACTIVE");
+        legacy.setPasswordHash(passwordEncoder.encode("a1B2"));
+        userService.create(legacy);
+        String token = login("legacy_password", "a1B2");
+
+        for (String invalidPassword : new String[] {"a1B2", "a1B2c", "a".repeat(65)}) {
+            mockMvc.perform(post("/api/auth/password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                    "currentPassword", "a1B2", "newPassword", invalidPassword))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        assertThat(userService.findById(legacy.getId()).getCredentialVersion()).isZero();
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/auth/password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"a1B2\",\"newPassword\":\"a1B2c3\"}"))
+                .andExpect(status().isOk());
+        AppUser updated = userService.findByUsername("legacy_password");
+        assertThat(updated.getId()).isEqualTo(legacy.getId());
+        assertThat(updated.getNickname()).isEqualTo("历史账号");
+        assertThat(updated.getCredentialVersion()).isEqualTo(1);
+        assertThat(passwordEncoder.matches("a1B2c3", updated.getPasswordHash())).isTrue();
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"legacy_password\",\"password\":\"a1B2\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+        String newToken = login("legacy_password", "a1B2c3");
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + newToken))
+                .andExpect(status().isOk());
+    }
 
     @Test
     void shouldUpdateOnlyOwnNicknameWithoutInvalidatingToken() throws Exception {

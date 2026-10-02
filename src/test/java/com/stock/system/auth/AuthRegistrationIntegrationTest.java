@@ -5,6 +5,10 @@ import com.stock.system.user.entity.AppUser;
 import com.stock.system.user.mapper.AppUserMapper;
 import com.stock.system.support.MySqlIntegrationTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +37,9 @@ class AuthRegistrationIntegrationTest extends MySqlIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void shouldRegisterUserAndStoreBCryptPasswordHash() throws Exception {
@@ -81,12 +88,12 @@ class AuthRegistrationIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
-    void shouldAcceptFourCharacterPasswordForCurrentLocalStage() throws Exception {
+    void shouldAcceptTwoCharacterUsernameAndSixCharacterPassword() throws Exception {
         String requestBody = """
                 {
-                  "username": "short_password_user",
-                  "password": "a1B2",
-                  "nickname": "四位密码测试"
+                  "username": "Ab",
+                  "password": "a1B2c3",
+                  "nickname": "林"
                 }
                 """;
 
@@ -95,7 +102,31 @@ class AuthRegistrationIntegrationTest extends MySqlIntegrationTest {
                         .content(requestBody))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
-                .andExpect(jsonPath("$.data.username").value("short_password_user"));
+                .andExpect(jsonPath("$.data.username").value("ab"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {4, 5, 65})
+    void shouldRejectNewPasswordsOutsideLengthRange(int length) throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", "length_check", "password", "a".repeat(length), "nickname", "长度测试"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        assertThat(appUserMapper.selectCount(new LambdaQueryWrapper<AppUser>()
+                .eq(AppUser::getUsername, "length_check"))).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "abcdefghijklmnopqrstu", "中文", "a-"})
+    void shouldRejectInvalidUsernames(String username) throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", username, "password", "ValidPass123", "nickname", "账号测试"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     @Test

@@ -11,6 +11,7 @@ public record LoginRequestDTO(
         String username,
 
         @NotBlank(message = "密码不能为空")
+        // 登录验证已有凭据，保留旧四位密码；新密码长度由注册和改密 DTO 约束。
         @Size(min = 4, max = 64, message = "密码长度必须在4到64个字符之间")
         String password
 ) {

@@ -35,11 +35,11 @@ public class SuperAdminInitializerService {
 
         String username = rawUsername.trim().toLowerCase(Locale.ROOT);
         String nickname = rawNickname.trim();
-        if (!username.matches("[a-z0-9_]{4,20}")) {
-            throw new IllegalStateException("超级管理员登录账号必须是4到20位小写字母、数字或下划线");
+        if (!username.matches("[a-z0-9_]{2,20}")) {
+            throw new IllegalStateException("超级管理员登录账号必须是2到20位小写字母、数字或下划线");
         }
-        if (rawPassword.length() < 4 || rawPassword.length() > 64) {
-            throw new IllegalStateException("超级管理员密码长度必须在4到64个字符之间");
+        if (rawPassword.length() < 6 || rawPassword.length() > 64) {
+            throw new IllegalStateException("超级管理员密码长度必须在6到64个字符之间");
         }
         if (nickname.isEmpty() || nickname.length() > 20) {
             throw new IllegalStateException("超级管理员昵称长度必须在1到20个字符之间");

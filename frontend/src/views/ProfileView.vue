@@ -60,8 +60,8 @@ async function saveNickname() {
 async function savePassword() {
   if (busy.value) return
   passwordError.value = ''
-  if (newPassword.value.length < 4 || newPassword.value.length > 64) {
-    passwordError.value = '新密码长度需要 4 到 64 个字符'
+  if (newPassword.value.length < 6 || newPassword.value.length > 64) {
+    passwordError.value = '新密码长度需要 6 到 64 个字符'
     return
   }
   if (newPassword.value !== confirmPassword.value) {
@@ -163,13 +163,15 @@ onBeforeUnmount(() => {
             name="newPassword"
             :type="showPasswords ? 'text' : 'password'"
             autocomplete="new-password"
-            minlength="4"
+            minlength="6"
             maxlength="64"
             required
             :disabled="busy"
             aria-describedby="password-hint password-feedback"
           />
-          <p id="password-hint" class="field-hint">当前密码长度为 4 到 64 个字符。</p>
+          <p id="password-hint" class="field-hint">
+            新密码需 6 到 64 个字符，建议使用更长的口令。已有 4 位密码仍可作为原密码。
+          </p>
           <label for="confirm-password">确认新密码</label>
           <input
             id="confirm-password"

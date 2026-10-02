@@ -35,7 +35,7 @@ const form = reactive<RegisterForm>({
 const rules: FormRules<RegisterForm> = {
   username: [
     { required: true, message: '请输入登录账号', trigger: 'blur' },
-    { min: 4, max: 20, message: '登录账号长度为4到20个字符', trigger: 'blur' },
+    { min: 2, max: 20, message: '登录账号长度为2到20个字符', trigger: 'blur' },
     { pattern: /^[A-Za-z0-9_]+$/, message: '只能使用字母、数字和下划线', trigger: 'blur' },
   ],
   nickname: [
@@ -44,7 +44,7 @@ const rules: FormRules<RegisterForm> = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 4, max: 64, message: '密码长度为4到64个字符', trigger: 'blur' },
+    { min: 6, max: 64, message: '密码长度为6到64个字符', trigger: 'blur' },
   ],
   confirmPassword: [
     { required: true, message: '请再次输入密码', trigger: 'blur' },
@@ -114,8 +114,8 @@ onBeforeUnmount(() => {
             id="register-username"
             name="username"
             autocomplete="username"
-            placeholder="4–20位账号"
-            aria-description="登录账号为4到20位字母、数字或下划线"
+            placeholder="2–20位账号"
+            aria-description="登录账号为2到20位字母、数字或下划线"
             size="large"
           />
         </el-form-item>
@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
             name="password"
             autocomplete="new-password"
             :type="showPassword ? 'text' : 'password'"
-            placeholder="至少4个字符"
+            placeholder="至少6个字符"
             size="large"
           />
         </el-form-item>

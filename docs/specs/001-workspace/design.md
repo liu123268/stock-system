@@ -47,6 +47,8 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 ### 5.2 账号与普通空间 API
 
+WS-036 的新凭据校验在注册 DTO、改密 DTO 和治理初始化器执行，Vue 注册／资料页提供相同输入提示。登录 DTO 及登录页保留已有密码校验范围，原密码继续由 BCrypt `matches` 核对。V11 只替换 `ck_app_user_username`，保留账号唯一约束、主键、密码摘要及凭据版本；不回写 V1，不批量改写既有账号。
+
 账号资料接口属于空间外账号能力，普通用户与唯一治理账号都只能修改自己的资料：`PATCH /api/auth/me` 接收 `UpdateNicknameRequestDTO(nickname)` 并返回最新 `CurrentUserResponseVO`；`POST /api/auth/password` 接收 `ChangePasswordRequestDTO(currentPassword, newPassword)`，成功后返回空数据。原密码错误返回 `CURRENT_PASSWORD_INCORRECT` 400，不把有效会话误判为登录失效。
 
 V8 为 `app_user` 增加从 0 开始的 `credential_version`。登录签发 JWT 时写入该版本；改密事务锁定账号行、核对原密码、更新 BCrypt 摘要并递增版本。JWT 过滤器已在每次请求读取账号状态，同次读取比较版本；不一致返回统一 401。迁移前签发且没有版本声明的 JWT 按 0 处理，首次改密后同样失效。页面成功改密后立即清除当前 Token 和缓存并引导重新登录；昵称修改只更新账号资料，不改变凭据版本。
