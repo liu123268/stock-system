@@ -1,6 +1,6 @@
 # 本地开发与启动说明
 
-更新时间：2026-09-11
+更新时间：2026-10-02
 
 ## 1. “前端”到底是什么
 
@@ -137,10 +137,10 @@ Vue → Spring Boot（权限、目录与参数校验）→ 行情网关
                                           ├─ Redis 命中 → 返回缓存行情
                                           └─ 未命中／关闭／故障
                                                → 进程内短缓存
-                                               → 必要时由 longbridge serve 受控回源
+                                               → 必要时由官方 Java SDK 受控回源
 ```
 
-搜索先查 MySQL 标准目录，再批量补报价；添加仍由服务端取可信报价后写不可变开始快照；K 线和分时只在用户展开股票时按需读取。Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。第一次真正需要回源时，它启动一个官方 `longbridge serve` 子进程；后续请求通过 stdin/stdout JSON-RPC 复用该进程，应用关闭时一并关闭。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。缓存分层及失败边界见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
+搜索先查 MySQL 标准目录，再批量补报价；添加仍由服务端取可信报价后写不可变开始快照；K 线和分时只在用户展开股票时按需读取。Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。开发配置现在选择官方 Java SDK OAuth：第一次回源时创建一个 `QuoteContext`，后续复用，应用关闭时释放 SDK 资源；不会启动 CLI。生产仍选择 `longbridge serve`，其操作只见部署说明。本地新账号官方授权与四类行情 SDK 探测已通过，登录后网页与自动刷新仍待验收，证据见 SPEC-002 的 CODE-206I。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。缓存分层及失败边界见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
 
 当前[官方定价说明](https://open.longbridge.com/zh-CN/pricing)写明 OpenAPI 不收激活或接口使用费，因此一次报价不是“消耗一张 OAuth 授权码”或按次扣费；需要控制的是调用速率、长连接数量和各市场行情权限。授权码只用于建立/刷新授权，Token 会复用。[实时报价接口](https://open.longbridge.com/zh-CN/docs/quote/pull/quote)当前没有公开的每日或每月不同标的总量硬上限；单次最多接收 500 个代码，所以理论上查询 5000 只需要拆成至少 10 个请求并遵守每秒 10 次、并发 5 次，不能一次请求或同时订阅 5000 只。项目搜索只取最多 30 个候选并合并成一次请求。
 
@@ -148,39 +148,58 @@ Vue → Spring Boot（权限、目录与参数校验）→ 行情网关
 
 官方文档的“我的行情权限”链接进入 [Longbridge Account Center](https://open.longbridge.com/account)，可核对账号权限和档位；当前公开文档和 CLI 帮助没有提供“本月已用／剩余不同 K 线标的数”的查询命令，不能承诺该页一定显示实时已用计数。项目也不自称掌握供应商全局余量，因为同一账号可能被其他客户端调用；当前只能避免搜索预取、复用同股缓存，并在上游限制错误时明确显示。以后若做本地用量看板，只能标为项目自身请求估算，不能冒充 Longbridge 官方剩余额度。
 
-### 9.2 第一次准备
+### 9.2 新账号与官方 OAuth 准备
 
-在运行 Spring Boot 的同一个 Windows 账号下完成以下核对：
+本地账号与云端账号分别授权。一个长桥账号的行情长连接限制不会因换 OAuth client_id 或增加 Redis 消失；新的账号也须具有自己的 OpenAPI 行情权限。账号注册、验证码、身份资料和授权同意由用户在[官方开发者中心](https://open.longbridge.com/account)完成；若页面要求先开户，按官方条件办理。OpenAPI 权限独立于 App 行情权限，见[官方说明](https://open.longbridge.com/zh-CN/docs/quote/overview)。
 
-1. `longbridge --version`：确认 CLI 已安装且当前终端能找到它；本机已验证版本为 `v0.28.5`。
-2. `longbridge auth login`：只在首次使用、Token 失效或授权被撤销时完成浏览器授权，不是每次查行情都执行。
-3. `longbridge quote 600519.SH`：先把账号、网络和 A 股只读权限与项目代码分开验证；能返回价格后再启动 Spring Boot。
+`client_id` 是本地程序的公开身份，长桥账号是授权人，Token 是 SDK 保存的访问凭证。先在独立浏览器配置中注册并确认新账号，再在项目根目录的 PowerShell 运行：
 
-本机 `longbridge.exe` 为 16,547,328 字节（约 15.8 MiB）；项目不复制它，也不读取 CLI 保存在 `~/.longbridge/openapi/tokens/<client_id>` 的 Token。若新终端能运行 CLI、但从旧 IntelliJ 启动的 Java 找不到它，原因通常是 IntelliJ 没继承更新后的 PATH。重启 IntelliJ，或在运行配置中设置：
-
-```text
-LONGBRIDGE_CLI_PATH=C:\实际安装位置\longbridge.exe
+```powershell
+.\scripts\authorize-longbridge.cmd
 ```
 
-项目在 Windows 下还会从当前账号的 `LOCALAPPDATA\Programs\longbridge\longbridge.exe` 查找官方默认安装位置；找不到时才依赖 PATH。`LONGBRIDGE_CLI_PATH` 是可执行文件路径，不是 Token。不能把授权码或 Token 放进环境变量、启动参数、项目配置或日志。
+该命令做两件事：没有本地 client_id 时，按[官方快速开始](https://open.longbridge.com/zh-CN/docs/getting-started)动态注册 `stock-system-local-java-sdk` public client，新注册回调为 `http://localhost:18080/callback`；然后用 `OAuthBuilder` 执行浏览器授权，最长等待 10 分钟。本机 Windows 保留端口范围包含 SDK 默认的 60355，因此新注册和 SDK 均使用 18080；已有 client_id 始终复用，旧配置缺少回调端口时保留原来的 60355，不自动重注册或覆盖配置。脚本在终端打印授权 URL，由用户在已登录新账号的 Chrome 普通窗口打开，不自动唤起默认浏览器。授权页须核对为新账号，浏览器回调时命令窗口保持打开。终端出现 `LONGBRIDGE_OAUTH_OK` 才证明 SDK 授权完成；这一步不连接数据库、不建立行情连接，不能当作新账号行情权限验收。
+
+脚本把公开 client_id 和回调端口写到 Git 忽略的 `.env.longbridge-local.properties`（`local.longbridge.client-id`、`local.longbridge.callback-port`）。授权时临时设置子进程的 `LONGBRIDGE_CLIENT_ID`，不设置 Windows 用户／系统永久环境变量。`dev` 导入该文件，运行目录应为项目根目录；也可通过非敏感的 `LONGBRIDGE_CLIENT_ID` 覆盖。Token 的保存和刷新交给官方 SDK，Windows 位于 `%USERPROFILE%\.longbridge\openapi\tokens\<client_id>`。项目不读取或手写该缓存，也不从旧 CLI 拷贝 Token；旧账号授权文件不自动删除，不影响生产账号。
+
+授权成功后重启本地后端，确保旧 Java 进程拥有的 CLI 连接先退出，再使用新 SDK 连接。网页搜索、K 线和当天／历史分时仍须真实验收。已有本地开发服务由用户正常关闭；自动化不得批量结束 Java 或 longbridge。云端的安装、授权、Token 挂载和镜像维持原方案，见[部署说明](deployment.md)。
 
 ### 9.3 可配置项与降级
 
 | 环境变量 | 默认值 | 作用 |
 | --- | --- | --- |
 | `MARKET_MODE` | `longbridge` | `longbridge` 取真实报价；`directory` 只搜目录；`mock` 只用于明确模拟 |
-| `LONGBRIDGE_CLI_PATH` | `longbridge` | CLI 可执行文件；服务/IDE 找不到 PATH 时设绝对路径 |
-| `LONGBRIDGE_REQUEST_TIMEOUT` | `5s` | 单个 JSON-RPC 请求等待上限 |
+| `LONGBRIDGE_CLIENT_ID` | 本地忽略文件中的 client_id | 本地 OAuth public client 的公开 ID；不是 Token |
+| `LONGBRIDGE_REQUEST_TIMEOUT` | `5s` | SDK 请求及本地排队等待上限（分别计时） |
 | `LONGBRIDGE_CACHE_TTL` | `5s` | 报价按股票、当天分时按股票与市场日期复用的进程内短缓存；不是历史数据缓存 |
 | `LONGBRIDGE_CANDLESTICK_CACHE_TTL` | `1m` | 相同股票、周期、数量和最新／历史日期边界的 K 线进程内短缓存；重启即失效 |
 | `MARKET_REDIS_ENABLED` | `true` | 是否启用共享行情缓存；测试 profile 固定关闭，不能用它绕过业务权限校验 |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6380` | Spring Boot 连接的 Redis 地址；Windows 若依使用 6379 时，stock-system 使用 WSL 的 6380 |
 
-Redis 的 TTL、锁、冷却和抖动参数及含义集中见 [缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)，完整环境变量映射见 [开发配置](../../src/main/resources/application-dev.properties)。修改后要重启 Spring Boot 才会重新加载；尤其不能把当前历史接口的长 TTL 当成已经验证了“所有数据均已闭市”。
+Redis 的 TTL、锁、冷却和抖动参数及含义集中见 [缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)，本地默认 Redis 前缀含 dev、sdk 与 client_id，避免旧 CLI 客户端缓存掩盖新账号权限问题；它不是账号授权证明，且不能隔离被错误复用的同一 client_id。完整环境变量映射见 [开发配置](../../src/main/resources/application-dev.properties)。修改后要重启 Spring Boot 才会重新加载；尤其不能把当前历史接口的长 TTL 当成已经验证了“所有数据均已闭市”。
 
-CLI 未安装、当前 OS 账号未授权、日志或 Token 目录无权限、网络超时、上游报错或 sidecar 退出时，搜索仍返回 MySQL 可信目录，但价格和行情时间为空；添加研究按 `MARKET_QUOTE_UNAVAILABLE` 失败且不写业务记录。系统不会静默改用 Mock，也不会把缓存过期数据标成实时行情。异常退出后的当前请求失败，下一次报价请求才尝试重新启动 sidecar。
+本地 client_id 缺失、当前 OS 账号未授权、Token 目录无权限、网络超时或上游报错时，搜索仍返回 MySQL 可信目录，但价格和行情时间为空；添加研究按 `MARKET_QUOTE_UNAVAILABLE` 失败且不写业务记录。系统不会静默改用 Mock，也不会把缓存过期数据标成实时行情。SDK 超时或连接／授权故障后的当前请求失败，关闭旧 SDK 会话后，下一次请求才重新创建连接；已识别的业务配额错误保留现有连接。SDK 初版将上游发送串行化，并保持至少 100ms 间隔；这不是全局限流，也未测定多用户吞吐。
 
-`longbridge serve` 本身包含交易方法，但项目 Java 客户端只允许 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date`、`quote.intraday` 和 `quote.trading_days` 五个固定只读方法，没有向 Controller 或前端开放任意方法。K 线 `301607` 会作为 HTTP 429 和 `MARKET_KLINE_LIMIT_EXCEEDED` 返回；历史分时遇到该码返回 `MARKET_INTRADAY_HISTORY_LIMIT_EXCEEDED`，遇到分钟历史起始日期限制则返回 HTTP 422、稳定错误码及最早可查日期。近一年 A 股／港股日期通过官方交易日日历判断，休市日返回 400；当天点还按市场时区过滤为请求日期。这些错误可在页面错误区、开发者工具 Network 响应或后端 API 调用结果中看到。部署到服务器还需要固定服务账号、持久化授权、实例数和回滚设计，不能把本机登录成功等同于部署完成；完整清单见 [部署说明](deployment.md#3-longbridge-sidecar-部署前置条件)。
+生产 `longbridge serve` 本身包含交易方法，但项目 CLI 客户端只允许 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date`、`quote.intraday` 和 `quote.trading_days` 五个固定只读方法，没有向 Controller 或前端开放任意方法。K 线 `301607` 会作为 HTTP 429 和 `MARKET_KLINE_LIMIT_EXCEEDED` 返回；历史分时遇到该码返回 `MARKET_INTRADAY_HISTORY_LIMIT_EXCEEDED`，遇到分钟历史起始日期限制则返回 HTTP 422、稳定错误码及最早可查日期。近一年 A 股／港股日期通过官方交易日日历判断，休市日返回 400；当天点还按市场时区过滤为请求日期。这些错误可在页面错误区、开发者工具 Network 响应或后端 API 调用结果中看到。部署到服务器还需要固定服务账号、持久化授权、实例数和回滚设计，不能把本机登录成功等同于部署完成；完整清单见 [部署说明](deployment.md#3-longbridge-sidecar-部署前置条件)。
+
+### 9.4 启动、页面请求与连接占用
+
+创建 Spring Bean 不等于建立长桥行情连接。SDK 构造函数只保存会话工厂，首次实际回源才执行 `sessionFactory.open()` 并创建 `QuoteContext`；CLI 同样在首次回源时才启动 `longbridge serve`。因此，新启动的本地后端若从未触发行情回源，不会仅因启动而占用长桥行情连接。已经回源并建连的进程则会保留连接，停止点击或关闭页面不会让后端自动断开，需正常关闭该后端才能释放它拥有的连接。
+
+进入单股行情页或研究详情会自动读取报价，可见当天分时还有定时刷新；“我没手动点刷新”不代表没有请求。暂不开发真实行情时，可显式选择 `MARKET_MODE=mock` 或 `directory` 并重启本地后端，让代码保证不创建真实上游，不能只靠记住不点某页面。两端需要同时使用真实行情时，才需要分别有权限的账号或另行设计统一行情网关。
+
+长桥行情连接与项目 MySQL 是两类独立资源。Spring Boot 启动会连接配置的数据库并校验／执行 Flyway，即使没有网页操作。仓库默认 dev 指向本机 `localhost` 的 `stock_system`；prod 指向容器数据库。数据库是否隔离由实际服务器地址与生效配置决定，不能只看两边相同的库名，也不能把“不查行情”等同于“不连数据库”。
+
+### 9.5 本次迁移的代码定位
+
+| 职责 | 入口与影响 |
+| --- | --- |
+| 环境与依赖 | `pom.xml` 的 SDK 4.5.0 改为运行依赖；`application-dev.properties` 选择 sdk 并导入本地 client_id；`application-prod.properties` 明确选择 cli；test 仍为 mock |
+| 授权 | `scripts/authorize-longbridge.cmd`／`.ps1` → `LongbridgeOAuthSetupTest`；官方 SDK 管理 Token；旧 probe 脚本、粘贴 code、手工兑换与临时写缓存的五个测试辅助类已撤掉 |
+| 传输 | `LongbridgeUpstreamGateway` 是四类只读网关的统一上游接口；`LongbridgeSdkClient` 调用 SDK；`LongbridgeSdkSession` 管理 OAuth／Config／QuoteContext；`LongbridgeJsonRpcClient` 保留供 prod 使用 |
+| 缓存 | `CachingLongbridgeMarketGateway` 依赖统一上游接口，不再固定依赖 CLI；SDK 保留四类有界短缓存、市场日期与供应商时间 |
+| 业务与错误 | 三个 `LongbridgeMarket*Provider` 继续转换项目 DTO；共用异常更名为 `LongbridgeUpstreamException`，保留配额码和分钟历史最早日期；搜索、研究 Service 和前端契约不因传输切换改写 |
+| 验证与部署 | `LongbridgeSdkClientTest`、`LongbridgeTransportWiringTest` 和原缓存／provider／CLI 单元测试；真实账号验证尚未完成；`deploy/backend` 的 CLI Dockerfile 和云端 Compose 暂不迁移 |
 
 ## 10. Redis 本地学习环境
 

@@ -48,7 +48,7 @@
 | ------------------------------- | ------------ | ---------------------------------------------- | -------------------------------------------------------------------------- |
 | OpenAPI / springdoc             | 计划         | 接口契约和 Swagger UI                          | 空间接口进入稳定实现时                                                     |
 | Apifox                          | 计划         | 人工联调和流程测试                             | OpenAPI 契约形成后                                                         |
-| Longbridge OpenAPI / CLI        | CLI `v0.28.5`，Java SDK `4.5.0` 仅测试 | 已使用（报价、K 线、分时与交易日历） | Spring Boot 管理官方 `longbridge serve`，通过五个固定只读 JSON-RPC 方法拉取真实行情；Java SDK 保留为隔离 OAuth 探测依赖 |
+| Longbridge OpenAPI / Java SDK / CLI | SDK `4.5.0`，CLI `v0.28.5` | dev 官方授权及真实行情 SDK 探测通过；prod 保留已验证 CLI | dev 采用官方 SDK OAuth 和单个 QuoteContext；prod 继续管理 `longbridge serve`；两种传输共用四类行情网关与缓存，账号分离 |
 | 行情适配层                      | 目录、Mock、Longbridge | 已使用       | 三个 provider 分别管理标准身份／最新报价、K 线和分时；隔离业务与供应商 DTO |
 | Redis / Spring Data Redis / Lettuce | 已使用 | 只读行情共享缓存、同 Key 请求合并和故障降级 | 依赖、网关装饰器和开关已接入；单元、真实 Redis 与页面验收的范围见 [任务证据](../specs/002-stock-research/tasks.md)；不与 WebSocket/SSE 捆绑 |
 | 定时任务                        | 计划         | 每天一次自动扫描股票目录的新股、名称变化和可确认的状态变化 | 先确定目录来源和状态证据，再实现幂等同步、失败保留旧数据与同步审计 |

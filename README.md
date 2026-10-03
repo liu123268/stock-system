@@ -6,7 +6,7 @@
 
 ## 技术栈
 
-- 后端：Java 17、Spring Boot、Spring Security、MyBatis-Plus、MySQL、Redis/Lettuce、Flyway、Longbridge OpenAPI CLI
+- 后端：Java 17、Spring Boot、Spring Security、MyBatis-Plus、MySQL、Redis/Lettuce、Flyway、Longbridge Java SDK（本地）／OpenAPI CLI（生产）
 - 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia、Axios、Element Plus、ECharts
 - 测试：JUnit 5、MockMvc、Vitest、浏览器冒烟测试
 

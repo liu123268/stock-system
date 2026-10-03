@@ -8,7 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -43,9 +43,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * The CLI owns OAuth token storage; this class never reads or logs the token cache.
  */
 @Component
-@ConditionalOnProperty(name = "stock-system.market.mode", havingValue = "longbridge")
-class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandlestickGateway,
-        LongbridgeIntradayGateway, LongbridgeTradingDayGateway, AutoCloseable {
+@ConditionalOnExpression("'${stock-system.market.mode:directory}' == 'longbridge' && '${stock-system.market.longbridge.transport:cli}' == 'cli'")
+class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LongbridgeJsonRpcClient.class);
     private static final String QUOTE_METHOD = "quote.quote";
@@ -352,7 +351,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
 
     private boolean containsDate(JsonNode dates, LocalDate expected) {
         if (!dates.isArray()) {
-            throw new LongbridgeCliException("Longbridge trading-day result has an unexpected shape");
+            throw new LongbridgeUpstreamException("Longbridge trading-day result has an unexpected shape");
         }
         for (JsonNode date : dates) {
             if (expected.toString().equals(date.asText())) {
@@ -390,7 +389,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
         try {
             acquired = concurrentRequests.tryAcquire(requestTimeout.toMillis(), TimeUnit.MILLISECONDS);
             if (!acquired) {
-                throw new LongbridgeCliException("Longbridge request queue timed out");
+                throw new LongbridgeUpstreamException("Longbridge request queue timed out");
             }
             awaitRateSlot();
             pendingRequests.put(requestId, response);
@@ -398,16 +397,16 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             return response.get(requestTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new LongbridgeCliException("Longbridge request was interrupted", exception);
+            throw new LongbridgeUpstreamException("Longbridge request was interrupted", exception);
         } catch (TimeoutException exception) {
             stopBrokenProcess();
-            throw new LongbridgeCliException("Longbridge request timed out", exception);
+            throw new LongbridgeUpstreamException("Longbridge request timed out", exception);
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
-            if (cause instanceof LongbridgeCliException cliException) {
+            if (cause instanceof LongbridgeUpstreamException cliException) {
                 throw cliException;
             }
-            throw new LongbridgeCliException("Longbridge request failed", cause);
+            throw new LongbridgeUpstreamException("Longbridge request failed", cause);
         } finally {
             pendingRequests.remove(requestId);
             if (acquired) {
@@ -442,7 +441,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
                 writer.flush();
             } catch (IOException exception) {
                 stopBrokenProcess();
-                throw new LongbridgeCliException("Cannot communicate with Longbridge CLI", exception);
+                throw new LongbridgeUpstreamException("Cannot communicate with Longbridge CLI", exception);
             }
         }
     }
@@ -450,7 +449,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     private BufferedWriter ensureProcessInput() {
         synchronized (lifecycleLock) {
             if (closed) {
-                throw new LongbridgeCliException("Longbridge CLI client is closed");
+                throw new LongbridgeUpstreamException("Longbridge CLI client is closed");
             }
             if (process != null && process.isAlive() && processInput != null) {
                 return processInput;
@@ -464,7 +463,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
                 LOGGER.info("Longbridge CLI sidecar started");
                 return processInput;
             } catch (IOException exception) {
-                throw new LongbridgeCliException(
+                throw new LongbridgeUpstreamException(
                         "Cannot start Longbridge CLI; verify installation, executable path, and service-account login",
                         exception
                 );
@@ -510,14 +509,14 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             if (error != null && !error.isNull()) {
                 String code = providerErrorCode(error);
                 String providerMessage = error.path("message").asText("");
-                pending.completeExceptionally(new LongbridgeCliException(
+                pending.completeExceptionally(new LongbridgeUpstreamException(
                         code, "Longbridge RPC request was rejected with code " + code,
                         providerMessage));
                 return;
             }
             JsonNode result = json.get("result");
             if (result == null) {
-                pending.completeExceptionally(new LongbridgeCliException("Longbridge response has no result"));
+                pending.completeExceptionally(new LongbridgeUpstreamException("Longbridge response has no result"));
                 return;
             }
             pending.complete(result);
@@ -540,7 +539,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     private Map<String, LongbridgeQuote> parseQuotes(JsonNode result) {
         JsonNode quoteArray = result.isArray() ? result : result.path("securities");
         if (!quoteArray.isArray()) {
-            throw new LongbridgeCliException("Longbridge quote result has an unexpected shape");
+            throw new LongbridgeUpstreamException("Longbridge quote result has an unexpected shape");
         }
         Map<String, LongbridgeQuote> quotes = new LinkedHashMap<>();
         Instant retrievedAt = Instant.now();
@@ -570,7 +569,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
     private List<LongbridgeCandlestick> parseCandlesticks(JsonNode result) {
         JsonNode items = result.isArray() ? result : result.path("candlesticks");
         if (!items.isArray()) {
-            throw new LongbridgeCliException("Longbridge candlestick result has an unexpected shape");
+            throw new LongbridgeUpstreamException("Longbridge candlestick result has an unexpected shape");
         }
         java.util.ArrayList<LongbridgeCandlestick> candlesticks = new java.util.ArrayList<>();
         Instant retrievedAt = Instant.now();
@@ -603,7 +602,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             items = result.path("intraday");
         }
         if (!items.isArray()) {
-            throw new LongbridgeCliException("Longbridge intraday result has an unexpected shape");
+            throw new LongbridgeUpstreamException("Longbridge intraday result has an unexpected shape");
         }
         java.util.ArrayList<LongbridgeIntradayPoint> points = new java.util.ArrayList<>();
         Instant retrievedAt = Instant.now();
@@ -666,7 +665,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             process = null;
             processInput = null;
         }
-        LongbridgeCliException failure = new LongbridgeCliException(
+        LongbridgeUpstreamException failure = new LongbridgeUpstreamException(
                 "Longbridge CLI sidecar exited" + (cause == null ? "" : " unexpectedly"), cause);
         pendingRequests.values().forEach(request -> request.completeExceptionally(failure));
         if (!closed) {
@@ -681,7 +680,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             process = null;
             processInput = null;
         }
-        LongbridgeCliException failure = new LongbridgeCliException(
+        LongbridgeUpstreamException failure = new LongbridgeUpstreamException(
                 "Longbridge CLI sidecar was stopped after a transport failure");
         pendingRequests.values().forEach(request -> request.completeExceptionally(failure));
         if (broken != null && broken.isAlive()) {
@@ -720,7 +719,7 @@ class LongbridgeJsonRpcClient implements LongbridgeQuoteGateway, LongbridgeCandl
             processInput = null;
         }
         pendingRequests.values().forEach(request -> request.completeExceptionally(
-                new LongbridgeCliException("Longbridge CLI client is shutting down")));
+                new LongbridgeUpstreamException("Longbridge CLI client is shutting down")));
         pendingRequests.clear();
         closeQuietly(writer);
         stopOwnedProcess(ownedProcess);

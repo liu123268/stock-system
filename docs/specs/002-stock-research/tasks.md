@@ -40,6 +40,7 @@ CODE-208 与 CODE-211A 已于 2026-09-21 完成，CODE-210 于 2026-09-28 完成
 - [x] `CODE-206F` 直接使用 Longbridge `quote.quote.trade_status` 落实未退市核验：`Normal → LISTED／允许`、`Halted → SUSPENDED／允许并提示停牌`、`Delisted → DELISTED／拒绝`，其他值、缺失、无法识别或调用失败 `→ UNKNOWN／拒绝并说明原因`。首次和重新开启都重新取本次状态；provider 不再丢弃已解析的 `tradeStatus`，研究添加不靠通用 stock upsert 持久化状态。本任务覆盖搜索展示、添加后端兜底、无报价与上述全部状态分支；不等待每日目录同步或新增状态表才启用。
 - [ ] `CODE-206G` 核对北交所与港股目录覆盖并完成每日幂等同步、失败保留与状态追溯；CODE-206F 先定义状态证据契约，定时器只调用既有同步入口。
 - [ ] `CODE-206H` 完成部署环境 sidecar、配置、行情权限、故障恢复与产物检查，执行部署文档的环境化验收，不沿用本机历史结果冒充生产通过。
+- [ ] `CODE-206I` 本地独立账号切换官方 Java SDK OAuth；代码、离线测试、新账号真实授权及四类行情 SDK 探测已完成，自动刷新与网页闭环待验收；云端本次不迁移。
 - [x] `CODE-208` 为数据库股票目录增加拼音首字母与前缀搜索：通过新迁移和目录导入流程生成、回填专用检索字段，保持原有代码／简体／繁体／英文搜索及最多 30 个候选的一次批量报价；覆盖“特变电工”的 `tbdg`、`tb`、大小写、多音字补充别名和回归测试。数据回填使用已有可信目录，没有重新抓取全市场。
 - [x] `CODE-209` 时间线服务端筛选与分页：详情只读当前周期摘要，历史按 20 条稳定游标分批读取；成员／倾向／类型先在全部授权记录中筛选，再分页。覆盖跨页无重复、筛选、权限和撤销边界，不增加产品历史条数上限。
 - [x] `CODE-210` 兑现 V1 空间概览与近期动态，覆盖新增股票、观点和关注状态变化；只为无法从当前状态还原的关注级别切换新增事件记录，完成页面、成员权限和撤销联动验收，不引入 MQ。
@@ -250,7 +251,7 @@ CODE-208 与 CODE-211A 已于 2026-09-21 完成，CODE-210 于 2026-09-28 完成
 补充核对官方文档：动态注册只返回 `client_id` 时属于 public client，授权链接必须带 `code_challenge` 与 `code_challenge_method=S256`，换取 Token 时还必须提交配对的 `code_verifier`。本地 Java SDK 4.4.1 的公开接口不能接收自行换取的 OAuth Token；官方仓库 4.5.0 的自带授权实现仍生成空 scope 且未构造 PKCE，因此不能只往 URL 后补参数，因为 SDK 换 token 时不会发送配对的 `code_verifier`。当前 OAuth 交互探测已禁用，防止再次进入无效登录；此前独立 PKCE 合规结论保留在本记录，待长桥确认兼容方式或 SDK 修复后再启用标准流程。官方开通条件还要求完成账户开户、开发者认证及单独的 OpenAPI 权限申请，行情权限也与 App/网页端权限独立；登录后没有进入权限确认页需要长桥侧核查账户状态，不能用本地代码绕过。
 
 2026-09-09 最小探测修正：无 Cookie 只读检查确认 `.com` 与 `.cn` 的 `/oauth2/authorize` 都把有效 client_id 请求重定向到 `/oauth2/authorize/confirm`；当前两域 session 网页程序没有通用 `confirm` 路由，通配路由把请求丢到裸登录页并清掉授权查询参数，所以登录成功后回到 `https://open.longbridge.com/` 首页是供应商授权页路由断点，不是本机 client_id 未识别。设备授权端点虽能返回挑战，但其确认页复用同一 session 程序，不能作为本轮绕过。代码改为只打开本机 `127.0.0.1:60355` 临时页，链接到官方 `/connect`，在本机接收 Agent Auth Code；官方 CLI 源码规定该代码携带其自身 client_id，换 Token 使用 `redirect_uri=https://open.longbridge.com/connect/done` 和数据中心路由头。本机通过 SDK 4.4.1 的官方 Token JSON 缓存格式短暂喂入 Token，文件使用仅所有者 ACL、拒绝覆盖既有缓存，报价完成或失败后精确删除。探测仍未取得真实 Token 或报价，PLAN-206 不勾选完成。
-PowerShell 运行入口为 `& "D:\Java\stockweb\stock-system\scripts\probe-longbridge.cmd"`；CMD 启动器用 `-ExecutionPolicy Bypass` 仅为本次 Windows PowerShell 子进程设置执行策略，不修改用户／系统保存的策略，也不覆盖组策略。脚本自身定位 POM 和 `.m2repo`，不把 client_id、授权码或 Token 放入 Maven `-D` 参数。2026-09-09 用户遇到的 `UnauthorizedAccess` 发生在 `.ps1` 加载前，此时 Maven 和 OAuth 均未启动。
+历史 PowerShell 运行入口为 `& "D:\Java\stockweb\stock-system\scripts\probe-longbridge.cmd"`（2026-10-02 已由官方 SDK OAuth 准备入口替代，旧脚本和辅助类删除；操作见开发说明）；CMD 启动器用 `-ExecutionPolicy Bypass` 仅为本次 Windows PowerShell 子进程设置执行策略，不修改用户／系统保存的策略，也不覆盖组策略。脚本自身定位 POM 和 `.m2repo`，不把 client_id、授权码或 Token 放入 Maven `-D` 参数。2026-09-09 用户遇到的 `UnauthorizedAccess` 发生在 `.ps1` 加载前，此时 Maven 和 OAuth 均未启动。
 
 启动实测补充：Maven 3.9.11 在 Java 24 及以上自动给 `MAVEN_OPTS` 添加 `--enable-native-access=ALL-UNNAMED`；原先“一律拒绝 MAVEN_OPTS”的探测预检因此误报。现在仅允许这个确定不启用日志的参数，其他运行选项继续拒绝，相关 7 项单元测试通过。CMD 启动器已实际启动隔离探测，本机授权页返回 HTTP 200，并核对监听只绑定 127.0.0.1；尚需用户在官方网页提交授权。
 
@@ -275,3 +276,16 @@ PowerShell 运行入口为 `& "D:\Java\stockweb\stock-system\scripts\probe-longb
 - `CODE-204`：新增成员可读的共享列表 API，返回标准股票、活动周期、行情快照与 INITIAL 观点；归档空间仍可读、非成员不可见。前端新增共享自选路由、API、Pinia Store、搜索候选、初始观点表单、提交刷新、归档只读、空/错/加载状态及桌面和手机布局。
 - `CODE-205`：OWNER 在真实 Chrome 中搜索并添加贵州茅台、填写初始观点后，MEMBER 从同一空间列表读取到相同记录；原有邀请、成员生命周期、所有权转让、归档/恢复和退出登录流程继续通过。
 - 2026-09-07 全量结果：后端 38 项、前端 15 项单元测试、静态检查、类型检查和生产构建通过；浏览器测试写入前核对 `stock_system_test`，结束后用户、空间、股票、周期和观点均为 `0`，测试端口已释放，默认开发状态仍为 `dev → stock_system`。
+
+### CODE-206I：本地 SDK OAuth 迁移（2026-10-03，SDK 真实行情通过）
+
+- 用户确认只迁移本地，云主机保持 CLI；本地改用新长桥账号和官方 SDK OAuth。SDK 4.5.0 已变为运行依赖，dev 选择 sdk、prod 明确 cli、test 保持 mock；新本地 client_id 的默认 Redis 前缀独立于原 CLI 和云端，不能把缓存命中当作新账号权限证明。
+- 四类上游接口统一为 `LongbridgeUpstreamGateway`，缓存不再耦合 CLI 具体类；`LongbridgeSdkClient` 覆盖报价、最近／历史 K 线、分时、交易日历，并保留短缓存、before 严格过滤和供应商时间。共享错误契约更名为 `LongbridgeUpstreamException`，仍保留配额码及分钟历史最早日期，原三个 provider、业务 Service 和前端契约维持职责。
+- 官方授权入口为 `scripts/authorize-longbridge.cmd` → PowerShell 动态注册 public client → `LongbridgeOAuthSetupTest`，只用 SDK 浏览器授权且不建立行情连接。旧 probe 启动脚本、`LongbridgeLocalAuthorization`、`LongbridgeAgentAuth`、`LongbridgeSdkQuoteProbe` 及其两项测试入口已删除；没有卸载用户 CLI 或删除用户授权文件。
+- 本轮命令 `mvn "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" "-Dtest=LongbridgeSdkClientTest,LongbridgeTransportWiringTest,MarketCacheWiringTest,CachingLongbridgeMarketGatewayTest,LongbridgeJsonRpcClientTest,LongbridgeMarketDataProviderTest,LongbridgeMarketCandlestickProviderTest,LongbridgeMarketIntradayProviderTest" test` 最终 47 项通过、0 失败／错误／跳过。新增 SDK 测试 9 项与配置装配测试 4 项均无外部网络；原 CLI 假进程、缓存和三类 provider 用例一并通过。测试准备中的 Mockito 嵌套 stubbing 与简化 Spring 容器 Duration 转换问题已修正，最终证据来自完整重跑，不累计旧报告。
+- PowerShell 授权脚本解析与 Git 忽略核对通过；`mvn -DskipTests package` 构建成功（打包不重复执行测试）。本地默认缓存前缀调整后再次执行 `LongbridgeTransportWiringTest`，4 项通过；授权入口改为打印 URL 供新账号独立浏览器使用，避免默认浏览器误用旧账号。原始日志保存在忽略目录 `target/longbridge-migration-unit.log` 和 `target/longbridge-migration-package.log`，不是长期上线证据。
+- 2026-10-03 真实授权：用户完成新账号注册及模拟账户开通。本机 Windows 保留端口范围包含默认回调 60355，改用本地公开配置中的 18080 后，用户在 Chrome 普通窗口完成官方 SDK OAuth，返回 `LONGBRIDGE_OAUTH_OK noQuoteConnection=true`；只核对 SDK Token 文件存在，不读取内容，不设置永久环境变量。
+- 2026-10-03 显式启用 `STOCK_LONGBRIDGE_SDK_REAL_PROBE=true`，定向运行 `LongbridgeSdkClientTest#readsFourMarketCapabilitiesThroughAuthorizedSdkWithoutDatabase`，1 项通过。新授权通过生产 SDK 客户端读取 `600519.SH` 真实报价、2 根日 K、241 个分时点、2026-09-09 的 241 根分钟 K；交易日历确认 2026-09-09 开市、2026-10-03 休市。探测不启动 Spring、不写数据库，try-with-resources 关闭本次行情上下文；日志在忽略目录 `target/longbridge-sdk-real-probe.log`。用户已启动的 8082 Java 进程为 dev，未登录搜索接口返回 401；这只证明服务和鉴权可用，不等于登录后接口或网页验收。
+- 2026-10-03 相关离线回归重跑：上述 8 类测试共 48 项，实际执行 47 项通过、0 失败／错误，真实探测用例按默认开关跳过 1 项；日志在 `target/longbridge-migration-final-unit.log`。
+- 2026-10-03 未提交变更收口：运行代码与脚本无已删除授权类／入口引用；过时的开发默认 CLI、待注册／待授权描述与 ADR 测试链接已修正，历史探测记录保留为日期证据。授权脚本移除排错时的自动重注册分支，已有 ID 始终复用，新配置用 CreateNew 防覆盖，并校验端口范围；实际启动器使用的 Windows PowerShell 离线检查通过，配置哈希不变、临时环境恢复、不调用网络或 SDK。文档检查 52 个 Markdown／536 条本地链接通过，Git diff 检查通过。本次未重跑已有真实行情验证，也未扩大为云端发布验收。
+- 未执行：Token 强制过期后的自动刷新、浏览器闭环和部署验收。本轮没有创建项目数据库数据、关闭用户已有开发进程、操作云主机、提交或推送。步骤与完整定位只维护在[开发说明](../../engineering/development.md#9-longbridge-真实报价)，选型见 ADR-002。

@@ -123,7 +123,7 @@ class LongbridgeMarketIntradayProviderTest {
             @Override
             public List<LongbridgeCandlestick> getCandlesticksOnDate(
                     String symbol, CandlestickPeriod period, LocalDate date) {
-                throw new LongbridgeCliException(
+                throw new LongbridgeUpstreamException(
                         "301600", "Longbridge request rejected",
                         "out of minute candlestick limit begin date:2023-09-01");
             }

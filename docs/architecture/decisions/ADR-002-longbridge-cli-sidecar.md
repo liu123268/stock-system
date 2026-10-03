@@ -1,18 +1,31 @@
-# ADR-002：用官方 Longbridge CLI sidecar 接入只读行情
+# ADR-002：Longbridge 行情传输的 SDK 与 CLI 选择
 
 状态：已确认；阶段验证及当前缺口见 [SPEC-002 tasks](../../specs/002-stock-research/tasks.md)，本记录只维护传输选型。
 
-日期：2026-09-10；最后核对：2026-09-11
+日期：2026-09-10；最后核对：2026-10-03
 
 ## 背景
 
-项目需要在不把供应商凭据交给浏览器的前提下取得真实报价。Longbridge 官方 Java SDK 的浏览器 OAuth 流程在本机无法完成；升级到 `4.5.0` 后，Java API 仍没有从 CLI 已取得的 Token 创建 `OAuth` 或 `Config` 的公开入口。与此同时，官方 CLI `v0.28.5` 已通过 Device Authorization Flow 完成授权，`longbridge quote` 和 `longbridge serve` 都实际返回了 `600519.SH` 报价。
+项目需要在不把供应商凭据交给浏览器的前提下取得真实报价。历史背景：2026-09 的 Longbridge 官方 Java SDK 浏览器 OAuth 在本机无法完成；升级到 `4.5.0` 后，Java API 仍没有从 CLI 已取得的 Token 创建 `OAuth` 或 `Config` 的公开入口。与此同时，官方 CLI `v0.28.5` 已通过 Device Authorization Flow 完成授权，`longbridge quote` 和 `longbridge serve` 都实际返回了 `600519.SH` 报价。
 
-CLI 的 `serve` 命令是稳定的换行分隔 JSON-RPC 2.0 接口：进程启动后复用一次认证和行情连接，多个请求通过 ID 对应，响应允许乱序。它因此可以成为 Java SDK OAuth 修复前的供应商传输适配层。
+CLI 的 `serve` 命令是稳定的换行分隔 JSON-RPC 2.0 接口：进程启动后复用一次认证和行情连接，多个请求通过 ID 对应，响应允许乱序。它作为早期 SDK OAuth 未跑通时的供应商传输适配层，现继续供生产使用。
 
 ## 决定
 
-当前基础报价、按需 K 线和分时链路采用：
+用户确认本地使用新的长桥账号并切换官方 Java SDK OAuth，云主机本次保持现状。`dev` 选择 sdk，`prod` 明确选择 cli，test 保持 mock。本地新账号已完成官方授权及四类行情 SDK 探测；登录后网页与自动刷新仍待验收，具体证据见 SPEC-002 的 CODE-206I。当前链路如下：
+
+```text
+Vue → Spring Boot API → 三类 Market Provider
+    → CachingLongbridgeMarketGateway → LongbridgeUpstreamGateway
+        ├─ dev：LongbridgeSdkClient → 一个 QuoteContext → Longbridge OpenAPI
+        └─ prod：LongbridgeJsonRpcClient → 一个 longbridge serve → Longbridge OpenAPI
+```
+
+SDK 采用官方 `OAuthBuilder`／`Config.fromOAuth`；独立本地准备入口负责浏览器同意，后端不弹出登录、不读取或手写 Token 缓存。SDK 单 JVM 短缓存容量／TTL 沿用原客户端；初版串行发送上游请求并间隔至少 100ms，锁内统一持有和释放会话，排队和单次等待分别受 timeout 约束。配额错误保留代码，分钟范围只保留允许的日期；超时或连接／授权失败关闭会话，下一请求再建连。多用户吞吐、真实自动刷新与供应商行为尚待验收，不能把一条 Java SDK 连接解释成绕过单账号限制。
+
+两种传输共用 `LongbridgeUpstreamException`，业务 Service 和前端契约保持原职责；旧的本地粘贴授权码、手工兑换和临时写 SDK 缓存代码已移除。云端需要的 CLI 实现及 Dockerfile 保留，不卸载用户已有 CLI、不删除旧授权、不上传或重建云主机。准备步骤和完整代码定位只见[开发说明](../../engineering/development.md#92-新账号与官方-oauth-准备)。
+
+下述是仍适用于生产 CLI 的链路与约束：
 
 ```text
 Vue
@@ -24,7 +37,7 @@ Vue
   → Longbridge OpenAPI
 ```
 
-- 开发环境默认 `longbridge` 模式；测试环境继续固定 `mock`，需要无外部报价时可显式切回 `directory`。
+- 行情模式 `longbridge` 表示供应商来源，传输再由环境选择 sdk 或 cli；测试环境继续固定 `mock`，需要无外部报价时可显式切回 `directory`。
 - sidecar 按需启动，一个 Spring Boot 实例只拥有一个 CLI 子进程；应用关闭时先关闭 stdin，等待退出，必要时只终止自己创建的那个进程。
 - Java 端只公开固定行情网关，并把方法硬编码为 `quote.quote`、`quote.candlesticks`、`quote.history_candlesticks_by_date`、`quote.intraday` 与 `quote.trading_days`。CLI 虽具备交易和任意 API 方法，本项目当前代码不提供这些调用入口，前端也不能透传 JSON-RPC 方法名。
 - 搜索仍以 MySQL 标准股票目录为身份来源；一次搜索得到的候选合并为一次批量报价，再由 provider 合成统一 `StockQuoteSnapshot`。添加研究时仍在数据库事务外重新取得可信快照。
@@ -37,7 +50,7 @@ Vue
 
 ### Java SDK 直接 OAuth
 
-这是长期更纯粹的 Java 方案，依赖更少、部署单元更简单。但当前 SDK 不能通过公开 API 复用 CLI Token，浏览器授权链路又未跑通，因此暂不作为本阶段阻塞项。将来 SDK 提供受支持的 Token 导入或 OAuth 流程修复后，可在 `LongbridgeQuoteGateway` 后替换传输实现，业务 Service、Controller 和前端契约无需改写。
+2026-09 因浏览器授权失败而暂缓；2026-10-02 已作为本地开发传输接入代码，真实授权仍待验证。该方案由 SDK 自行取得和管理 OAuth Token，不需要导入 CLI Token。云主机要等本地真实行情、授权刷新、故障和部署产物验证后再单独迁移，不能只因接入代码存在就删去生产 CLI。
 
 ### 每次报价执行一次 `longbridge quote`
 
@@ -60,11 +73,11 @@ Vue
 - sidecar 不监听 HTTP 端口，但仍是独立 OS 进程，需要纳入启动、关闭、健康检查和故障监控。当前具备进程退出感知和按需重启，Actuator readiness 与生产告警尚未实现。
 - 进程内短缓存只在单个 Java 进程内有效。Redis 已实现跨网关实例共享，但当前同 Key 锁等待超时仍可能重复回源，并不提供全局限流；实现与验证边界见上述缓存设计和 [CODE-206E 证据](../../specs/002-stock-research/tasks.md)。这不代表当前已经达到多实例容量，也不解除单账号单连接约束。WebSocket/SSE 等动态推送仍在出现相应需求后另行评估。
 
-具体本地操作见 [开发说明](../../engineering/development.md#9-longbridge-真实报价)，上线前检查见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)，验证规则见 [测试说明](../../engineering/testing.md#21-longbridge-sidecar-测试)。
+具体本地操作见 [开发说明](../../engineering/development.md#9-longbridge-真实报价)，上线前检查见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)，验证规则见 [测试说明](../../engineering/testing.md#21-longbridge-行情传输测试)。
 
 ## 重新评估条件
 
-- Longbridge Java SDK 提供受支持、可测试的 OAuth/Token 接入方式；
+- 本地官方 SDK OAuth 已验证后，评估云端统一 SDK 的授权与部署验收；
 - 需要多实例独立扩缩容，单账号单连接成为真实瓶颈；
 - 基础轮询升级为大规模订阅，或共享缓存仍不足以支撑访问而需要独立行情服务；
 - CLI JSON-RPC 契约、权限或部署支持发生不兼容变化。

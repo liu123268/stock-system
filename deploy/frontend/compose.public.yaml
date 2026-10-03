@@ -1,0 +1,6 @@
+name: stock-system
+services:
+  frontend:
+    ports: !override
+      - "0.0.0.0:80:80"
+      - "127.0.0.1:8080:80"

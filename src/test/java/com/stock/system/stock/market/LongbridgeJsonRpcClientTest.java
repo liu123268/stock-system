@@ -116,7 +116,7 @@ class LongbridgeJsonRpcClientTest {
         try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
             assertThatThrownBy(() -> client.getCandlesticks(
                     "600519.SH", CandlestickPeriod.DAY, 120))
-                    .isInstanceOfSatisfying(LongbridgeCliException.class,
+                    .isInstanceOfSatisfying(LongbridgeUpstreamException.class,
                             exception -> assertThat(exception.hasProviderCode("301607")).isTrue());
         }
     }
@@ -133,7 +133,7 @@ class LongbridgeJsonRpcClientTest {
         try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
             assertThatThrownBy(() -> client.getCandlesticksOnDate(
                     "600089.SH", CandlestickPeriod.MINUTE_1, LocalDate.of(2023, 5, 9)))
-                    .isInstanceOfSatisfying(LongbridgeCliException.class, exception -> {
+                    .isInstanceOfSatisfying(LongbridgeUpstreamException.class, exception -> {
                         assertThat(exception.minuteHistoryBeginDate())
                                 .contains(LocalDate.of(2023, 9, 1));
                         assertThat(exception.getMessage())
@@ -229,7 +229,7 @@ class LongbridgeJsonRpcClientTest {
         try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofMillis(150))) {
             org.assertj.core.api.Assertions.assertThatThrownBy(
                     () -> client.getQuotes(List.of("600519.SH")))
-                    .isInstanceOf(LongbridgeCliException.class)
+                    .isInstanceOf(LongbridgeUpstreamException.class)
                     .hasMessage("Longbridge request timed out");
         }
         assertThat(fakeProcess.isAlive()).isFalse();

@@ -73,7 +73,7 @@ class LongbridgeMarketIntradayProvider implements MarketIntradayProvider {
                     false,
                     loaded.retrievedAt()
             );
-        } catch (LongbridgeCliException exception) {
+        } catch (LongbridgeUpstreamException exception) {
             var earliestDate = exception.minuteHistoryBeginDate();
             if (earliestDate.isPresent()) {
                 throw new MarketIntradayHistoryRangeExceededException(

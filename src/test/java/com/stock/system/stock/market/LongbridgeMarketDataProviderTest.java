@@ -51,7 +51,7 @@ class LongbridgeMarketDataProviderTest {
     void keepsDirectoryCandidateButNoPriceWhenCliIsUnavailable() {
         Stock stock = stock("600519.SH", "贵州茅台", "SSE", "CNY", "SSE_DIRECTORY");
         when(stockMapper.searchDirectory("茅台")).thenReturn(List.of(stock));
-        when(quoteGateway.getQuotes(any())).thenThrow(new LongbridgeCliException("sidecar unavailable"));
+        when(quoteGateway.getQuotes(any())).thenThrow(new LongbridgeUpstreamException("sidecar unavailable"));
 
         assertThat(provider.search("茅台")).singleElement().satisfies(snapshot -> {
             assertThat(snapshot.price()).isNull();

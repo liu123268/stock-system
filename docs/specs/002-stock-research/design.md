@@ -145,9 +145,11 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
 
 ### 4.3 Longbridge 基础报价接入（2026-09-09）
 
+以下 CLI 机制保留为生产实现及历史背景；本地 SDK 切换见本节末尾，详细选型只维护在 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。
+
 目录状态补强（CODE-206F，已实现）：当前 V1 直接使用 Longbridge `quote.quote` 返回的 `trade_status`，不再为开启研究另找状态来源，也不等待全市场状态同步。`Normal` 映射为 `LISTED` 并允许开启；`Halted` 映射为 `SUSPENDED`，允许开启并在页面明确标注停牌；`Delisted` 映射为 `DELISTED` 并拒绝开启。其他上游状态、字段缺失、无法识别或调用失败统一作为 `UNKNOWN` 拒绝开启并提示状态暂不可用，不猜成正常或停牌。搜索继续展示目录身份；每次首次／重新开启研究重新取得本次报价中的状态，不以目录同步时间或“仍有价格”代替核验。
 
-真实最短链路已经从“等待 Java SDK 浏览器 OAuth”调整为“复用官方 CLI 已完成的 Device Authorization Flow”。Java SDK 已升级至 `4.5.0`，但仍没有通过公开 API 导入 CLI Token 的能力；官方 CLI `v0.28.5` 的 `quote` 和稳定 `serve` JSON-RPC 都已实测成功。因此当前传输层使用 Spring Boot 管理 `longbridge serve` sidecar，完整取舍见 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。
+历史背景：2026-09 真实最短链路从等待 Java SDK 浏览器 OAuth 调整为复用官方 CLI 已完成的 Device Authorization Flow。Java SDK 已升级至 `4.5.0`，但仍没有通过公开 API 导入 CLI Token 的能力；官方 CLI `v0.28.5` 的 `quote` 和稳定 `serve` JSON-RPC 都已实测成功。因此当时选用 Spring Boot 管理 `longbridge serve` sidecar，现保留为生产实现，完整取舍见 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。
 
 ```text
 搜索关键字
@@ -178,6 +180,12 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
 
 原 `LongbridgeJsonRpcClient` 的报价与当天分时 5 秒缓存、K 线及历史日期批次 1 分钟缓存仍属于单 JVM 层；新增共享层见 4.6，不替换这些兜底路径。进程内缓存使用带过期时间的 LRU 上限：报价 4096、K 线 256、分时 512、交易日 2048 条，交易日结果最长复用 24 小时；过期读取会移除，超出容量淘汰最久未使用条目，避免精确 `before` 历史边界和日期键随进程运行无限累积。页面继续以 30 秒 pull 刷新单只可见分时。上游 WebSocket/SSE 仍按动态推送需求另行设计。多实例前仍必须解决单账号单连接和共享限流，不能因为有 Redis 就直接复制多个 sidecar。部署前置条件见 [部署说明](../../engineering/deployment.md#3-longbridge-sidecar-部署前置条件)。
 
+#### 2026-10-02 本地 SDK OAuth 切换
+
+需求是本地账号和云端账号分别占用各自允许的连接，本地通过官方 SDK 授权和取行情。缓存层改为依赖 `LongbridgeUpstreamGateway`，dev 注入 `LongbridgeSdkClient`、prod 注入旧 CLI；SDK 用 `getQuote`、`getCandlesticks`、`getHistoryCandlesticksByDate`、`getIntraday`、`getTradingDays` 覆盖原五个只读方法。历史 before 仍按市场日期请求、严格保留 `< before` 并取最近 count 根，不复权、供应商时间与交易状态准入维持原语义。异常统一为 `LongbridgeUpstreamException`，仍映射 301607 与分钟最早日期；没有新增业务 API、表迁移或前端供应商凭证。
+
+本地新账号官方授权及四类行情 SDK 探测已通过，登录后接口／网页与 Token 自动刷新仍待验收；详细证据只见 CODE-206I。准备入口和定位表见[本地开发](../../engineering/development.md#9-longbridge-真实报价)；生产 CODE-206H 仍单独推进。
+
 ### 4.4 可信目录单股的按需行情与 K 线
 
 ```text
@@ -190,7 +198,7 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
       └─ 不存在活动周期：留在行情详情，按需打开图表或加入／重新关注表单
   → GET /api/workspaces/{workspaceId}/market/stocks/{code}/candlesticks
   → MarketCandlestickProvider
-  → LongbridgeCandlestickGateway：先经共享缓存装饰层，再进入 LongbridgeJsonRpcClient
+  → LongbridgeCandlestickGateway：先经共享缓存装饰层，再进入按环境选择的 SDK／CLI 上游
   → 首次最多 1000 根不复权 OHLCV，左边界按 before 游标继续补历史
   → Pinia 按 workspaceId + code 保存当前行情页序列
   → 按需加载的 ECharts K 线／成交量组合图
@@ -223,7 +231,7 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
   → Vue 把已有点按 HH:mm 对齐，未来分钟留空，价格线、均价线和分钟量柱只画到当前位置
 ```
 
-收盘后页面停止定时刷新，但用户重新打开当天分时仍走 `quote.intraday` 的 5 秒缓存，并未实现额外的盘后长缓存。过去交易日通过同一个 `longbridge serve` 的 `quote.history_candlesticks_by_date(period=1m, start=end=tradeDate)` 读取，使用分钟 close 绘制价格线，并由累计成交额／累计成交量计算当日均价线。官方 [CLI 分时说明](https://open.longbridge.com/docs/cli/market-data/intraday)与本机 CLI 0.28.5 的 `intraday --date YYYYMMDD` 都表明历史单日分时可用，但公开说明未写明该 CLI 包装命令自身如何计额；项目采用的历史 `1m` K 线方案明确遵守历史 K 线月度不同标的额度，同一股票当月回看任意多个日期仍只计一个标的。历史方法返回 `301607` 时可解释为当月历史 K 线标的数超限；最近 `quote.candlesticks` 的同码按单次数据量超限解释。
+收盘后页面停止定时刷新，但用户重新打开当天分时仍走 SDK／CLI 的 5 秒缓存，并未实现额外的盘后长缓存。过去交易日通过所选 SDK 的 `getHistoryCandlesticksByDate` 或 CLI 的 `quote.history_candlesticks_by_date` 读取（1 分钟周期、起止日期均为 tradeDate），使用分钟 close 绘制价格线，并由累计成交额／累计成交量计算当日均价线。官方 [CLI 分时说明](https://open.longbridge.com/docs/cli/market-data/intraday)与本机 CLI 0.28.5 的 `intraday --date YYYYMMDD` 都表明历史单日分时可用，但公开说明未写明该 CLI 包装命令自身如何计额；项目采用的历史 `1m` K 线方案明确遵守历史 K 线月度不同标的额度，同一股票当月回看任意多个日期仍只计一个标的。历史方法返回 `301607` 时可解释为当月历史 K 线标的数超限；最近 `quote.candlesticks` 的同码按单次数据量超限解释。
 
 响应按当前产品支持的市场返回常规交易时段：A 股 `09:30～11:30、13:00～15:00`，港股 `09:30～12:00、13:00～16:00`，时间含义由同一响应的市场时区限定；不在 V1 范围的美股不会进入分时时段映射。ECharts 使用完整交易分钟类目轴，不再把盘中已有点均匀拉伸到全宽；未来槽位使用 `null`，刷新时只填入新到分钟。午休分钟不进入类目轴，两个时段的交界合并显示为 `11:30/13:00` 或 `12:00/13:00`，折线允许跨空值连接，因此供应商缺少边界分钟时也不会在计划内午休处断开，但未来没有后续点时不会向收盘时间延伸。历史分时从 `1m` K 线重建均价时，A 股先把以“手”返回的成交量换算为每手 100 股，再用累计成交额除以累计股数，避免均价放大 100 倍把价格线压平；港股不套用 A 股手数规则。历史返回点还会按市场时区严格过滤为所选日期。
 
@@ -246,7 +254,7 @@ CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `L
           ├─ 取得锁：再次查缓存；仍未命中才调用旧客户端
           ├─ 锁被占用：短时等待共享结果；超时走旧客户端
           └─ Redis 不可用：直接走旧客户端
-              → 进程内短缓存或受限 sidecar pull → 写 Redis（可用时）
+              → 所选 SDK／CLI 的进程内短缓存或受限 pull → 写 Redis（可用时）
 ```
 
 `Key` 是结果的查询身份，`TTL` 是 Redis 允许复用该结果的有效时长，不是股票历史总长度。实现由 [MarketCacheKeys](../../../src/main/java/com/stock/system/stock/market/MarketCacheKeys.java) 和 [MarketRedisProperties](../../../src/main/java/com/stock/system/stock/market/MarketRedisProperties.java) 定义；以下为共享层当前默认值，原客户端短缓存不因此消失。

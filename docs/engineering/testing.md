@@ -24,9 +24,12 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 - Maven 普通回归会启动 Spring `test` profile 并连接本机 `stock_system_test`。运行前必须让启动 Maven 的进程能够读取 `DB_PASSWORD` 和不少于 32 个 UTF-8 字节的 `JWT_SECRET`；当前本机数据库用户名固定为非敏感配置 `root`，不要求 `DB_USERNAME`。在 Windows 用户环境变量中新增值后，已经打开的 IDEA、终端或 Maven 不会自动获得新值，需要完全退出并重新打开对应程序。缺少变量时看到 `Could not resolve placeholder 'DB_PASSWORD'` 或 `'JWT_SECRET'`，表示测试进程没有取得运行配置，不是业务断言失败。
 - Maven 常用命令：`mvn "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" test`。报告中的测试数必须来自本次完整命令，不能把源码中的 `@Test` 数量或多次残留 XML 相加后写成“全部通过”。
 
-### 2.1 Longbridge sidecar 测试
+### 2.1 Longbridge 行情传输测试
 
-- 普通回归不依赖真实账号：`LongbridgeJsonRpcClientTest` 用内存假进程覆盖报价、最近／历史 K 线、当天分时和交易日历协议、乱序 ID 对应、短缓存、`301607`／分钟最早日期保留、超时和关闭；provider 测试覆盖目录身份合并、K 线转换、历史分时均价重建、配额映射、休市日拦截、当天点日期过滤与不可用降级。分时交易时段响应另由 provider 和前端坐标测试覆盖，不能用固定工作日逻辑替代官方交易日历。
+- `dev` 现选择 SDK OAuth、`prod` 保留 CLI，test 仍 mock。SDK 离线验证在 `LongbridgeSdkClientTest`，覆盖批量报价／交易状态、最近与按日期 K 线、严格 before 边界、分时字段、半日交易日、短缓存、超时关闭重建和错误脱敏；`LongbridgeTransportWiringTest` 覆盖两种 Bean 的互斥选择、真实配置文件及 mock 不建连。离线用例使用 SDK 对象替身，不建立真实行情连接，不能当作 OAuth 成功。
+- `LongbridgeSdkClientTest#readsFourMarketCapabilitiesThroughAuthorizedSdkWithoutDatabase` 是同文件中显式启用的真实探测，由 `STOCK_LONGBRIDGE_SDK_REAL_PROBE=true` 控制并读取进程 `LONGBRIDGE_CLIENT_ID`；只有已授权且用户批准验证的账号才能运行。仅读取 `600519.SH` 的报价、日 K、分时、指定历史分钟 K 及交易日历，不启动 Spring 或写数据库，结束关闭 SDK 上下文。默认回归跳过，不能把这项跳过算成真实行情通过；历史 K 会占用该账号的标的额度。
+- `scripts/authorize-longbridge.cmd` 通过 `STOCK_LONGBRIDGE_OAUTH_SETUP=true` 显式启用 `LongbridgeOAuthSetupTest`，只执行官方浏览器授权，由 SDK 保存／刷新 Token；不连接 Spring、数据库或行情。公开 client_id 从子进程环境取得，Token／验证码不进入 Maven属性或报告。运行步骤见[开发说明](development.md#92-新账号与官方-oauth-准备)。真实行情须等新账号授权及权限确认后单独验收，不能复用生产账号来证明本地独立账号。
+- 普通 CLI 回归不依赖真实账号：`LongbridgeJsonRpcClientTest` 用内存假进程覆盖报价、最近／历史 K 线、当天分时和交易日历协议、乱序 ID 对应、短缓存、`301607`／分钟最早日期保留、超时和关闭；provider 测试覆盖目录身份合并、K 线转换、历史分时均价重建、配额映射、休市日拦截、当天点日期过滤与不可用降级。分时交易时段响应另由 provider 和前端坐标测试覆盖，不能用固定工作日逻辑替代官方交易日历。
 - 真实 CLI 测试默认跳过，只有明确验证本机/部署账号授权时才用系统属性 `stock.longbridge.cli.integration=true` 单独启用。测试不得输出 Token、CLI 私有缓存或完整账号信息。
 - `LongbridgeCliIntegrationTest` 只证明 Java 管理器能启动/关闭 sidecar 并取得真实报价；`LongbridgeMarketDataIntegrationTest` 还必须通过 `MySqlIntegrationTest` 核对实际 catalog 为 `stock_system_test`，临时目录记录使用专用来源并在事务后核对剩余为 0。
 - `LongbridgeCandlestickRealProbeTest` 由 `STOCK_LONGBRIDGE_KLINE_PROBE=true` 显式启用，只读取已批准的 `600519.SH` 两根日 K；`LongbridgeIntradayRealProbeTest` 由 `STOCK_LONGBRIDGE_INTRADAY_PROBE=true` 启用，读取同一股票当天分时和指定交易日 1 分钟 K。两者都不启动 Spring、不写数据库；历史 K 线会占月度不同标的额度，新增探测代码前必须先说明并优先选择已经计入过的标的。

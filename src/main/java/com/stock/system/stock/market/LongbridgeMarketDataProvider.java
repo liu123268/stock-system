@@ -40,7 +40,7 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
         Map<String, LongbridgeQuote> quotes;
         try {
             quotes = quoteGateway.getQuotes(stocks.stream().map(Stock::getCode).toList());
-        } catch (LongbridgeCliException exception) {
+        } catch (LongbridgeUpstreamException exception) {
             LOGGER.warn("Longbridge quotes are unavailable during stock search: {}", exception.getMessage());
             quotes = Map.of();
         }
@@ -65,7 +65,7 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
                 return Optional.empty();
             }
             return Optional.of(toSnapshot(stock, quote));
-        } catch (LongbridgeCliException exception) {
+        } catch (LongbridgeUpstreamException exception) {
             LOGGER.warn("Longbridge quote is unavailable for {}: {}", normalizedCode, exception.getMessage());
             return Optional.empty();
         }

@@ -1,0 +1,11 @@
+name: stock-system
+services:
+  certbot:
+    image: certbot/certbot:v5.4.0
+    profiles: [tls-tools]
+    mem_limit: 256m
+    volumes:
+      - ./frontend/acme:/var/www/acme
+      - ./tls/letsencrypt:/etc/letsencrypt
+      - ./tls/work:/var/lib/letsencrypt
+      - ./tls/logs:/var/log/letsencrypt

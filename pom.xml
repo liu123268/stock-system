@@ -71,12 +71,11 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
-        <!-- Longbridge 仅用于隔离报价探测；真实 provider 验证后再决定生产依赖范围。 -->
+        <!-- 本地通过官方 Java SDK + OAuth 接入；prod 暂时保留 CLI 传输。 -->
         <dependency>
             <groupId>io.github.longbridge</groupId>
             <artifactId>openapi-sdk</artifactId>
             <version>4.5.0</version>
-            <scope>test</scope>
         </dependency>
 
         <!-- Lombok：省写get/set -->

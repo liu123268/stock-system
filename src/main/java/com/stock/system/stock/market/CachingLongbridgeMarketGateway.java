@@ -36,14 +36,14 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
     private static final Logger LOGGER = LoggerFactory.getLogger(CachingLongbridgeMarketGateway.class);
     private static final Duration CONTENDED_POLL_INTERVAL = Duration.ofMillis(40);
 
-    private final LongbridgeJsonRpcClient upstream;
+    private final LongbridgeUpstreamGateway upstream;
     private final MarketSharedCache cache;
     private final ObjectMapper objectMapper;
     private final MarketRedisProperties properties;
     private final Map<String, CompletableFuture<Object>> inFlight = new ConcurrentHashMap<>();
 
     CachingLongbridgeMarketGateway(
-            LongbridgeJsonRpcClient upstream,
+            LongbridgeUpstreamGateway upstream,
             MarketSharedCache cache,
             ObjectMapper objectMapper,
             MarketRedisProperties properties

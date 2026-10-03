@@ -86,4 +86,4 @@ V1 不建设以下完整元数据能力：
 
 ## 8. 架构取舍
 
-模块化单体见 [ADR-001](decisions/ADR-001-modular-monolith.md)，Longbridge sidecar 选择、代价和替换条件见 [ADR-002](decisions/ADR-002-longbridge-cli-sidecar.md)。
+模块化单体见 [ADR-001](decisions/ADR-001-modular-monolith.md)，Longbridge SDK／sidecar 的环境选择、代价和替换条件见 [ADR-002](decisions/ADR-002-longbridge-cli-sidecar.md)。

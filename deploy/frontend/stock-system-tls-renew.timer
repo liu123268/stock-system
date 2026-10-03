@@ -1,0 +1,11 @@
+[Unit]
+Description=Check stock-system TLS renewal every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00
+RandomizedDelaySec=20min
+Persistent=true
+Unit=stock-system-tls-renew.service
+
+[Install]
+WantedBy=timers.target

@@ -37,7 +37,7 @@ class LongbridgeMarketCandlestickProvider implements MarketCandlestickProvider {
             }
             return new MarketCandlestickSeries(
                     items, SOURCE, false, retrievedAt(raw), items.size() == count);
-        } catch (LongbridgeCliException exception) {
+        } catch (LongbridgeUpstreamException exception) {
             throw translate(exception);
         }
     }
@@ -65,7 +65,7 @@ class LongbridgeMarketCandlestickProvider implements MarketCandlestickProvider {
             }
             return new MarketCandlestickSeries(
                     items, SOURCE, false, retrievedAt(raw), raw.size() == count);
-        } catch (LongbridgeCliException exception) {
+        } catch (LongbridgeUpstreamException exception) {
             throw translate(exception);
         }
     }
@@ -78,7 +78,7 @@ class LongbridgeMarketCandlestickProvider implements MarketCandlestickProvider {
                 .orElseGet(Instant::now);
     }
 
-    private RuntimeException translate(LongbridgeCliException exception) {
+    private RuntimeException translate(LongbridgeUpstreamException exception) {
         if (exception.hasProviderCode("301607")) {
             return new MarketCandlestickLimitExceededException(exception);
         }

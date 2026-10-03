@@ -68,11 +68,11 @@
 
 ### 项目场景
 
-Longbridge 官方 CLI 已经完成账号授权并能读取真实行情，但 Java SDK 的浏览器 OAuth 在本机没有跑通。项目既不能把凭据交给前端，也不能每查一次价格就新建一个 CLI 进程和行情连接。
+历史背景：2026-09 CLI 已能读取真实行情，但 Java SDK 浏览器 OAuth 在本机没有跑通，因此选择 sidecar。本地现已改用独立账号的官方 SDK OAuth，云端保持 CLI；授权和四类行情 SDK 探测已通过，证据见 SPEC-002 的 CODE-206I。项目既不能把凭据交给前端，也不能每查一次价格就新建一个 CLI 进程和行情连接。
 
 ### 完整回答
 
-> 我把供应商传输细节隔离在 `LongbridgeJsonRpcClient` 后，由 Spring Boot 按需启动并独占一个 `longbridge serve` 子进程。页面仍只调用项目 API；Java 只允许报价、最近 K 线、历史 K 线、当天分时和交易日历五个固定只读方法，通过递增 ID 对应乱序响应，并统一处理限流、短缓存、超时、进程退出和关闭。这样复用了官方 CLI 已经完成的认证和长连接，又没有读取它的私有 Token 文件。代价是部署机必须额外安装 CLI、授权必须属于运行 Spring Boot 的同一系统账号，而且同一 Longbridge 账号不能简单水平启动多个行情副本。这个方案是供应商适配层的实现选择，将来 Java SDK 提供可复用的正式授权入口时，可以替换网关实现，不需要改业务 API。
+> 我把供应商传输细节隔离在 `LongbridgeJsonRpcClient` 后，由 Spring Boot 按需启动并独占一个 `longbridge serve` 子进程。页面仍只调用项目 API；Java 只允许报价、最近 K 线、历史 K 线、当天分时和交易日历五个固定只读方法，通过递增 ID 对应乱序响应，并统一处理限流、短缓存、超时、进程退出和关闭。这样复用了官方 CLI 已经完成的认证和长连接，又没有读取它的私有 Token 文件。代价是部署机必须额外安装 CLI、授权必须属于运行 Spring Boot 的同一系统账号，而且同一 Longbridge 账号不能简单水平启动多个行情副本。这个方案是供应商适配层的实现选择。现在缓存层依赖 `LongbridgeUpstreamGateway`，dev 可选择 `LongbridgeSdkClient`，prod 保留 `LongbridgeJsonRpcClient`；替换传输不需要改业务 API。本地已通过官方 SDK 授权和真实行情探测；登录后的网页与自动刷新仍待验收。
 
 ### 项目证据
 

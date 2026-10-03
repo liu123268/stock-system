@@ -36,7 +36,7 @@ class LongbridgeMarketCandlestickProviderTest {
     @Test
     void translatesProviderCode301607IntoTheDedicatedLimitFailure() {
         LongbridgeCandlestickGateway gateway = (code, period, count) -> {
-            throw new LongbridgeCliException("301607", "quota exceeded");
+            throw new LongbridgeUpstreamException("301607", "quota exceeded");
         };
 
         assertThatThrownBy(() -> new LongbridgeMarketCandlestickProvider(gateway)
