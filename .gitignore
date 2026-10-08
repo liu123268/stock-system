@@ -11,6 +11,7 @@ target/
 ### Logs and operating system files ###
 *.log
 *.pid
+__pycache__/
 .DS_Store
 Thumbs.db
 

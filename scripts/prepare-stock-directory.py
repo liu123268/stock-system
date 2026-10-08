@@ -6,6 +6,7 @@ Raw downloads are produced by probe-stock-directory.py; CNINFO_CODES.txt is
 the public https://www.cninfo.com.cn/new/data/szse_stock.json response.
 """
 import datetime
+import argparse
 import json
 from pathlib import Path
 import re
@@ -92,15 +93,18 @@ def enrich_pinyin(directory):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 4 and sys.argv[1] == '--enrich-pinyin':
-        result = enrich_pinyin(json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')))
-        output = Path(sys.argv[3])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--input-dir', type=Path, default=OUT)
+    parser.add_argument('--enrich-pinyin', nargs=2, metavar=('INPUT', 'OUTPUT'))
+    options = parser.parse_args()
+    OUT = options.input_dir.resolve()
+    if options.enrich_pinyin:
+        result = enrich_pinyin(json.loads(Path(options.enrich_pinyin[0]).read_text(encoding='utf-8')))
+        output = Path(options.enrich_pinyin[1])
         output.parent.mkdir(parents=True, exist_ok=True)
-    elif len(sys.argv) == 1:
+    else:
         result = build()
         output = OUT / 'directory.json'
-    else:
-        raise SystemExit('Usage: prepare-stock-directory.py [--enrich-pinyin <input-json> <output-json>]')
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps({'total': len(result['stocks']), 'markets': {
         e: sum(r['exchange'] == e for r in result['stocks']) for e in ['SSE', 'SZSE', 'BSE', 'HKEX']},

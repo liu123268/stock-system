@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect, reconcile and transactionally synchronize stock identities
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/stock-system-deploy
+ExecStart=/home/ubuntu/stock-system-deploy/directory/run-directory-sync.sh
+TimeoutStartSec=10min
+UMask=0027

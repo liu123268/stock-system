@@ -31,11 +31,12 @@ public final class StockDirectoryImporter {
         return directory;
     }
 
-    public void validate(Directory directory) {
+    /** Returns the parsed snapshot time only after the entire batch passes validation. */
+    public OffsetDateTime validate(Directory directory) {
         if (directory == null || directory.stocks() == null || directory.stocks().isEmpty()) {
             throw new IllegalArgumentException("Empty directory");
         }
-        OffsetDateTime.parse(directory.generatedAt());
+        OffsetDateTime generatedAt = OffsetDateTime.parse(directory.generatedAt());
         Set<String> codes = new HashSet<>();
         for (Entry row : directory.stocks()) {
             if (row == null || row.exchange() == null || !SUFFIX.containsKey(row.exchange())) {
@@ -52,13 +53,14 @@ public final class StockDirectoryImporter {
                 throw new IllegalArgumentException("Invalid or duplicate directory entry: " + row.code());
             }
         }
+        return generatedAt;
     }
 
     public int importRows(Connection connection, Directory directory) throws SQLException {
         if (connection.getAutoCommit()) throw new IllegalStateException("Explicit transaction required");
-        validate(directory);
-        LocalDateTime syncedAt = OffsetDateTime.parse(directory.generatedAt())
-                .atZoneSameInstant(ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+        LocalDateTime syncedAt = validate(directory)
+                .atZoneSameInstant(ZoneId.of("Asia/Shanghai")).toLocalDateTime()
+                .truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         // Keep identifiers and research links. Absence never deletes or delists a stock.
         // Previously verified status survives a directory refresh; Mock status does not.
         String sql = """

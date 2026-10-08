@@ -1,6 +1,6 @@
 # 测试与验收规则
 
-更新时间：2026-09-22
+更新时间：2026-10-07
 
 ## 1. 测试目标与选择
 
@@ -41,6 +41,20 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 单元测试把一个类或一小段协作逻辑与外部系统隔离，用固定输入检查输出、异常或交互；它通常快、定位清楚，但不能代替真实 MySQL、Redis、Longbridge 或浏览器验收。这个项目的 `*Test.java` 中，使用假进程、替身或内存对象的测试主要属于单元测试；带 `@SpringBootTest`、真实 JDBC 或显式 Redis 的测试属于集成测试，分类以测试实际连接的资源为准。
 
 在项目根目录运行 `mvn "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" test` 会执行普通后端回归。测试报告在 `target/surefire-reports/`：先看 `tests`、`failures`、`errors`、`skipped`，再按失败测试名回到源码中的 `@Test` 方法。Redis 真实连接、Longbridge 账号和浏览器流程都不是普通单元测试会自动启用的能力，必须按本文件相应开关和环境前置单独运行；“测试通过”要同时说明测试层次和未执行的外部探测。
+
+### 2.3 每日目录同步测试
+
+在项目根目录运行 `python -B scripts/test_stock_directory_sync.py`，用临时样本验证集合缺失、新增未知证券、旧下载、错误排除身份、采集失败和 Java 回执不匹配；它不联网、不连接数据库。`StockDirectorySyncCommandTest` 是真实 MySQL 集成测试，核对实际 catalog、幂等提交后 ID／状态保持、缺席股票保留、验证模式双次导入整体回滚、旧快照拒绝和其他连接持锁时拒绝写入；提交型 fixture 带本轮标识，并在 `@AfterEach` 精确清理。既有目录搜索和拼音测试继续保留。
+
+真实公开源＋打包后 Java 的完整验证使用 [开发环境 8.1](development.md#81-每日同步入口与打包后验证) 的 `test verify`。Linux 云端演练同样仅用 `stock_system_test`，生产镜像只启动这个主程序，不启动 Web 服务或额外真实行情连接；数据库密码在临时容器内部读取挂载的测试 Secret，不放入命令行。生产 `prod apply` 属于经授权的数据同步，不包装为测试，也不得清理既有业务记录。Windows 回滚验证和 systemd 语法检查均不能代替定时器实际安装及首次真实同步。
+
+### 2.4 部署环境与生产只读验收
+
+[verify-deployment-failures.py](../../scripts/verify-deployment-failures.py) 在经过核实的 ubuntu／`VM-0-8-ubuntu` 云主机执行，取 `.last-release` 对应镜像，创建绑定回环 18082 的独立容器。运行前要求该端口空闲、`stock_system_test` 的指定股票 fixture 不存在；以 `prod,test` 启动并校验 test 环境探针与实际 JDBC catalog。测试账号／空间随机生成，只在测试库写入；CLI 使用本轮替身且不挂生产长桥授权，Redis 使用随机独立前缀。
+
+复现时先只上传这一份脚本到部署目录 `.incoming/`，再执行 `python3 .incoming/verify-deployment-failures.py`；它验证 CLI 缺失／未授权／超时、共享 Redis 在测试后端重启后命中、Redis 不可达降级及退出 sidecar 重建。生产四容器 ID 前后必须相同。finally 按随机标识删除账号／空间／研究 fixture、Redis 测试键，按容器标签确认归属再删除测试容器，并核对剩余 0。这是正式镜像在部署依赖环境中的测试，不是操作真实生产供应商故障。
+
+[production-readonly-smoke.mjs](../../frontend/e2e/production-readonly-smoke.mjs) 在本机 `frontend` 目录用 `node e2e/production-readonly-smoke.mjs` 执行，默认公网地址在脚本中，可用 `PRODUCTION_URL` 指定 HTTPS 地址。真实 Chrome 保留严格证书校验，只访问公开页面、未登录认证接口和缺失静态资源，验证桌面／手机、401、404、HTTP 跳转、无明文子资源与页面错误；不注册账号或写业务数据。截图／JSON 默认在忽略的 `target/v1-production-readonly/`。用户自己正常登录的生产手工验收单独记录，不据此放宽自动化只能写测试库的规则。
 
 ## 3. 前端测试
 

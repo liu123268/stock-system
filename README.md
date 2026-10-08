@@ -2,7 +2,7 @@
 
 基点是一个面向家庭成员和小型研究组的共享自选股与观点协作平台，也是一个用于学习和展示 Java 全栈开发能力的模块化单体项目。
 
-已实现认证、研究空间、真实行情与研究周期基础流程；当前审查缺口、验收范围和后续任务见 [当前状态](docs/project/status.md)。
+已实现认证、共享研究、真实行情和每日目录同步，已发布云端；V1 仍待本地 SDK 真实 Token 自动刷新验收，具体证据与后续任务见 [当前状态](docs/project/status.md)。
 
 ## 技术栈
 
@@ -35,6 +35,7 @@ stock-system/
 - [本地开发与启动](docs/engineering/development.md)
 - [部署与上线检查](docs/engineering/deployment.md)
 - [V1产品需求](docs/product/requirements-v1.md)
+- [V2 Agent方向与待确认规格](docs/product/requirements-v2.md)
 - [当前阶段需求规格](docs/specs/002-stock-research/requirements.md)
 - [V1数据模型](docs/architecture/data-model.md)
 

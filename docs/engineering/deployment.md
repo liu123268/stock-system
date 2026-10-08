@@ -1,8 +1,8 @@
 # 部署与上线检查
 
-状态：云端前后端及数据服务已部署；公网 IP 的正式 HTTPS、HTTP 跳转、证书续期演练均已验证。登录后的完整业务验收尚未完成。
+状态：新版已发布；HTTPS、目录同步及隔离部署故障验收通过，用户确认生产登录后报价／图表／历史正常；长期运维边界见下文。
 
-更新时间：2026-10-02
+更新时间：2026-10-07
 
 ## 1. 文档职责
 
@@ -10,7 +10,7 @@
 
 ## 2. 当前云端部署
 
-以下依据 2026-10-02 用户回传结果及 SSH／浏览器现场验证记录，不代表完整上线验收通过。
+以下部署配置于 2026-10-07 发布后现场核对；首次建站证据为 2026-10-02，最新验收见 [SPEC-002 tasks](../specs/002-stock-research/tasks.md#2026-10-07-v1-收尾目录部署与整体流程)。
 
 | 项目 | 当前配置 |
 | --- | --- |
@@ -19,7 +19,7 @@
 | 部署目录 | `/home/ubuntu/stock-system-deploy`，宿主机操作账号 `ubuntu` |
 | MySQL | `mysql:8.4`，实际 8.4.11；库 `stock_system`，应用账号 `stock_app`；容器上限 1GiB，buffer pool 256MiB |
 | Redis | `redis:7.4-alpine`；容器上限 256MiB，缓存上限 128MiB，`noeviction`；关闭 RDB/AOF，仅作可重建缓存及锁 |
-| 后端 | `stock-system-backend:longbridge-0.28.5`；Java 17，`prod` profile；容器上限 1.5GiB，堆上限 768MiB |
+| 后端 | `stock-system-backend:release-20261007T131951Z-cff9eede`；CLI 0.28.5，Java 17，`prod` profile；容器上限 1.5GiB，堆上限 768MiB |
 | 前端代理 | `nginx:stable-alpine`，实际 Nginx 1.30.5；静态生产构建与 `/api/` 转发，容器上限 128MiB |
 | 网络 | MySQL、Redis 只供 Compose 内网访问；后端映射 `127.0.0.1:8082`；前端映射公网 80／443 和回环 8080；HTTP 自动跳转 HTTPS，ACME 验证路径除外 |
 
@@ -70,16 +70,17 @@ sudo docker compose -f compose.yaml -f compose.backend.yaml -f compose.frontend.
 
 当前未使用域名。腾讯云说明不解析域名、仅通过公网 IP 直接访问测试可暂不备案；将域名解析到大陆云资源时需先备案，个人用途本身不构成豁免。依据 [腾讯云备案说明](https://cloud.tencent.com/document/product/243/19630)。
 
-### 已验证与下一步
+### 当前发布与验收
 
-- MySQL、Redis 健康检查通过，Redis `PING` 返回 `PONG`；MySQL 全局及应用账号会话时区均为 `+08:00`。后端连接云端库成功，Flyway 校验 11 个迁移，库已到 V11。
-- 已通过 SSH 上传并向云端空 `stock_system.stock` 导入 2026-09-21 的 8318 条目录快照，中文名称与拼音字段核对通过；账号、空间仍均为 0。目录状态保持 `UNKNOWN`，不是最新全市场同步结果。云端导入文件为 `backend/stock-directory-initial.sql`，校验完整且使用事务；该文件仅用于空库初次导入，不能当作日常增量同步工具。
-- `/api/auth/me` 在未登录时返回 401，说明后端 HTTP 与认证拦截已响应；不代表注册、登录和业务流程已验收。
-- 本轮本机生产构建及类型检查通过；真实 Chrome 经 SSH 隧道验证首页、登录路由直接访问均 200，无页面脚本异常，代理认证接口返回 401，缺失资源返回 404。浏览器已关闭，无账号或业务数据写入；供用户访问的 SSH 隧道保持运行。前端容器健康检查通过。
-- 公网 80 开放后，真实 Chrome 直接访问服务器 IP：首页与登录页均 200，无页面脚本异常，API 认证接口返回 401；原 SSH 隧道入口仍返回 200。此次只重建前端容器，未修改云防火墙、数据库或后端容器；浏览器已关闭，未产生业务写入。
-- CLI 0.28.5 已通过设备授权登录；需在本机浏览器打开终端打印的授权 URL，云端不会自动弹出本机页面。新容器可读取已保存授权，后端容器内 `longbridge quote 600519.SH` 已取得真实报价；Java 管理的 sidecar 和本项目行情 API 尚未验证。
-- 腾讯云防火墙放行 TCP 443 后，公网 HTTPS 严格证书校验通过；真实 Chrome 验证 HTTP 跳转至 HTTPS、首页／登录页 200、API 401、缺失资源 404，使用 TLS 1.3，无明文子资源请求或页面脚本异常。证书续期 dry-run 成功，正式证书未被测试证书替换；Nginx 重载成功，无遗留 Certbot 容器。浏览器已关闭，无业务写入。
-- 后续完成登录后的业务／行情 API 与 Redis 缓存验收、备份恢复和主机重启恢复。Flyway 9.22.3 对 MySQL 8.4 提示未测试支持，虽迁移校验通过，仍需单独处理依赖兼容性。
+2026-10-07 已经用户授权发布 `20261007T131951Z-cff9eede`，生产目录同步首轮成功、定时器启用。当前目录 stock 为 8359 条，4 个账号、2 个空间；这是当日快照，后续正常使用和同步可能变化。原 8318 个股票 ID 与已有研究关联保留；2026-10-02 的空库初始导入只能作为历史记录，不能当作日常同步。
+
+实际公网 Chrome 严格证书检查首页／登录、桌面／手机、HTTP 跳转、API 401 和资源 404 均通过，未写生产业务数据。用户随后正常登录并确认报价、图表和历史记录正常。正式镜像与真实云端 Redis 的故障／恢复验证采用同机隔离 test 后端和替身 CLI，不挂生产授权；详细六项结果与清理只见上方 tasks，不把它们写成真实生产 Token 撤销或断网演练。
+
+本机发布入口为仓库外 `C:\Users\32101\Desktop\stock-system-部署工具`。本次服务器发布已经 `DEPLOY_OK`，本地最终 curl 因 Windows Schannel 无法访问证书吊销服务误报失败；`Deploy.ps1` 仅追加 `--ssl-revoke-best-effort`，证书链和 IP 校验保留，修复后公网检查成功。发布包 SHA-256 为 `e9e405c41803e4378582bdbbf7235463a57dc31a5f3ba5b7e562b6b849dd79ba`；回滚使用工具的已有发布记录，不删除数据库卷、授权或业务历史。解析和健康检查通过不代表再次完整部署。
+
+当前产物／日志凭据检查通过，Git 历史检查仅在本地进行；旧版本配置存在数据库密码字面量，当前密码来自外部 Secret。用户明确要求保留现有数据库密码，本轮未更换；密码强度与历史清理未整改，检查不宣称证明所有历史均无敏感信息。完整扫描口径见 tasks。
+
+MySQL、Redis、Flyway V11 与应用启动通过，CLI 保持一个由 Java 管理的真实行情进程。证书续期 dry-run 与重载为 2026-10-02 的已验收证据，本次没有重复申请证书。后续整库备份／恢复、主机重启恢复、长期同步和主动告警尚未演练；Flyway 9.22.3 对 MySQL 8.4 的兼容性提示仍需单独处理。
 
 当前网页访问结构如下；浏览器经公网 HTTPS 访问前端代理，HTTP 自动跳转。Actuator、生产告警和自动发布尚未实现。
 
@@ -141,11 +142,32 @@ Browser
 6. 检查浏览器网络响应、前端生产构建、后端 JAR、日志和 Git 历史均不含 Token 或授权缓存；
 7. 重新核对上线时的实时报价限流、单次标的数、历史 K 线月度不同标的配额和市场权限；记录实际 CLI 版本、服务账号、Token 持久化方式、网络/代理、实例数、回滚命令和告警负责人。
 8. 用一个已经加入测试空间且本月已查询过的股票读取分钟／日／年 K、左拖补历史、当天分时和一个历史交易日，确认同一个 sidecar、来源时间、不复权标记、停止刷新条件和页面错误状态；再用非交易日验证不会把上一交易日数据错标为所选日期。不得用批量搜索候选做 K 线或分时验收。
-9. Redis 开启与关闭两条路径均通过上述 API 验证；部署环境的连接、访问权限、缓存过期、故障恢复与环境 Key 隔离通过验收后，才能把本机隔离测试提升为该环境的上线证据。当前容器及生产配置已建立，但业务缓存验收尚未完成。
+9. Redis 开启与关闭两条路径均通过上述 API 验证；部署环境的连接、访问权限、缓存过期、故障恢复与环境 Key 隔离通过验收后，才能把本机隔离测试提升为该环境的上线证据。2026-10-07 已用正式镜像、实际云端 Redis 和隔离 test 后端完成共享命中／不可达降级；上游为替身，真实生产网页由用户确认。
 
-Actuator readiness 与生产告警尚未实现，不能在缺少这些证据时把“进程能启动”写成生产可运维完成。
+部署故障验收入口与生产只读脚本见 [测试规则 2.4](testing.md#24-部署环境与生产只读验收)。Actuator readiness 与主动告警尚未实现，当前环境验收完成不代表全部生产运维能力完成。
 
-## 5. 回滚和授权失效
+## 5. 每日股票目录同步
+
+目录同步是独立的单次任务，复用运行中后端镜像内的 Java 导入器；它不启动第二个 HTTP 服务或 Longbridge 连接。源码模板在 [目录部署文件](../../deploy/directory/run-directory-sync.sh)、[安装器](../../deploy/directory/install-directory-sync.sh)、[服务](../../deploy/directory/stock-system-directory-sync.service) 和 [定时器](../../deploy/directory/stock-system-directory-sync.timer)。2026-10-07 已完成安装、首轮真实同步并启用定时器，完整验收见 CODE-206G 的日期证据。
+
+部署目录为 `/home/ubuntu/stock-system-deploy/directory/`：`scripts/` 保存经过 SHA-256 校验的允许文件，`venv/` 隔离 Python 依赖，`state/runs/<runId>/` 保存本轮原始下载、日志、标准快照和回执。安装只包含六个 Python／依赖文件、两个 shell 文件和两个 systemd 单元，不上传整个仓库、target、账号、密钥或本地 OAuth 配置。后端仍从现有云端 Secret 读取数据库密码。
+
+初次安装需要 `python3.12-venv`；仅有 `python3 --version` 成功不能证明 `venv` 与 pip 可用。在已核实的 ubuntu／主机和校验过的隔离包目录执行 `sh install-directory-sync.sh`。安装器先拒绝覆盖既有安装，检查后端已经包含新入口，再创建虚拟环境、安装依赖并验证单元；首次同步成功才启用 timer。安装中途失败时，不反复覆盖目录，应定位已经完成的步骤：修复后可启动现有 service，成功后再启用 timer。应用版本发布仍使用仓库外桌面部署工具，不把运维工具搬进业务项目。
+
+timer 按 `Asia/Shanghai` 每天 06:30 触发，附最多五分钟随机延迟，并补跑关机错过的任务；完整任务用 `flock` 排他，跨机器导入还受 MySQL 命名锁保护。采集或覆盖失败不写库，`last-run.json` 保留失败阶段和类别；`last-success.json` 仅在真实提交且回执核对通过后更新。代码与字段机制见 [SPEC-002 设计](../specs/002-stock-research/design.md#42-目录字段接入核对2026-09-08)。
+
+在云端部署目录运行以下命令：第一条确认未来调度，第二条读取本次结果，第三条定位失败阶段；最后一条手动触发同一受锁保护的 service，不能绕开包装器并行运行采集脚本。
+
+```bash
+sudo systemctl list-timers stock-system-directory-sync.timer --no-pager
+cat directory/state/last-run.json
+sudo journalctl -u stock-system-directory-sync.service -n 80 --no-pager
+sudo systemctl start stock-system-directory-sync.service
+```
+
+暂停后续同步使用 `sudo systemctl disable --now stock-system-directory-sync.timer`；这不撤销已经提交的目录，也不删除股票或研究历史。单元失败和 journal 是当前追溯入口，尚未实现主动告警。后续升级需要独立校验代码与依赖、停用 timer 并保留 state，不能把初次防覆盖安装器当作升级器。
+
+## 6. 回滚和授权失效
 
 - 外部行情故障时，在云端 `compose.backend.yaml` 将 `MARKET_MODE` 改为 `directory`，按第 2 节重建后端：搜索继续使用 MySQL 标准目录，但价格和行情时间为空，添加研究按现有规则失败。当前 dev／prod 均支持该简写映射；不得切到 `mock` 冒充生产行情。
 - 若版本升级导致不兼容，回退到已验证 CLI 版本和应用版本，再重新运行第 4 节；不要删除数据库研究历史。

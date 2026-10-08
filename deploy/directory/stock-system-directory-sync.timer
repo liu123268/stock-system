@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily stock identity synchronization
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 Asia/Shanghai
+RandomizedDelaySec=5min
+Persistent=true
+Unit=stock-system-directory-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,6 @@
 # 本地开发与启动说明
 
-更新时间：2026-10-02
+更新时间：2026-10-08
 
 ## 1. “前端”到底是什么
 
@@ -118,13 +118,39 @@ PowerShell 使用 npm.cmd，Maven 使用系统 mvn。本机 Maven 缓存位于�
 
 `scripts/probe-stock-directory.py` 负责公开目录下载，`scripts/prepare-stock-directory.py` 将多种字段批量转换为统一 JSON；都不连接数据库。Python 需要 pandas、openpyxl、`opencc-python-reimplemented==0.1.7` 和 `pypinyin==0.55.0`；本地依赖安装在忽略目录 `target/market-python`，后端无需安装 Python 库。拼音使用词组词典生成小写首字母，人工核实的多音字补充读音仍写入 `searchAliases`。
 
-准备结果位于 `target/market-directory-probe/directory.json`。先查看采集状态和 coverageNote；失败不能使用旧文件假称同步成功。target 是本地中间产物，清理后需要重新采集。当前北交所使用巨潮 920xxx A 股名单，完整覆盖核对未完成，不以旧 43/83/87 前缀猜测所属交易所。
+历史手工准备结果位于 `target/market-directory-probe/directory.json`。先查看采集状态和 coverageNote；失败不能使用旧文件假称同步成功。target 是本地中间产物，清理后需要重新采集。北交所使用巨潮 920xxx A 股名单，并与完整分页对照源核对集合，不以旧 43/83/87 前缀猜测所属交易所；具体覆盖证据见 CODE-206G。
 
 Java 源文件启动入口 `scripts/ImportStockDirectory.java` 调用正式 `StockDirectoryImporter`。在项目根目录、编译完成且 classpath 包含 target/classes 和项目依赖时执行：`java --class-path <classpath> scripts/ImportStockDirectory.java test verify <目录JSON>`，会核对实际测试库、迁移、导入、重复导入和回滚；`dev inspect` 只读核对开发库，`dev apply <目录JSON>` 才执行真实开发数据导入。凭据从现有配置/环境读取，不放入命令参数。它不启动应用或端口；迁移前检查 catalog，数据批次异常整体回滚。apply 在 target 保存原股票信息备份、核对已有 ID 不变及全部导入字段后提交，不删除目录缺失记录。
 
 只补派生拼音且不重新抓市场时，先用 `dev export <JSON>` 从现有开发库只读导出可信目录身份，再运行 `python scripts/prepare-stock-directory.py --enrich-pinyin <输入JSON> <输出JSON>`，随后先用 `test verify` 验证整批并回滚，最后才用 `dev backfill <输出JSON>`。backfill 会应用新迁移、在 target 备份原行，并只更新 `pinyin_initials`；任一代码未匹配就整批回滚，不改 `last_synced_at`、来源、状态、ID 或研究关联。
 
 `target/directory-classpath.txt` 是目录导入阶段从 Maven 测试报告的 java.class.path 提取的本机运行辅助文件。它会随依赖与工作区变化，不能作为永久部署配置。已经运行的 IntelliJ 后端需要重启才能加载新的 Java 搜索逻辑；导入本身立即对数据库可见。
+
+### 8.1 每日同步入口与打包后验证
+
+新编排入口 `python -B scripts/sync-stock-directory.py` 先采集、核对并生成新快照，默认不连接数据库；输出 `COLLECTED` 只证明采集核对完成。每次结果在 `target/directory-sync/runs/<runId>/`，最近尝试和最近已核对结果分别为 `last-run.json`、`last-verified.json`；只有数据库正式提交后的 `APPLIED` 才产生或替换 `last-success.json`。本地 Python 依赖见 [目录依赖清单](../../scripts/directory-requirements.txt)，使用 `target/market-python` 时，需让当前 Python 进程的 `PYTHONPATH` 包含该目录。
+
+在项目根目录完成 Maven 打包后，可用以下 PowerShell 进行测试库完整验证；它通过 argv 数组传参，目录 JSON 经 stdin 传递，不将密码或整段 shell 命令拼进参数：
+
+```powershell
+$directoryCommand = @('java', '-Dloader.main=com.stock.system.stock.directory.StockDirectorySyncCommand', '-cp', 'target/stock-system-0.0.1-SNAPSHOT.jar', 'org.springframework.boot.loader.launch.PropertiesLauncher', 'test', 'verify')
+$directoryCommandJson = ConvertTo-Json -Compress -InputObject $directoryCommand
+python -B scripts/sync-stock-directory.py --import-command-json $directoryCommandJson
+```
+
+`test verify` 核对实际 `stock_system_test`，导入两次后整体回滚；只有 Java 回执的行数和快照哈希一致才返回 `VERIFIED`。它不执行新迁移，须先按测试规则运行测试后端或 Maven，确认 schema 当前。生产的 `prod apply` 在容器中读取现有 Secret，实际提交到云端 `stock_system`；本地 `dev apply` 也是真实数据操作，不能用来执行自动测试。定时调度、锁及运维操作只见 [部署说明](deployment.md#5-每日股票目录同步)。
+
+### 8.2 IDEA 提交检查提示“无法解析表 stock”
+
+IDEA 会用本地缓存的数据库元数据检查 Java／JS 字符串里的 SQL；它不通过 Java 编译器验证数据库表。如果缓存仍是旧版 `user/stock_record`，即使真实数据库已有新版 `stock`，提交前分析仍可能把表名／列名标成错误。先区分 IDE 解析错误、Java 编译错误和真实 MySQL 执行错误，不能只凭错误总数判断业务损坏。
+
+在本地 Database 面板打开 MySQL 数据源属性，进入 Schemas，选中 `stock_system` 和 `stock_system_test`，应用后刷新结构；必要时右键数据源选择 Diagnostics → Force Refresh。成功的判断是看到新版 `stock`、`workspace_stock`、`research_cycle`、`stock_opinion` 等表，而非仅看到旧两张表。数据库结构选择和刷新机制见 [JetBrains 元数据说明](https://www.jetbrains.com/help/idea/introspection.html)。
+
+刷新后若仍无法解析，在设置搜索 `SQL Resolution Scopes`：将相关测试源码目录关联本地 `stock_system_test`，目录导入主源码关联同结构的本地 schema，再运行提交前代码分析。配置入口见 [JetBrains SQL 解析作用域](https://www.jetbrains.com/help/idea/settings-languages-sql-resolution-scopes.html)。这只改变 IDE 的补全／静态检查上下文，不修改 Spring profile、真实数据库连接或测试数据保护；不要为消除提示把 SQL 改成硬编码开发库，也不要直接关闭 SQL 检查。
+
+2026-10-08 本次排查先发现两库各 13 张表且都有 `stock`，IDE 缓存却仅有旧 `user/stock_record`。用户强制刷新后，已核对 IDE 元数据包含两库的新版表，旧缓存问题已经解决；提交检查仍报表无法解析，随后确认项目没有 SQL 解析映射，已在本机忽略的 `.idea/sqldialects.xml` 设置项目静态 SQL 解析参考 `stock_system_test`，并用实际 IDEA 2025.2 的解析器验证配置格式。数据源 UUID 属于本机，不提交或复制给其他开发者。用户重新打开项目后提供的截图显示原 43 条错误全部消失，剩 3 条警告。
+
+剩余警告已在源码中处理：文档目录链接指向实际 `index.md`；占位符正则删除多余的右花括号转义；目录校验返回解析后的快照时间，导入与同步复用该结果，非法时间仍在写入前抛出异常。不要为了消除“结果被忽略”而删掉有效校验。本轮 12 项目录 MySQL 集成测试通过，测试库股票与目录测试账号均核对为 0；脚本语法、lint、7 类占位符匹配等价检查和文档链接检查通过。三条警告是否已在 IDEA 清零仍须重跑代码分析确认，源码检查不代替 IDE 验收。
 
 ## 9. Longbridge 真实报价
 
@@ -140,7 +166,7 @@ Vue → Spring Boot（权限、目录与参数校验）→ 行情网关
                                                → 必要时由官方 Java SDK 受控回源
 ```
 
-搜索先查 MySQL 标准目录，再批量补报价；添加仍由服务端取可信报价后写不可变开始快照；K 线和分时只在用户展开股票时按需读取。Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。开发配置现在选择官方 Java SDK OAuth：第一次回源时创建一个 `QuoteContext`，后续复用，应用关闭时释放 SDK 资源；不会启动 CLI。生产仍选择 `longbridge serve`，其操作只见部署说明。本地新账号官方授权与四类行情 SDK 探测已通过，登录后网页与自动刷新仍待验收，证据见 SPEC-002 的 CODE-206I。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。缓存分层及失败边界见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
+搜索先查 MySQL 标准目录，再批量补报价；添加仍由服务端取可信报价后写不可变开始快照；K 线和分时只在用户展开股票时按需读取。Spring Boot 不会为每只股票执行一遍命令，也不会为每个页面请求重新登录。开发配置现在选择官方 Java SDK OAuth：第一次回源时创建一个 `QuoteContext`，后续复用，应用关闭时释放 SDK 资源；不会启动 CLI。生产仍选择 `longbridge serve`，其操作只见部署说明。本地新账号授权、四类 SDK 探测及 2026-10-07 登录后真实网页已通过，实际到期后的自动刷新仍待验收，证据见 SPEC-002 的 CODE-206I。搜索最多 30 个目录候选，但发送的是一个 `symbols` 批量请求。缓存分层及失败边界见 [SPEC-002 设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)。
 
 当前[官方定价说明](https://open.longbridge.com/zh-CN/pricing)写明 OpenAPI 不收激活或接口使用费，因此一次报价不是“消耗一张 OAuth 授权码”或按次扣费；需要控制的是调用速率、长连接数量和各市场行情权限。授权码只用于建立/刷新授权，Token 会复用。[实时报价接口](https://open.longbridge.com/zh-CN/docs/quote/pull/quote)当前没有公开的每日或每月不同标的总量硬上限；单次最多接收 500 个代码，所以理论上查询 5000 只需要拆成至少 10 个请求并遵守每秒 10 次、并发 5 次，不能一次请求或同时订阅 5000 只。项目搜索只取最多 30 个候选并合并成一次请求。
 
@@ -162,7 +188,7 @@ Vue → Spring Boot（权限、目录与参数校验）→ 行情网关
 
 脚本把公开 client_id 和回调端口写到 Git 忽略的 `.env.longbridge-local.properties`（`local.longbridge.client-id`、`local.longbridge.callback-port`）。授权时临时设置子进程的 `LONGBRIDGE_CLIENT_ID`，不设置 Windows 用户／系统永久环境变量。`dev` 导入该文件，运行目录应为项目根目录；也可通过非敏感的 `LONGBRIDGE_CLIENT_ID` 覆盖。Token 的保存和刷新交给官方 SDK，Windows 位于 `%USERPROFILE%\.longbridge\openapi\tokens\<client_id>`。项目不读取或手写该缓存，也不从旧 CLI 拷贝 Token；旧账号授权文件不自动删除，不影响生产账号。
 
-授权成功后重启本地后端，确保旧 Java 进程拥有的 CLI 连接先退出，再使用新 SDK 连接。网页搜索、K 线和当天／历史分时仍须真实验收。已有本地开发服务由用户正常关闭；自动化不得批量结束 Java 或 longbridge。云端的安装、授权、Token 挂载和镜像维持原方案，见[部署说明](deployment.md)。
+授权成功后重启本地后端，确保旧 Java 进程拥有的 CLI 连接先退出，再使用新 SDK 连接。2026-10-07 网页搜索、K 线和历史分时已经真实验收；A 股休市当天验证明确的非交易日响应，没有将无曲线算作接口故障。自动刷新仍需在 SDK 管理的授权实际到期后验证，不强制编辑真实 Token 文件或用文件存在冒充刷新成功。已有本地开发服务由用户正常关闭；自动化不得批量结束 Java 或 longbridge。云端的安装、授权、Token 挂载和镜像维持原方案，见[部署说明](deployment.md)。
 
 ### 9.3 可配置项与降级
 

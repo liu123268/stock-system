@@ -52,7 +52,7 @@ async function readDatabaseConfig() {
   if (!match) throw new Error('无法从application.properties解析MySQL连接地址')
 
   const resolveEnvironmentPlaceholder = (value, propertyName) => {
-    const placeholder = value?.match(/^\$\{([A-Z0-9_]+)(?::([^}]*))?\}$/)
+    const placeholder = value?.match(/^\$\{([A-Z0-9_]+)(?::([^}]*))?}$/)
     if (!placeholder) return value
     const resolved = process.env[placeholder[1]] ?? placeholder[2]
     if (resolved === undefined || resolved === '') {
@@ -404,13 +404,19 @@ try {
     }
     const chartApiPath = (suffix) =>
       new RegExp(`^/api/workspaces/\\d+/stocks/\\d+/${suffix}$`)
+    /**
+     * @param {string} suffix
+     * @param {number | number[]} [expectedStatus=200]
+     */
     const waitForChartResponse = (suffix, expectedStatus = 200) =>
       waitForResponseSafely(page, (response) => {
         const path = new URL(response.url()).pathname
         return (
           response.request().method() === 'GET' &&
           chartApiPath(suffix).test(path) &&
-          response.status() === expectedStatus
+          (Array.isArray(expectedStatus)
+            ? expectedStatus.includes(response.status())
+            : response.status() === expectedStatus)
         )
       })
 
@@ -424,10 +430,18 @@ try {
     await minuteKlineResponse
     await page.getByText(/已加载 \d+ 根 · 数据源：LONGBRIDGE_OPENAPI/).waitFor()
 
-    const todayIntradayResponse = waitForChartResponse('intraday')
+    const todayIntradayResponse = waitForChartResponse('intraday', [200, 400])
     await page.getByRole('button', { name: '分时', exact: true }).click()
-    await todayIntradayResponse
-    await page.locator('.intraday-chart canvas').waitFor()
+    const todayResponse = await todayIntradayResponse
+    if (todayResponse.status() === 200) {
+      await page.locator('.intraday-chart canvas').waitFor()
+    } else {
+      const todayResult = await todayResponse.json()
+      if (todayResult.code !== 'MARKET_INTRADAY_NON_TRADING_DAY') {
+        throw new Error('当天分时仅允许真实交易日结果或明确的休市日错误')
+      }
+      await page.getByText('所选日期不是该市场的交易日', { exact: true }).waitFor()
+    }
 
     const selectIntradayDate = async (date) => {
       await page.locator('.intraday-date input').evaluate((input, value) => {
@@ -457,13 +471,11 @@ try {
     await selectIntradayDate('2023-05-09')
     const rangeResponse = await rangeResponsePromise
     const rangeResult = await rangeResponse.json()
-    if (
-      rangeResult.code !== 'MARKET_INTRADAY_HISTORY_RANGE_EXCEEDED' ||
-      !rangeResult.message.includes('2023-09-01')
-    ) {
+    const earliestDate = rangeResult.message?.match(/\d{4}-\d{2}-\d{2}/)?.[0]
+    if (rangeResult.code !== 'MARKET_INTRADAY_HISTORY_RANGE_EXCEEDED' || !earliestDate) {
       throw new Error(`历史分钟范围提示不明确：${JSON.stringify(rangeResult)}`)
     }
-    await page.getByText(/最早可查看至 2023-09-01/).waitFor()
+    await page.getByText(`最早可查看至 ${earliestDate}`, { exact: false }).waitFor()
 
     const holidayResponsePromise = waitForChartResponse('intraday', 400)
     await selectIntradayDate('2026-09-05')

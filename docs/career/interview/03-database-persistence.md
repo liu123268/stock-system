@@ -191,8 +191,10 @@
 ### 项目证据
 
 - `StockDirectoryImporter.importRows` 负责全量校验、参数绑定和每 500 行执行批处理；
-- `scripts/ImportStockDirectory.java` 负责 catalog 核对、事务提交／回滚和重复导入验证；
+- 初次手工入口 `scripts/ImportStockDirectory.java` 与每日打包入口 `StockDirectorySyncCommand` 都核对 catalog 并控制事务；每日入口另校验快照时效并取得 MySQL 命名锁；
 - 测试库验证 8318 行导入、重复导入与回滚后仍为 0，实施证据见 [SPEC-002 tasks](../../specs/002-stock-research/tasks.md#code-206a-目录实施证据2026-09-08)。
+
+- 2026-10-07 每日真实源及正式镜像在 test 模式完成双次导入／整体回滚，生产应用保持已有 ID 和研究外键，详细证据见 [每日同步验收](../../specs/002-stock-research/tasks.md#2026-10-07-v1-收尾目录部署与整体流程)。
 
 ### 可能追问
 
