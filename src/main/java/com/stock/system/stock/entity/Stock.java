@@ -18,6 +18,9 @@ public class Stock {
     private String exchange;
     private String currency;
     private String listingStatus;
+    private String tradeStatus;
+    private LocalDateTime statusCheckedAt;
+    private LocalDateTime statusAttemptedAt;
     private String source;
     private String searchAliases;
     private String pinyinInitials;

@@ -24,6 +24,15 @@ export interface StockSearchResponseVO {
   quoteTime: string | null
   source: string
   simulated: boolean
+  statusInfo?: StockStatusInfo | null
+}
+
+export interface StockStatusInfo {
+  tradeStatus: string | null
+  lastKnownListingStatus: string | null
+  checkedAt: string | null
+  attemptedAt: string | null
+  current: boolean
 }
 
 export type StockTrackingState = 'NOT_TRACKED' | 'ACTIVE' | 'ENDED'
@@ -104,6 +113,7 @@ export interface ResearchCycleDetailResponseVO {
 }
 
 export interface WorkspaceStockResearchResponseVO {
+  statusInfo?: StockStatusInfo | null
   workspaceStockId: number
   code: string
   name: string
@@ -138,6 +148,7 @@ export interface EndedWorkspaceStockResponseVO {
 }
 
 export interface WorkspaceStockListResponseVO {
+  statusInfo?: StockStatusInfo | null
   workspaceStockId: number
   researchCycleId: number
   code: string

@@ -1,5 +1,7 @@
 package com.stock.system.stock.vo;
 
+import com.stock.system.stock.market.StockStatusInfo;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -15,6 +17,7 @@ public record StockMarketPreviewResponseVO(
         boolean simulated,
         String trackingState,
         Long workspaceStockId,
-        Long activeResearchCycleId
+        Long activeResearchCycleId,
+        StockStatusInfo statusInfo
 ) {
 }

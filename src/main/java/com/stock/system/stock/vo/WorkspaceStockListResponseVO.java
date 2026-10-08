@@ -1,5 +1,7 @@
 package com.stock.system.stock.vo;
 
+import com.stock.system.stock.market.StockStatusInfo;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -26,6 +28,7 @@ public record WorkspaceStockListResponseVO(
         String latestOpinionStance,
         LocalDateTime latestOpinionCreatedAt,
         int opinionCount,
-        int participantCount
+        int participantCount,
+        StockStatusInfo statusInfo
 ) {
 }

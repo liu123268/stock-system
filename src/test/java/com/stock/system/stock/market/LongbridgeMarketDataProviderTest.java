@@ -107,6 +107,32 @@ class LongbridgeMarketDataProviderTest {
         return stock;
     }
 
+    @Test
+    void reportsDelistedWithoutPriceAndNeverUsesAnEpochQuoteAsCurrentPrice() {
+        Stock stock = stock("03333.HK", "测试退市", "HKEX", "HKD", "HKEX_DIRECTORY");
+        when(stockMapper.selectOne(any())).thenReturn(stock);
+        when(quoteGateway.getQuotes(any())).thenReturn(Map.of(stock.getCode(),
+                new LongbridgeQuote(stock.getCode(), BigDecimal.ZERO, Instant.EPOCH, "Delisted")));
+        var result = provider.getLatestQuote(stock.getCode()).orElseThrow();
+        assertThat(result.listingStatus()).isEqualTo("DELISTED");
+        assertThat(result.price()).isNull(); assertThat(result.quoteTime()).isNull();
+        assertThat(result.statusInfo().current()).isTrue();
+    }
+
+    @Test
+    void outageReturnsUnverifiedInsteadOfReusingPreviouslyListedState() {
+        Stock stock = stock("600519.SH", "测试", "SSE", "CNY", "SSE_DIRECTORY");
+        stock.setListingStatus("LISTED");
+        stock.setStatusCheckedAt(StockStatusChecks.time(Instant.now().minusSeconds(60)));
+        stock.setStatusAttemptedAt(stock.getStatusCheckedAt());
+        when(stockMapper.selectOne(any())).thenReturn(stock);
+        when(quoteGateway.getQuotes(any())).thenThrow(new LongbridgeUpstreamException("unavailable"));
+        var result = provider.getLatestQuote(stock.getCode()).orElseThrow();
+        assertThat(result.listingStatus()).isEqualTo("UNKNOWN");
+        assertThat(result.statusInfo().lastKnownListingStatus()).isEqualTo("LISTED");
+        assertThat(result.statusInfo().current()).isFalse();
+    }
+
     private LongbridgeQuote quote(String symbol, String price, String timestamp) {
         return quote(symbol, price, timestamp, "Normal");
     }

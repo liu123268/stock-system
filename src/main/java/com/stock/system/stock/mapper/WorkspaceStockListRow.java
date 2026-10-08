@@ -18,6 +18,10 @@ public class WorkspaceStockListRow {
     private String exchange;
     private String currency;
     private String listingStatus;
+    private String tradeStatus;
+    private LocalDateTime statusCheckedAt;
+    private LocalDateTime statusAttemptedAt;
+    private String stockSource;
     private String attentionLevel;
     private Long startedByUserId;
     private String startedByNickname;

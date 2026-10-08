@@ -1,5 +1,9 @@
 package com.stock.system.stock.service;
 
+import com.stock.system.stock.market.StockStatusChecks;
+import com.stock.system.stock.market.StockStatusInfo;
+import com.stock.system.stock.entity.Stock;
+
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
@@ -53,6 +57,9 @@ public class StockResearchService {
                 && !"SUSPENDED".equals(snapshot.listingStatus())) {
             throw new BusinessException(ErrorCode.STOCK_STATUS_UNAVAILABLE);
         }
+        if (snapshot.price() == null || snapshot.price().signum() <= 0 || snapshot.quoteTime() == null) {
+            throw new BusinessException(ErrorCode.MARKET_QUOTE_UNAVAILABLE);
+        }
         return transactionService.add(userId, workspaceId, request, snapshot);
     }
 
@@ -79,6 +86,10 @@ public class StockResearchService {
     }
 
     private WorkspaceStockListResponseVO toListResponse(WorkspaceStockListRow row) {
+        Stock status = new Stock();
+        status.setListingStatus(row.getListingStatus()); status.setSource(row.getStockSource());
+        status.setTradeStatus(row.getTradeStatus()); status.setStatusCheckedAt(row.getStatusCheckedAt());
+        status.setStatusAttemptedAt(row.getStatusAttemptedAt());
         return new WorkspaceStockListResponseVO(
                 row.getWorkspaceStockId(),
                 row.getResearchCycleId(),
@@ -86,7 +97,7 @@ public class StockResearchService {
                 row.getName(),
                 row.getExchange(),
                 row.getCurrency(),
-                row.getListingStatus(),
+                StockStatusChecks.currentStatus(status),
                 row.getAttentionLevel(),
                 row.getStartedByUserId(),
                 row.getStartedByNickname(),
@@ -102,7 +113,8 @@ public class StockResearchService {
                 row.getLatestOpinionStance(),
                 row.getLatestOpinionCreatedAt(),
                 row.getOpinionCount(),
-                row.getParticipantCount()
+                row.getParticipantCount(),
+                StockStatusInfo.from(status)
         );
     }
 }

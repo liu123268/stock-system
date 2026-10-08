@@ -1,6 +1,6 @@
 # 测试与验收规则
 
-更新时间：2026-10-07
+更新时间：2026-10-08
 
 ## 1. 测试目标与选择
 
@@ -26,6 +26,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 ### 2.1 Longbridge 行情传输测试
 
+- 每日交易状态定向检查：`StockStatusChecksIntegrationTest` 在受 catalog 保护的测试库中验证无价格停牌／退市、复牌、旧响应拒绝、失败保留最后确认及过期规则，事务回滚；`StockStatusSchedulerTest` 验证每日截止、批量游标、MySQL 锁争用及上游失败释放。`LongbridgeStatusRealProbeTest` 仅在 `STOCK_LONGBRIDGE_STATUS_REAL_PROBE=true` 时使用已有 `LONGBRIDGE_CLIENT_ID` 查询七个状态样本及混合批次，不启动 Spring／数据库或读取 K 线，结束关闭本次 SDK 上下文；运行前须确认同账号没有已运行的后端行情连接。普通回归跳过该真实探测。
+- `frontend/e2e/status-smoke.mjs` 使用 test profile、directory 模式的 18082 后端和代理至该后端的 18083 前端，双重探针与实际 source 校验后才创建专用测试数据；覆盖无报价状态、失败／过期、禁止新关注、核实时间和历史 K 线日期，finally 清理。状态和身份来自真实测试 API／MySQL，K 线响应受控，用于验证页面日期说明，不当作真实长桥历史数据验收。
 - `dev` 现选择 SDK OAuth、`prod` 保留 CLI，test 仍 mock。SDK 离线验证在 `LongbridgeSdkClientTest`，覆盖批量报价／交易状态、最近与按日期 K 线、严格 before 边界、分时字段、半日交易日、短缓存、超时关闭重建和错误脱敏；`LongbridgeTransportWiringTest` 覆盖两种 Bean 的互斥选择、真实配置文件及 mock 不建连。离线用例使用 SDK 对象替身，不建立真实行情连接，不能当作 OAuth 成功。
 - `LongbridgeSdkClientTest#readsFourMarketCapabilitiesThroughAuthorizedSdkWithoutDatabase` 是同文件中显式启用的真实探测，由 `STOCK_LONGBRIDGE_SDK_REAL_PROBE=true` 控制并读取进程 `LONGBRIDGE_CLIENT_ID`；只有已授权且用户批准验证的账号才能运行。仅读取 `600519.SH` 的报价、日 K、分时、指定历史分钟 K 及交易日历，不启动 Spring 或写数据库，结束关闭 SDK 上下文。默认回归跳过，不能把这项跳过算成真实行情通过；历史 K 会占用该账号的标的额度。
 - `scripts/authorize-longbridge.cmd` 通过 `STOCK_LONGBRIDGE_OAUTH_SETUP=true` 显式启用 `LongbridgeOAuthSetupTest`，只执行官方浏览器授权，由 SDK 保存／刷新 Token；不连接 Spring、数据库或行情。公开 client_id 从子进程环境取得，Token／验证码不进入 Maven属性或报告。运行步骤见[开发说明](development.md#92-新账号与官方-oauth-准备)。真实行情须等新账号授权及权限确认后单独验收，不能复用生产账号来证明本地独立账号。

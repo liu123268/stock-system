@@ -1,5 +1,7 @@
 package com.stock.system.stock.market;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.stock.system.stock.entity.Stock;
 import com.stock.system.stock.mapper.StockMapper;
@@ -25,10 +27,18 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
 
     private final StockMapper stockMapper;
     private final LongbridgeQuoteGateway quoteGateway;
+    private final StockStatusChecks statusChecks;
 
     LongbridgeMarketDataProvider(StockMapper stockMapper, LongbridgeQuoteGateway quoteGateway) {
+        this(stockMapper, quoteGateway, new StockStatusChecks(stockMapper));
+    }
+
+    @Autowired
+    LongbridgeMarketDataProvider(StockMapper stockMapper, LongbridgeQuoteGateway quoteGateway,
+                                 StockStatusChecks statusChecks) {
         this.stockMapper = stockMapper;
         this.quoteGateway = quoteGateway;
+        this.statusChecks = statusChecks;
     }
 
     @Override
@@ -37,6 +47,7 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
         if (stocks.isEmpty()) {
             return List.of();
         }
+        java.time.Instant attemptedAt = java.time.Instant.now();
         Map<String, LongbridgeQuote> quotes;
         try {
             quotes = quoteGateway.getQuotes(stocks.stream().map(Stock::getCode).toList());
@@ -46,7 +57,11 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
         }
         Map<String, LongbridgeQuote> availableQuotes = quotes;
         return stocks.stream()
-                .map(stock -> toSnapshot(stock, availableQuotes.get(stock.getCode())))
+                .map(stock -> {
+                    LongbridgeQuote quote = availableQuotes.get(stock.getCode());
+                    statusChecks.observe(stock, quote, attemptedAt);
+                    return toSnapshot(stock, quote);
+                })
                 .toList();
     }
 
@@ -59,15 +74,15 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
         if (stock == null) {
             return Optional.empty();
         }
+        java.time.Instant attemptedAt = java.time.Instant.now();
         try {
             LongbridgeQuote quote = quoteGateway.getQuotes(List.of(normalizedCode)).get(normalizedCode);
-            if (!isUsable(quote)) {
-                return Optional.empty();
-            }
+            statusChecks.observe(stock, quote, attemptedAt);
             return Optional.of(toSnapshot(stock, quote));
         } catch (LongbridgeUpstreamException exception) {
             LOGGER.warn("Longbridge quote is unavailable for {}: {}", normalizedCode, exception.getMessage());
-            return Optional.empty();
+            statusChecks.observe(stock, null, attemptedAt);
+            return Optional.of(toSnapshot(stock, null));
         }
     }
 
@@ -81,11 +96,12 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
                 stock.getName(),
                 stock.getExchange(),
                 stock.getCurrency(),
-                usable ? mapListingStatus(quote.tradeStatus()) : "UNKNOWN",
+                StockStatusChecks.currentStatus(stock),
                 usable ? quote.lastDone() : null,
                 quoteTime,
-                usable ? SOURCE : stock.getSource(),
-                false
+                quote != null ? SOURCE : stock.getSource(),
+                false,
+                StockStatusInfo.from(stock)
         );
     }
 
@@ -93,18 +109,8 @@ public class LongbridgeMarketDataProvider implements MarketDataProvider {
         return quote != null
                 && quote.lastDone() != null
                 && quote.lastDone().signum() > 0
-                && quote.timestamp() != null;
+                && quote.timestamp() != null
+                && quote.timestamp().isAfter(java.time.Instant.EPOCH);
     }
 
-    private String mapListingStatus(String tradeStatus) {
-        if (tradeStatus == null) {
-            return "UNKNOWN";
-        }
-        return switch (tradeStatus.trim().toUpperCase(Locale.ROOT)) {
-            case "NORMAL", "0" -> "LISTED";
-            case "HALTED", "1" -> "SUSPENDED";
-            case "DELISTED", "2" -> "DELISTED";
-            default -> "UNKNOWN";
-        };
-    }
 }

@@ -1,5 +1,8 @@
 package com.stock.system.stock.service;
 
+import com.stock.system.stock.market.StockStatusChecks;
+import com.stock.system.stock.market.StockStatusInfo;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
@@ -71,14 +74,15 @@ public class StockMarketPreviewService {
                 stock.getName(),
                 stock.getExchange(),
                 stock.getCurrency(),
-                quote == null ? stock.getListingStatus() : quote.listingStatus(),
+                quote == null ? StockStatusChecks.currentStatus(stock) : quote.listingStatus(),
                 quote == null ? null : quote.price(),
                 quote == null ? null : quote.quoteTime(),
                 quote == null ? stock.getSource() : quote.source(),
                 quote != null && quote.simulated(),
                 trackingState,
                 tracking == null ? null : tracking.getWorkspaceStockId(),
-                tracking == null ? null : tracking.getActiveResearchCycleId()
+                tracking == null ? null : tracking.getActiveResearchCycleId(),
+                quote == null ? StockStatusInfo.from(stock) : quote.statusInfo()
         );
     }
 

@@ -11,3 +11,4 @@
 - [BUG-007：图表卸载后迟到请求重新启动刷新](BUG-007-market-panel-delayed-refresh.md)
 - [BUG-008：进入研究页后丢失已保存提示](BUG-008-saved-result-lost-on-navigation.md)
 - [BUG-009：研究目标变化后的旧写入回调](BUG-009-research-target-lifetime.md)
+- [BUG-010：无价格时丢失交易状态与旧状态冒充当前核实](BUG-010-trade-status-without-price.md)

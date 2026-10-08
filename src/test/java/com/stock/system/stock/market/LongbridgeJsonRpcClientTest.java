@@ -30,6 +30,21 @@ class LongbridgeJsonRpcClientTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
+    void keepsStatusWhenPriceFieldsAreMissingOrMalformed() throws Exception {
+        FakeProcess fake = new FakeProcess(server -> {
+            JsonNode request = server.readRequest();
+            server.respondResult(request.path("id").asLong(), """
+                    [{"symbol":"03333.HK","trade_status":"Delisted","last_done":"bad","timestamp":"bad"}]
+                    """.strip());
+        });
+        try (var client = client(() -> fake, Duration.ofSeconds(2))) {
+            var quote = client.getQuotes(List.of("03333.HK")).get("03333.HK");
+            assertThat(quote.tradeStatus()).isEqualTo("Delisted");
+            assertThat(quote.lastDone()).isNull(); assertThat(quote.timestamp()).isNull();
+        }
+    }
+
+    @Test
     void correlatesOutOfOrderResponsesAndParsesQuotes() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode first = server.readRequest();

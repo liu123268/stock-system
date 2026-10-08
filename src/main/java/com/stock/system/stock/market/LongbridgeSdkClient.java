@@ -91,10 +91,9 @@ class LongbridgeSdkClient implements LongbridgeUpstreamGateway, AutoCloseable {
             SecurityQuote[] loaded = execute(context -> context.getQuote(missing.toArray(String[]::new)));
             Instant retrievedAt = Instant.now();
             for (SecurityQuote item : loaded) {
-                if (item == null || !missing.contains(item.getSymbol()) || item.getLastDone() == null
-                        || item.getLastDone().signum() <= 0 || item.getTimestamp() == null) continue;
+                if (item == null || !missing.contains(item.getSymbol())) continue;
                 LongbridgeQuote quote = new LongbridgeQuote(item.getSymbol(), item.getLastDone(),
-                        item.getTimestamp().toInstant(),
+                        item.getTimestamp() == null ? null : item.getTimestamp().toInstant(),
                         item.getTradeStatus() == null ? "" : item.getTradeStatus().name(), retrievedAt);
                 quotes.put(item.getSymbol(), quote, retrievedAt.plus(quoteTtl));
                 result.put(item.getSymbol(), quote);

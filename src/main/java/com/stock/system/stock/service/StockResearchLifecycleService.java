@@ -1,5 +1,8 @@
 package com.stock.system.stock.service;
 
+import com.stock.system.stock.market.StockStatusChecks;
+import com.stock.system.stock.market.StockStatusInfo;
+
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.dto.CreateStockOpinionRequestDTO;
@@ -93,9 +96,10 @@ public class StockResearchLifecycleService {
                 stock.getName(),
                 stock.getExchange(),
                 stock.getCurrency(),
-                stock.getListingStatus(),
+                StockStatusChecks.currentStatus(stock),
                 current == null ? null : toCycleSummary(current),
-                authors
+                authors,
+                StockStatusInfo.from(stock)
         );
     }
 

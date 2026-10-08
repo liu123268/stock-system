@@ -1,5 +1,8 @@
 package com.stock.system.stock.service;
 
+import com.stock.system.stock.market.StockStatusChecks;
+import com.stock.system.stock.market.StockStatusInfo;
+
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.market.MarketDataProvider;
@@ -36,7 +39,8 @@ public class StockSearchService {
         if (directoryMode) {
             return stockMapper.searchDirectory(keyword).stream().map(stock -> new StockSearchResponseVO(
                     stock.getCode(), stock.getName(), stock.getExchange(), stock.getCurrency(),
-                    stock.getListingStatus(), null, null, stock.getSource(), false)).toList();
+                    StockStatusChecks.currentStatus(stock), null, null, stock.getSource(), false,
+                    StockStatusInfo.from(stock))).toList();
         }
         return marketDataProvider.search(keyword).stream()
                 .map(this::toResponse)
@@ -53,7 +57,8 @@ public class StockSearchService {
                 snapshot.price(),
                 snapshot.quoteTime(),
                 snapshot.source(),
-                snapshot.simulated()
+                snapshot.simulated(),
+                snapshot.statusInfo()
         );
     }
 }

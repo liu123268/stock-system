@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import type { AddWorkspaceStockRequestDTO, WorkspaceStockMarketDetailResponseVO } from '@/api/stock'
 import StockInitialOpinionForm from '@/components/stock/StockInitialOpinionForm.vue'
 import StockMarketPanel from '@/components/stock/StockMarketPanel.vue'
+import StockStatusNotice from '@/components/stock/StockStatusNotice.vue'
+import { stockStatusLabel } from '@/utils/stock-status'
 import { useStockStore } from '@/stores/stock'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
@@ -54,6 +56,9 @@ const addBlockedReason = computed(() => {
   if (detail.listingStatus === 'DELISTED')
     return '这只股票已经退市，历史行情仍可查看，但不能开启新的研究周期。'
   if (detail.listingStatus === 'UNKNOWN') {
+    if (detail.statusInfo?.current) {
+      return `这只股票目前处于“${stockStatusLabel(detail)}”，暂时不能加入关注；已有行情与历史仍可查看。`
+    }
     return '这只股票的交易状态暂时无法核实，行情仍可查看，但暂时不能加入关注。'
   }
   if (detail.price === null) {
@@ -70,11 +75,7 @@ const canStartResearch = computed(() => {
 })
 
 function listingStatusLabel(detail: WorkspaceStockMarketDetailResponseVO) {
-  if (detail.simulated) return '模拟行情'
-  if (detail.listingStatus === 'LISTED') return '正常上市'
-  if (detail.listingStatus === 'SUSPENDED') return '停牌（可研究）'
-  if (detail.listingStatus === 'DELISTED') return '已退市'
-  return '交易状态待核实'
+  return stockStatusLabel(detail)
 }
 
 function trackingLabel(detail: WorkspaceStockMarketDetailResponseVO) {
@@ -228,6 +229,7 @@ onBeforeUnmount(() => {
           {{ market.code }} · {{ market.exchange }} ·
           {{ market.currency === 'HKD' ? '港币' : '人民币' }}
         </p>
+        <StockStatusNotice :stock="market" />
         <dl>
           <div>
             <dt>行情来源</dt>

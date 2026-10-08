@@ -547,14 +547,14 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
             String symbol = item.path("symbol").asText("").trim().toUpperCase();
             String lastDone = item.path("last_done").asText("");
             String timestamp = item.path("timestamp").asText("");
-            if (symbol.isEmpty() || lastDone.isEmpty() || timestamp.isEmpty()) {
+            if (symbol.isEmpty()) {
                 continue;
             }
             try {
                 LongbridgeQuote quote = new LongbridgeQuote(
                         symbol,
-                        new BigDecimal(lastDone),
-                        Instant.parse(timestamp),
+                        decimalOrNull(lastDone),
+                        instantOrNull(timestamp),
                         item.path("trade_status").asText(""),
                         retrievedAt
                 );
@@ -564,6 +564,16 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
             }
         }
         return quotes;
+    }
+
+    private BigDecimal decimalOrNull(String value) {
+        try { return value.isBlank() ? null : new BigDecimal(value); }
+        catch (RuntimeException invalid) { return null; }
+    }
+
+    private Instant instantOrNull(String value) {
+        try { return value.isBlank() ? null : Instant.parse(value); }
+        catch (RuntimeException invalid) { return null; }
     }
 
     private List<LongbridgeCandlestick> parseCandlesticks(JsonNode result) {

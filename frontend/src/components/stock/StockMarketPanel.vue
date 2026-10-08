@@ -187,7 +187,10 @@ onBeforeUnmount(() => {
         <small v-if="chartMode === 'kline'">
           不复权 · 首次最多 1000 根，向左拖动继续读取更早历史
         </small>
-        <small v-else>今天盘中每 30 秒刷新；历史日期只读取一次</small>
+        <small v-if="chartMode === 'kline' && stockStore.candlestickSeries?.candlesticks.length">
+          最新 K 线截至：{{ formatTime(stockStore.candlestickSeries.candlesticks[stockStore.candlestickSeries.candlesticks.length - 1]!.time) }}
+        </small>
+        <small v-if="chartMode === 'intraday'">今天盘中每 30 秒刷新；历史日期只读取一次</small>
       </div>
 
       <div class="market-controls">

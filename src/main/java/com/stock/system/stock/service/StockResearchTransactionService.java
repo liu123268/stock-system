@@ -1,5 +1,7 @@
 package com.stock.system.stock.service;
 
+import com.stock.system.stock.market.StockStatusChecks;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
@@ -155,7 +157,13 @@ public class StockResearchTransactionService {
             if (stock == null) {
                 throw new BusinessException(ErrorCode.STOCK_NOT_AVAILABLE);
             }
-            if (!snapshot.listingStatus().equals(stock.getListingStatus())) {
+            if (snapshot.statusInfo() != null) {
+                String current = StockStatusChecks.currentStatus(stock);
+                if ("DELISTED".equals(current)) throw new BusinessException(ErrorCode.STOCK_NOT_AVAILABLE);
+                if (!"LISTED".equals(current) && !"SUSPENDED".equals(current)) {
+                    throw new BusinessException(ErrorCode.STOCK_STATUS_UNAVAILABLE);
+                }
+            } else if (!snapshot.listingStatus().equals(stock.getListingStatus())) {
                 stockMapper.updateListingStatus(stock.getId(), snapshot.listingStatus());
                 stock.setListingStatus(snapshot.listingStatus());
             }

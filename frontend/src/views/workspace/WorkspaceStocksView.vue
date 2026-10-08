@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import StockStatusNotice from '@/components/stock/StockStatusNotice.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
   OpinionType,
-  StockSearchResponseVO,
   StockStance,
   WorkspaceStockListResponseVO,
 } from '@/api/stock'
@@ -102,14 +102,6 @@ async function search() {
 watch(routeKeyword, (q) => {
   if (!pageLoading.value && !isArchived.value) void restoreSearch(q)
 })
-
-function listingStatusLabel(stock: StockSearchResponseVO) {
-  if (stock.simulated) return '模拟行情'
-  if (stock.listingStatus === 'LISTED') return '正常上市'
-  if (stock.listingStatus === 'SUSPENDED') return '停牌（可研究）'
-  if (stock.listingStatus === 'DELISTED') return '已退市'
-  return '交易状态待核实'
-}
 
 async function retryPageData() {
   const version = ++readVersion
@@ -294,7 +286,7 @@ onBeforeUnmount(() => {
             <strong>{{
               stock.price === null ? '暂无报价' : formatPrice(stock.price, stock.currency)
             }}</strong>
-            <small>{{ listingStatusLabel(stock) }}</small>
+            <StockStatusNotice :stock="stock" />
           </span>
           <span class="result-action">查看行情 <span aria-hidden="true">→</span></span>
         </RouterLink>
@@ -404,6 +396,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div class="research-summary-meta">
+              <StockStatusNotice :stock="item" />
               <small>
                 本期 {{ item.opinionCount }} 条观点 · {{ item.participantCount }} 位成员参与
               </small>

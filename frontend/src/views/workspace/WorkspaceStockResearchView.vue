@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import StockStatusNotice from '@/components/stock/StockStatusNotice.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
@@ -648,6 +649,7 @@ onBeforeUnmount(() => {
             <button class="ui-button" type="button" @click="retryMarket">重试行情</button>
           </p>
           <template v-else-if="market">
+            <StockStatusNotice :stock="market" />
             <strong class="latest-price">{{
               market.price === null ? '暂无可用报价' : formatPrice(market.price, market.currency)
             }}</strong>

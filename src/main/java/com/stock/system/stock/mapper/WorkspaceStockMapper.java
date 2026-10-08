@@ -42,6 +42,7 @@ public interface WorkspaceStockMapper extends BaseMapper<WorkspaceStock> {
                 s.exchange,
                 s.currency,
                 s.listing_status,
+                s.trade_status, s.status_checked_at, s.status_attempted_at, s.source as stock_source,
                 rc.attention_level,
                 rc.started_by_user_id,
                 starter.nickname AS started_by_nickname,

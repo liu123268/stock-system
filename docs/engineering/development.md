@@ -34,6 +34,8 @@ Redis（WSL2）：6380
 
 ## 3. 启动频率
 
+真实 longbridge 模式的后端每天 06:35 后分批检查股票状态，启动晚于该时间会补查；目录同步稍晚完成时也会纳入新记录。状态查询复用这个后端的 SDK 连接，因此本地后端关闭时，Windows 目录任务仍能更新股票身份，但不能查询长桥状态；重新启动后补查。Mock 和 directory 模式不调用真实状态接口。页面状态核实时间与报价／K 线时间分开显示，查不到或超过 36 小时未核实显示待核实，详见 [状态设计](../specs/002-stock-research/design.md#每日交易状态查询2026-10-08)。
+
 不是每改一行代码都重新启动。
 
 通常在一次开发会话开始时启动一次，然后保持终端窗口运行：
@@ -150,7 +152,7 @@ python -B scripts/sync-stock-directory.py --import-command-json $directoryComman
 
 日常查看任务用 `Get-ScheduledTask -TaskName StockSystem-DirectorySync` 与 `Get-ScheduledTaskInfo -TaskName StockSystem-DirectorySync`；查看 `.local/stock-directory/state/last-run.json` 的 `status`／`phase`，并对照 `last-success.json`。`APPLIED` 才代表数据库已提交；单次调度退出成功也可能表示当天已完成而跳过。前置配置失败另写 `local-preflight-failure.json`，不覆盖既有成功回执。手工同步执行同一本地入口，追加 `--force` 可以忽略当天已成功判断，但不能绕开锁或校验。
 
-暂停使用 `Disable-ScheduledTask -TaskName StockSystem-DirectorySync`；恢复用 `Enable-ScheduledTask`。移除任务可用 `Unregister-ScheduledTask -TaskName StockSystem-DirectorySync -Confirm:$false`，不会撤销已同步目录或删除研究历史。自动化测试和正常开发目录提交的区别见 [测试数据规则](testing.md#4-测试数据清理)。退市不属于该定时任务：它保留目录缺席身份及已有可信状态，只有查询／开启研究的本次行情状态证据参与现有准入判断，不表示全目录退市状态已每日刷新。
+暂停使用 `Disable-ScheduledTask -TaskName StockSystem-DirectorySync`；恢复用 `Enable-ScheduledTask`。移除任务可用 `Unregister-ScheduledTask -TaskName StockSystem-DirectorySync -Confirm:$false`，不会撤销已同步目录或删除研究历史。自动化测试和正常开发目录提交的区别见 [测试数据规则](testing.md#4-测试数据清理)。该 Windows 任务只更新身份，保留目录缺席股票及已有可信状态。每日交易状态查询由正在运行的 longbridge 后端单独负责，时间和补跑条件见 [启动频率](#3-启动频率)；不能把目录任务成功当作长桥状态已核实。
 
 ### 8.2 IDEA 提交检查提示“无法解析表 stock”
 

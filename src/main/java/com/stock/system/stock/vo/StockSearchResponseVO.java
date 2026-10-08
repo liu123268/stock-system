@@ -1,5 +1,7 @@
 package com.stock.system.stock.vo;
 
+import com.stock.system.stock.market.StockStatusInfo;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -12,6 +14,7 @@ public record StockSearchResponseVO(
         BigDecimal price,
         LocalDateTime quoteTime,
         String source,
-        boolean simulated
+        boolean simulated,
+        StockStatusInfo statusInfo
 ) {
 }

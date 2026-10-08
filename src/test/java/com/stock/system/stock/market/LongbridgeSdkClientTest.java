@@ -66,6 +66,20 @@ class LongbridgeSdkClientTest {
     }
 
     @Test
+    void retainsDelistedStatusWithNoUsablePriceOrTimestamp() throws Exception {
+        SecurityQuote quote = mock(SecurityQuote.class);
+        when(quote.getSymbol()).thenReturn("03333.HK");
+        when(quote.getTradeStatus()).thenReturn(TradeStatus.Delisted);
+        when(context.getQuote(new String[]{"03333.HK"}))
+                .thenReturn(CompletableFuture.completedFuture(new SecurityQuote[]{quote}));
+        try (var client = client()) {
+            var result = client.getQuotes(List.of("03333.HK")).get("03333.HK");
+            assertThat(result.tradeStatus()).isEqualTo("Delisted");
+            assertThat(result.lastDone()).isNull(); assertThat(result.timestamp()).isNull();
+        }
+    }
+
+    @Test
     void batchesNormalizesSymbolsAndCachesWithoutChangingProviderTime() throws Exception {
         SecurityQuote quote = mock(SecurityQuote.class);
         when(quote.getSymbol()).thenReturn("600519.SH");

@@ -107,6 +107,23 @@ beforeEach(() => {
 })
 
 describe('standalone market page recovery', () => {
+  it('explains a confirmed special trading state without presenting it as an unavailable check', async () => {
+    vi.mocked(getWorkspaceStockMarketDetail).mockResolvedValueOnce(response({
+      ...research, listingStatus: 'UNKNOWN', price: null, quoteTime: null,
+      source: 'LONGBRIDGE_OPENAPI', simulated: false, trackingState: 'NOT_TRACKED',
+      workspaceStockId: null, activeResearchCycleId: null,
+      statusInfo: { tradeStatus: 'SPLIT_STOCK_HALTS', lastKnownListingStatus: 'UNKNOWN',
+        checkedAt: '2026-10-08T06:35:00', attemptedAt: '2026-10-08T06:35:00', current: true },
+    }))
+    const wrapper = mount(WorkspaceStockMarketView, options)
+    await flushPromises()
+    expect(wrapper.text()).toContain('拆股暂停交易')
+    expect(wrapper.text()).toContain('这只股票目前处于“拆股暂停交易”，暂时不能加入关注')
+    expect(wrapper.text()).not.toContain('交易状态暂时无法核实')
+    expect(wrapper.get<HTMLButtonElement>('.quote-action button').element.disabled).toBe(true)
+    expect(addWorkspaceStock).not.toHaveBeenCalled()
+  })
+
   it('shows the failed workspace precondition and retries both reads without a write', async () => {
     vi.mocked(getWorkspace).mockRejectedValueOnce(new Error('空间信息暂时不可用'))
     const wrapper = mount(WorkspaceStockMarketView, options)

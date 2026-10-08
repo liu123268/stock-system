@@ -12,6 +12,12 @@ public record StockQuoteSnapshot(
         BigDecimal price,
         LocalDateTime quoteTime,
         String source,
-        boolean simulated
+        boolean simulated,
+        StockStatusInfo statusInfo
 ) {
+    public StockQuoteSnapshot(String code, String name, String exchange, String currency,
+                              String listingStatus, BigDecimal price, LocalDateTime quoteTime,
+                              String source, boolean simulated) {
+        this(code, name, exchange, currency, listingStatus, price, quoteTime, source, simulated, null);
+    }
 }
