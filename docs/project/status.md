@@ -6,7 +6,7 @@
 
 2026-10-07 版本调整：V1 即 Java 核心版，第一阶段单 Agent 移至 [V2](../product/requirements-v2.md)，详细 Agent 规格待讨论。CODE-206G 目录覆盖／每日同步与 CODE-206H 生产部署验收已关闭，按 [V1 演示标准](../product/requirements-v1.md#6-整体演示标准) 的跨模块流程已通过。V1 当前仅剩 CODE-206I 的真实 SDK Token 到期自动刷新证据；本地 SDK 网页已通过。下一步观察受 SDK 管理的真实到期刷新，不读取／手改 Token，也不以正常报价替代刷新证明。其他增强仍在候选清单，不自动进入 V2。
 
-2026-10-08 V2 准备：已完成 [近期岗位对标](java-agent-market-benchmark.md) 及能力／技术规划复核，主体定位为业务单 Agent，正式讨论入口见 [V2 规划基线](../product/requirements-v2.md#3-正式讨论采用的规划基线)。接续时先确定首个用户任务、结果与数据范围，再形成详细规格；版本支持与兼容性先按 [技术规划](../architecture/technology-stack.md#32-v2-agent-技术规划基线) 验证。Agent、依赖升级和新会话表均未实施，本轮只更新文档，不改变上面的 V1 未完成验收或既有专题学习交接。
+2026-10-08 V2 讨论：用户已确认 [单股研究梳理与追问](../product/requirements-v2.md#31-已确认首个场景单股研究梳理与追问)，并保留观察条件核对、空间变化简报的后续需求；按最后复核要求补查 [非头部岗位、亲历面经及项目复盘](java-agent-market-benchmark.md)，知识安排和验证／退出路径统一见 [可行性规划](../architecture/technology-stack.md#34-可行性验证与知识安排)。已发现时间线跨周期分页、结束周期缺结束价，详细规格须据此处理；本轮文档复核已完成，正式讨论从首个场景的具体结果结构与读取范围开始，页面形式尚待确认。随后验证少量观点和一个工具的真实模型闭环，主框架迁移独立实验。推荐主体后做小型 RAG 与一个 MCP 实践；通达信／Wind 的 [接入证据](../architecture/technology-stack.md#33-外部数据mcp-与现成平台复用) 不代表真实连接已过。模型、费用和后续阶段未选定；Agent、依赖升级、新会话表与外部 MCP 均未实施，不改变 V1 未完成验收或既有专题学习交接。
 
 认证、普通空间基础边界、超级管理员治理、空间改名、个人资料和邀请码防猜测完成至 [SPEC-001 CODE-010](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-209 时间线分批读取、CODE-210 空间概览动态、CODE-211A 未关注行情页、CODE-211B 研究详情行情和 CODE-212 共享列表研究摘要均已关闭。
 
