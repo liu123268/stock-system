@@ -26,7 +26,11 @@
 
 这只表示“已经讲过”，不表示已经能独立回答或编写。待后续结合代码复述和小练习验收：索引结构与联合索引顺序、普通读和锁定读的区别、并发加入链路、根据 `explain` 判断是否值得优化。当前模糊搜索已经做过真实执行计划分析并决定暂不新增拼音索引，但路线要求的“选一条 SQL 修改前后对照”的优化实验尚未完成，不能写成性能优化成果。
 
-下一专题从 MyBatis／MyBatis-Plus 开始，沿真实链路讲清 Controller → Service → Mapper → JDBC → MySQL、参数绑定与结果映射、`BaseMapper` 和自定义 SQL 的取舍、事务边界、空值更新问题及 N+1。新对话先读本节与上面的数据库问答，不从 MySQL 第一课重讲；遇到未掌握点再按实际代码回看。
+MyBatis／MyBatis-Plus 专题沿真实链路讲清 Controller → Service → Mapper → JDBC → MySQL、参数绑定与结果映射、`BaseMapper` 和自定义 SQL 的取舍、事务边界、空值更新问题及 N+1；既有教学承接上述材料，遇到未掌握点再按实际代码回看。
+
+2026-10-08 本任务理论交接：已讲 Mapper 代理／BaseMapper、参数绑定与 SQL 注入、结果映射、空值更新、join／left join、Wrapper 和 if／where／foreach；复习集中见 [MyBatis 教学](../engineering/mybatis.md)。Wrapper／foreach 已补讲，尚无独立编写证据；用户明确反馈 N+1 未理解，本轮优先按完整请求、查询次数和两种改法补讲，不标掌握。之后继续 SqlSession／JDBC／连接池与事务协作、一级／二级缓存，再做专题复述。原独立 Java 动手入口及其他任务进度保留。
+
+2026-10-08 动手学习交接：用户反馈目前依赖逐句跟写，尚不能独立完成接口，当前优先补有骨架的小练习。独立练习工程位于 `D:\Java\stockweb\java-learning-lab`，与业务仓库并列；第一天只修改 `NicknamePractice.normalizeNickname`，练参数、字符串处理和返回值，暂用普通 Java／内存数据，随后按实际表现逐步接上对象、Service 与 Controller。当天步骤和临时两小时安排只维护在该工程的 `README.md`。已用 JDK 17 编译并运行初始骨架，结果为两项通过、两项待修改；这仅证明练习入口可运行，用户尚未完成或验收练习。下一次先承接这一动手入口，再根据暴露的缺口补既有专题；原理论进度保留，不以准备好骨架作为个人掌握证据。
 
 数据库目录现在支持代码、简体、繁体、英文和连续拼音首字母前缀搜索；拼音只召回可信身份，候选仍最多 30 条并在确定后一次批量补报价。业务正文见 [SPEC-002 需求](../specs/002-stock-research/requirements.md)，实现与证据见对应 design／tasks。
 

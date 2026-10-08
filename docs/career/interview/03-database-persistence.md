@@ -201,3 +201,13 @@
 - `PreparedStatement` 除了批处理，还怎样降低 SQL 注入风险？
 - 批次大小为什么不能无限增大？
 - 为什么幂等导入还需要事务和输入校验？
+
+## DB-14：Wrapper和Mapper XML是什么，什么时候使用？
+
+### 完整回答
+
+> Wrapper 是 MyBatis-Plus 提供的 Java 条件构造类，调用 eq、in 等方法记录条件，交给 Mapper 后才执行。Mapper XML 是 MyBatis 读取的 SQL 与结果映射配置文件，XML 本身是文本格式。通用 CRUD 用 BaseMapper，简单单表筛选用 Wrapper，短自定义 SQL 可用注解，复杂查询或映射通常使用 XML。简单查询可以互相改写，但标准 Wrapper 不能直接替代任意 XML；二者也能配合使用。
+
+### 项目证据与追问
+
+`UserService.findByUsername` 使用 Wrapper，`AppUserMapper.selectByIdForUpdate` 使用注解 SQL；XML／foreach 示例属于知识准备，当前未新增 XML 实现。对照和参数展开见 [MyBatis 复习提纲](../../engineering/mybatis.md#3-可选条件与集合参数)。可追问：构建条件是否访问数据库、foreach 怎样生成 in 参数、空集合怎样处理、复杂结果为什么需要明确映射。
