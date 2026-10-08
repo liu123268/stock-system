@@ -129,6 +129,10 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
 
 数据库提交和磁盘回执是两个步骤，不是假装成一个分布式事务。Python 校验 Java 回执的行数与 SHA-256 后，原子替换 `last-run.json`；仅 `APPLIED` 更新 `last-success.json`，采集／回滚验证只更新 `last-verified.json`。采集、校验、导入失败保留旧成功指针并记录阶段、错误类别和逐阶段日志。提交后如回执写入失败，可按幂等入口重试并核对数据库；不自动删除数据。Linux 的 `flock` 包住完整采集流程，MySQL 锁保护不同机器的导入；日常手动触发也使用同一个 Linux 包装器。定时单元和实际安装状态见 [部署说明](../../engineering/deployment.md#5-每日股票目录同步)。
 
+2026-10-08 本地 Windows 补齐独立调度：[安装器](../../../scripts/install-local-directory-sync.ps1) 将已打包 JAR、允许的六个 Python 文件及专用虚拟环境准备到忽略的 `.local/stock-directory/`，不依赖会被 Maven 清理的 target。[本地执行器](../../../scripts/run-local-directory-sync.py) 从当前 Windows 用户既有环境设置读取数据库密码，不将其保存进配置或任务 XML；Java 参数固定 `localhost:3306` 和 dev／test 对应库名，JVM 使用 `Asia/Shanghai`，连接会话使用数值 `+08:00`，避免本地 MySQL 未加载命名时区表时连接失败。Windows 文件锁保护整个流程，原 MySQL 命名锁与事务不变；子进程不显示控制台。日常执行按北京时间比较成功日期，登录发生在 06:30 前或当天已成功时跳过；`--verify` 单独写 verification 回执并在测试库回滚，`--force` 只跳过日期／时间判断，不绕开锁和校验。安装和任务运行边界只见 [本地开发说明](../../engineering/development.md#813-windows-本机每日调度)。
+
+本地实采遇到北交所 POST 接口向原地址返回 HTTP 307：仅在 Location 非空且解析后仍是原地址时，沿同一 Cookie opener、同一 POST body 最多重试三次，不跟随其他地址或改成 GET。10 月 8 日巨潮新收录 `920296`／文峰光电，而完整官方当前上市集合仍为 348 条；已对照[巨潮身份源](https://www.cninfo.com.cn/new/data/szse_stock.json)及[证监会发行注册批复](https://www.csrc.gov.cn/csrc/c101830/c7658095/content.shtml)核对，显式保留为集合外身份，仍不声称已经上市或可交易。原五组保留身份的核对是 10 月 7 日快照；新增这组不改变“未知集合外身份拒绝、缺席不推断退市”的约束。
+
 #### 4.2.1 拼音首字母搜索（已实施）
 
 现有搜索链路已经具备合适的扩展点：`StockMapper.searchDirectory` 先从 MySQL 取最多 30 个标准股票身份，Longbridge 只在这之后为候选批量补报价。因此拼音检索应扩展目录层，不能交给前端过滤，也不应调用供应商搜索接口。

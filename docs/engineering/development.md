@@ -138,7 +138,19 @@ $directoryCommandJson = ConvertTo-Json -Compress -InputObject $directoryCommand
 python -B scripts/sync-stock-directory.py --import-command-json $directoryCommandJson
 ```
 
-`test verify` 核对实际 `stock_system_test`，导入两次后整体回滚；只有 Java 回执的行数和快照哈希一致才返回 `VERIFIED`。它不执行新迁移，须先按测试规则运行测试后端或 Maven，确认 schema 当前。生产的 `prod apply` 在容器中读取现有 Secret，实际提交到云端 `stock_system`；本地 `dev apply` 也是真实数据操作，不能用来执行自动测试。定时调度、锁及运维操作只见 [部署说明](deployment.md#5-每日股票目录同步)。
+`test verify` 核对实际 `stock_system_test`，导入两次后整体回滚；只有 Java 回执的行数和快照哈希一致才返回 `VERIFIED`。它不执行新迁移，须先按测试规则运行测试后端或 Maven，确认 schema 当前。生产的 `prod apply` 在容器中读取现有 Secret，实际提交到云端 `stock_system`；本地 `dev apply` 也是真实数据操作，不能用来执行自动测试。云端定时调度、锁及运维操作只见 [部署说明](deployment.md#5-每日股票目录同步)；Windows 本机调度见下一节。
+
+#### 8.1.3 Windows 本机每日调度
+
+[安装脚本](../../scripts/install-local-directory-sync.ps1) 为当前 Windows 用户准备忽略的 `.local/stock-directory/`：独立 Python venv、已打包的 Java `app.jar`、同步脚本及不含密码的运行路径配置。该目录在 target 外，`mvn clean` 不影响任务；它运行安装时的代码副本，修改同步代码或重新打包后应重新运行安装器更新，不能把 IDEA 热更新当作计划任务自动升级。
+
+任务名 `StockSystem-DirectorySync`，北京时间每天 06:30，加当前用户登录触发与错过补跑；06:30 前登录不提前采集，当天已经成功则跳过。使用已登录用户的普通权限，不保存 Windows 密码；关机、用户未登录或 MySQL 未运行时不能保证按点执行，登录后补跑，失败按 15 分钟间隔最多重试两次。不唤醒或启动用户未运行的 MySQL 服务，不启动 HTTP／SDK／CLI，不弹出控制台。调度选项依据 [Microsoft 任务设置](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtasksettingsset)与[运行身份](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtaskprincipal)。
+
+在项目根目录先用 Maven 打包，再运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-directory-sync.ps1`：它准备环境、检查本机时区和既有任务归属，完成一次真实开发目录提交后注册／更新本项目任务；不是自动化测试。`-PrepareOnly` 只准备文件，不同步或注册。测试库验证使用 `.local/stock-directory/venv/Scripts/python.exe -B .local/stock-directory/scripts/run-local-directory-sync.py --verify`，整批重复导入后回滚，结果保存在 `verification/`，不会生成开发库成功指针。写入与清理沿测试规则执行。
+
+日常查看任务用 `Get-ScheduledTask -TaskName StockSystem-DirectorySync` 与 `Get-ScheduledTaskInfo -TaskName StockSystem-DirectorySync`；查看 `.local/stock-directory/state/last-run.json` 的 `status`／`phase`，并对照 `last-success.json`。`APPLIED` 才代表数据库已提交；单次调度退出成功也可能表示当天已完成而跳过。前置配置失败另写 `local-preflight-failure.json`，不覆盖既有成功回执。手工同步执行同一本地入口，追加 `--force` 可以忽略当天已成功判断，但不能绕开锁或校验。
+
+暂停使用 `Disable-ScheduledTask -TaskName StockSystem-DirectorySync`；恢复用 `Enable-ScheduledTask`。移除任务可用 `Unregister-ScheduledTask -TaskName StockSystem-DirectorySync -Confirm:$false`，不会撤销已同步目录或删除研究历史。自动化测试和正常开发目录提交的区别见 [测试数据规则](testing.md#4-测试数据清理)。退市不属于该定时任务：它保留目录缺席身份及已有可信状态，只有查询／开启研究的本次行情状态证据参与现有准入判断，不表示全目录退市状态已每日刷新。
 
 ### 8.2 IDEA 提交检查提示“无法解析表 stock”
 

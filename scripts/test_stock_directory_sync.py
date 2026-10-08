@@ -6,7 +6,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+import urllib.error
+from unittest.mock import Mock, patch
 
 from stock_directory_coverage import REQUIRED_SOURCES, validate_sources
 
@@ -62,6 +63,13 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(result['bseIdentities'], 2)
         self.assertEqual(result['bseCurrentlyListed'], 1)
         self.assertEqual(result['bseRetainedOutsideCurrentList'], {'920305': '云创退'})
+
+    def test_reconciled_new_identity_does_not_have_to_be_currently_listed(self):
+        self.write('CNINFO_CODES.txt', {'stockList': [{'code': '920002', 'category': 'A股', 'zwjc': '万达轴承'},
+                                                     {'code': '920296', 'category': 'A股', 'zwjc': '文峰光电'}]})
+        result = validate_sources(self.directory, self.started)
+        self.assertEqual(result['bseCurrentlyListed'], 1)
+        self.assertEqual(result['bseRetainedOutsideCurrentList'], {'920296': '文峰光电'})
 
     def test_stale_source_cannot_reuse_old_download(self):
         self.report[0]['checked_at'] = (self.started - timedelta(days=1)).isoformat()
@@ -137,6 +145,44 @@ class OfficialTransportTests(unittest.TestCase):
         with patch.object(probe, 'fetch', side_effect=replies):
             with self.assertRaisesRegex(ValueError, 'changed during collection'):
                 probe.bse_official()
+
+
+class PublicRequestRetryTests(unittest.TestCase):
+    def test_self_redirect_retries_the_same_post_body_and_session(self):
+        endpoint = 'https://www.bse.cn/nqxxController/nqxxCnzq.do'
+        failure = urllib.error.HTTPError(endpoint, 307, 'Temporary Redirect', {'Location': endpoint}, None)
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'public-directory'
+        opener = Mock()
+        opener.open.side_effect = [failure, response]
+        with patch.object(probe.time, 'sleep'):
+            self.assertEqual(probe.fetch(endpoint, data={'page': '8'}, opener=opener), b'public-directory')
+        requests = [call.args[0] for call in opener.open.call_args_list]
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(all(request.get_method() == 'POST' for request in requests))
+        self.assertEqual(requests[0].data, requests[1].data)
+        self.assertEqual(requests[1].full_url, endpoint)
+
+    def test_redirect_to_another_endpoint_is_not_retried_or_followed(self):
+        endpoint = 'https://www.bse.cn/nqxxController/nqxxCnzq.do'
+        failure = urllib.error.HTTPError(endpoint, 307, 'Temporary Redirect',
+                                        {'Location': 'https://other.example/list'}, None)
+        opener = Mock()
+        opener.open.side_effect = failure
+        with self.assertRaises(urllib.error.HTTPError):
+            probe.fetch(endpoint, data={'page': '8'}, opener=opener)
+        self.assertEqual(opener.open.call_count, 1)
+
+    def test_repeated_self_redirect_stops_after_three_attempts(self):
+        endpoint = 'https://www.bse.cn/nqxxController/nqxxCnzq.do'
+        opener = Mock()
+        opener.open.side_effect = [urllib.error.HTTPError(endpoint, 307, 'Temporary Redirect',
+                                  {'Location': endpoint}, None) for _ in range(3)]
+        with patch.object(probe.time, 'sleep'), self.assertRaises(urllib.error.HTTPError):
+            probe.fetch(endpoint, data={'page': '8'}, opener=opener)
+        self.assertEqual(opener.open.call_count, 3)
 
 
 if __name__ == '__main__':

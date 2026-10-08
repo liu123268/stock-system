@@ -34,18 +34,19 @@ def run(state_dir, command=None):
     run_dir = state_dir / 'runs' / run_id
     run_dir.mkdir(parents=True)
     result = {'runId': run_id, 'startedAt': started.isoformat(), 'status': 'RUNNING', 'phase': 'COLLECT'}
+    process_options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
     try:
         # Each invocation gets a new directory. Old raw downloads cannot satisfy this run.
         with (run_dir / 'collect.log').open('w', encoding='utf-8') as log:
             subprocess.run([sys.executable, str(SCRIPTS / 'probe-stock-directory.py'),
                             '--output-dir', str(run_dir), *REQUIRED_SOURCES],
-                           check=True, stdout=log, stderr=log, timeout=240)
+                           check=True, stdout=log, stderr=log, timeout=240, **process_options)
         result['phase'] = 'COVERAGE'
         coverage = validate_sources(run_dir, started)
         with (run_dir / 'prepare.log').open('w', encoding='utf-8') as log:
             subprocess.run([sys.executable, str(SCRIPTS / 'prepare-stock-directory.py'),
                             '--input-dir', str(run_dir)], check=True,
-                           stdout=log, stderr=log, timeout=120)
+                           stdout=log, stderr=log, timeout=120, **process_options)
         directory_path = run_dir / 'directory.json'
         directory = read_json(directory_path)
         result['counts'] = validate_directory(run_dir, directory, coverage)
@@ -60,7 +61,7 @@ def run(state_dir, command=None):
         if command:
             result['phase'] = 'IMPORT'
             completed = subprocess.run(command, input=payload, capture_output=True,
-                                       timeout=180, check=False)
+                                       timeout=180, check=False, **process_options)
             # Spring/JVM may print informational lines. Only accept the final JSON result.
             lines = completed.stdout.decode('utf-8').strip().splitlines()
             imported = json.loads(lines[-1]) if lines else {}

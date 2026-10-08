@@ -2,7 +2,7 @@
 
 状态：新版已发布；HTTPS、目录同步及隔离部署故障验收通过，用户确认生产登录后报价／图表／历史正常；长期运维边界见下文。
 
-更新时间：2026-10-07
+更新时间：2026-10-08
 
 ## 1. 文档职责
 
@@ -166,6 +166,8 @@ sudo systemctl start stock-system-directory-sync.service
 ```
 
 暂停后续同步使用 `sudo systemctl disable --now stock-system-directory-sync.timer`；这不撤销已经提交的目录，也不删除股票或研究历史。单元失败和 journal 是当前追溯入口，尚未实现主动告警。后续升级需要独立校验代码与依赖、停用 timer 并保留 state，不能把初次防覆盖安装器当作升级器。
+
+2026-10-08 在本地验证通过后修补了现有云端三个目录 Python 文件：处理原地址 HTTP 307 重试，以及新增已核对身份的覆盖差异；没有更新应用 JAR／前端、修改 Secret／授权或重启容器。新旧文件 SHA-256 核对并在同步锁内替换，旧文件位于 `directory/state/code-backups/20261008-local-schedule-fix/`；原 service 正常同步已返回 APPLIED，详细时间与数量只见 [本轮任务证据](../specs/002-stock-research/tasks.md#2026-10-08-windows-本机每日同步与采集修补)。恢复脚本时同样先确认任务未运行并取得原文件锁，逐文件核对备份哈希，不调用初次防覆盖安装器。Windows 本机调度单独维护在 [本地开发](development.md#813-windows-本机每日调度)，两端各写自己的数据库。
 
 ## 6. 回滚和授权失效
 

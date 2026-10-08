@@ -28,8 +28,16 @@ def fetch(url, referer=None, data=None, opener=None):
             with open_url(urllib.request.Request(url, headers=headers, data=data), timeout=20) as r:
                 return r.read()
         except urllib.error.HTTPError as failure:
-            if failure.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
+            # BSE can temporarily return 307 back to the same POST endpoint while
+            # refreshing its session. Retry the same request/body with the same cookie
+            # opener; do not follow an arbitrary destination or change POST to GET.
+            same_endpoint_redirect = (failure.code == 307 and failure.headers is not None
+                and bool(failure.headers.get('Location'))
+                and urllib.parse.urljoin(url, failure.headers.get('Location', '')) == url)
+            if (failure.code not in (408, 429, 500, 502, 503, 504)
+                    and not same_endpoint_redirect) or attempt == 2:
                 raise
+            failure.close()
         except (urllib.error.URLError, TimeoutError, OSError):
             if attempt == 2:
                 raise

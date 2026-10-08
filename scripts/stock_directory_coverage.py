@@ -10,6 +10,9 @@ REQUIRED_SOURCES = ('SSE_MAIN', 'SSE_STAR', 'SZSE', 'CNINFO', 'BSE_OFFICIAL', 'H
 BSE_KNOWN_OUTSIDE_CURRENT_LIST = {
     '920157': '宇特光电', '920162': '莫森泰克', '920196': '南方乳业',
     '920305': '云创退', '920680': '广道退',
+    # 2026-10-08: CNINFO published this identity; the official current-list scope
+    # does not yet contain it. CSRC registration: c7658095. Do not infer listing.
+    '920296': '文峰光电',
 }
 
 
