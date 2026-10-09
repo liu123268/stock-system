@@ -1,0 +1,5 @@
+# Copy to the project root as .env.deepseek-local.properties and edit locally.
+# Never put the real API Key in chat, command arguments or a tracked file.
+deepseek.api-key=
+deepseek.base-url=https://api.deepseek.com
+deepseek.model=deepseek-flash
