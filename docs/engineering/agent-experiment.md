@@ -1,14 +1,43 @@
 # Java Agent 最早实验：理解一次工具追问
 
-本入口属于 [AG-CODE-001](../specs/004-research-agent/tasks.md#1-实施顺序)，用 Java 17 和现有 Gson 依赖，不启动 Spring、数据库、前端或行情连接。全部观点与价格是自造样本。替身答得正确不能证明真实模型会正确选工具或理解资料，实际证据只见 [任务第 6 节](../specs/004-research-agent/tasks.md#6-java-模型实验准备2026-10-09)；财务源预检独立见第 5 节。
+本入口属于 [AG-CODE-001](../specs/004-research-agent/tasks.md#1-实施顺序)，用 Java 17 和现有 Gson 依赖，不启动 Spring、数据库、前端或行情连接。全部观点与价格是自造样本。替身答得正确不能证明真实模型会正确选工具或理解资料，最新实际证据只见 [任务第 7 节](../specs/004-research-agent/tasks.md#7-真实模型实验与修正验收2026-10-09)；准备证据见第 6 节，财务源预检独立见第 5 节。
 
 ## 1. 先理解这一条数据流
 
+### 1.1 先分清模型、Java 和工具
+
+本项目的 Agent 是围绕研究问题，组织模型、资料查询和回答步骤的 Java 应用模块。DeepSeek 是其中生成文字与提出查询的模型，Agent 模块还需要程序、工具、权限、会话与校验；API Key 只让程序能够调用模型，不会自动建立这些业务能力。先理解这些角色，再学习调用消息和代码。
+
+在本项目中，DeepSeek 模型负责读本次请求中的问题与资料、整理文字，并在需要时提出查询。Java 负责接收登录用户的操作、确定允许读取的对象、调用接口、执行查询和核对结果。工具是 Java 向模型提供的一项有边界的查询能力，例如“读取当前研究周期内某成员的观点”，不是模型直接连接数据库。
+
+我们的 HTTP 调用要显式携带本次需要的资料和对话；接好 API Key 不会让模型自动知道数据库、最新行情或此前聊天。查询资料与生成文字是两项不同工作，所以模型提出工具调用后，Java 还要执行并把结果发回，模型才能依据资料回答。模型也可以在已提供足够资料时直接回答，不能为了展示 Agent 强制每题查询。
+
+### 1.2 用现有样本看一遍
+
+下面是 `baseRecords` 中的自造教学资料，不是真实公司或用户记录：
+
+| 来源 | 小陈在该日的观点 |
+| --- | --- |
+| op1，2026-09-01 | 预计订单增加，盈利有望改善，因此看好。 |
+| op2，2026-09-15 | 目前只有订单预期，没有公告确认订单金额，改为中立等待核实。 |
+
+用户问“小陈为什么由看好改为中立？”时，一条正确的工作过程是：先判断回答需要前后两条原文；模型提出读取小陈观点的请求；Java 在绑定的研究范围内返回 op1、op2；模型解释“小陈原先依据订单预期看好，后来因缺少公告确认改为中立等待核实”，附这两条引用。Java 核对来源存在且可访问，人工再核对解释是否确实受原文支持。这里不能推导出“订单已经减少”或“公司利润已经下降”。
+
+如果改问“报告怎么解释营收变化”，资料要从系统维护的公司报告库中检索相关段落，再交给模型，这条取资料的路径属于 RAG。RAG 是本版必做部分，不需要普通用户上传，也不是把报告永久训练进 DeepSeek；它与上面的观点工具一起服务同一个研究助手。原理与框架依据见 [Spring AI 的检索及上下文增强说明](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)；本实验没有报告检索，正式能力沿 AG-CODE-001R／008 验证。
+
+第一步学习目标是能分清：问题由用户提出，需要补查时由模型提出允许的工具请求，资料由 Java 获取，文字由模型整理，权限和合法引用由 Java 校验；引用存在还需判断是否支持结论。首次按钮梳理是 Java 先按固定范围读资料再交给模型的流程；按问题选工具的追问另行验证，两者见 [开发与学习顺序](../project/roadmap.md#做的顺序与学的顺序)。RAG 是取得相关报告段落的路径，也可由程序预先检索，不要求每次由模型自主决定。理解这一层后再读下面的调用消息和循环，不把运行成功视为用户已经掌握。全程学习顺序见 [V2 地图](../project/roadmap.md#v2-功能与学习地图)。
+
+### 1.3 再看调用消息与代码
+
 问“小陈为什么从看好改为中立？”时，初始消息只有作者和记录数量，没有观点正文。模型可以提出 `read_cycle_opinions({"authorId":"M1"})`；[Java 执行工具](../../scripts/agent-lab/ResearchAgentExperiment.java) 校验名称和参数，读取当前固定研究周期内 M1 的有效观点；然后把工具结果及对应调用 ID 发回模型，模型才有资料组织回答。完整观点已在消息里的对照样本允许直接回答。
+
+这两次模型请求分工不同：第一次带工具清单，使用 `tool_choice: auto`，让模型提出接口原生查询；Java 返回成功的工具结果后，第二次不再带工具，设置 JSON 输出格式，让模型整理已取得的资料。两次都记入调用和预算。Java 没有按题目预先代选作者或强制 required 工具，读取范围仍由 Java 控制；正式多个工具的补查过程后续另验。
 
 模型返回的函数名和参数只是执行请求。实际读取发生在 Java，模型不能因此直接操作数据库、改变用户或空间。工具范围在程序里绑定，参数只有可选作者；增加 workspaceId、未知作者或未知工具都会被拒绝。样本不接正式授权 Service，真实身份和权限将在 AG-CODE-003 另外验收。
 
 [调用循环](../../scripts/agent-lab/ResearchAgentExperiment.java) 按设计第 5 节限制请求次数、工具执行、输入输出及总时限；超时、截断、非法引用、已撤回来源、遗漏成员或用旧记录冒充最新观点不能标成完成。JSON 字段和来源通过只说明程序校验通过，语义是否有依据仍需人工核对。
+
+本次实验暴露的两个区别要能讲清：没有加载正文，可能意味着应该调用工具；“我可以查询”这句话不代表接口发出了 `tool_calls`。同样，单条当前看法不能证明前后变化；程序要求变化引用同一作者至少两条不同记录，仍要人工核对两条原文是否支持解释。不能把结构合格当成答案正确。
 
 首次梳理的价格由 Java 添加，保留币种、时间、来源与模拟标记；模型生成概览、变化、成员和待核对事项。模拟报价不可用时仍可整理观点。源码中的 `runSample` 是阅读核心链路的入口；`DeepSeekExperimentClient` 负责 HTTP 与费用记录，`ExperimentChecks` 提供模型替身与边界检查。
 
@@ -28,7 +57,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-agent-experiment
 
 用户已确认 DeepSeek 官方平台。此入口只接受 `https://api.deepseek.com` 和 `deepseek-flash`；中转平台的地址、模型、费率和余额协议不同，不能套用同一配置。当前模型、模式、预算及价格依据只见 [技术规划第 3.5 节](../architecture/technology-stack.md#35-首轮模型与费用安排)。
 
-当前工作区已创建无密钥的 `.env.deepseek-local.properties`，在 IDE 中打开它，仅填入 `deepseek.api-key`。其他机器复现时，把 [无密钥模板](../../scripts/agent-lab/deepseek-local.properties.example) 复制到项目根目录并改成这个文件名。根目录 `.env.*` 由 Git 忽略；真实 Key 不填回模板、不发聊天、不放命令参数。没有该配置或没有有效 Key 时程序拒绝真实调用。此步骤只是配置本项目，与 WorkBuddy 中已填密钥的设置互不自动同步。
+本地配置是项目根目录的 `.env.deepseek-local.properties`，在 IDE 中仅填入 `deepseek.api-key`；已经配置时直接沿用，不重新复制覆盖。其他机器复现时，把 [无密钥模板](../../scripts/agent-lab/deepseek-local.properties.example) 复制到项目根目录并改成这个文件名。根目录 `.env.*` 由 Git 忽略；真实 Key 不填回模板、不发聊天、不放命令参数。没有该配置或没有有效 Key 时程序拒绝真实调用。此步骤只是配置本项目，与 WorkBuddy 中已填密钥的设置互不自动同步。
 
 确认模型与费率仍符合技术规划后，在同一目录执行：
 
@@ -44,4 +73,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-agent-experiment
 
 通过结构校验的结果与必要用量保存在 Git 忽略的 `.local/agent-experiment/live-*.jsonl`、`usage-*.jsonl`，包含模型、提示词版本、工具轨迹、耗时与自造样本答案，不保存 Key、原始请求头、思考正文或供应商错误正文。用样本原文人工检查判断变化、担忧与事实、公告是否确实存在、引用是否支持句子；`STRUCTURE_VALID_REQUIRES_MANUAL_REVIEW` 不代表样本质量验收通过。失败停止后先检查原因和已记录用量，不反复启动付费试错。
 
-协议依据：[DeepSeek 工具调用](https://api-docs.deepseek.com/guides/tool_calls/)、[Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion/) 和 [余额接口](https://api-docs.deepseek.com/api/get-user-balance/)。非思考模式显式关闭 thinking；普通参数及最终回答由 Java 校验，不依赖 Beta strict。真实运行证据只见 SPEC-004 tasks，不在本说明里提前记为已通过。
+协议依据：[DeepSeek 工具调用](https://api-docs.deepseek.com/guides/tool_calls/)、[Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion/) 和 [余额接口](https://api-docs.deepseek.com/api/get-user-balance/)。非思考模式显式关闭 thinking；普通参数及最终回答由 Java 校验，不依赖 Beta strict。真实运行的通过范围与局限只见 SPEC-004 tasks，不由本操作说明推断正式业务已通过。

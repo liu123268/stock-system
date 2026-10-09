@@ -27,6 +27,8 @@ final class ExperimentChecks {
         result = ResearchAgentExperiment.runSample(question, (request, deadline) -> { sent.add(request.deepCopy()); return queue.remove(); });
         check(result.get("modelCalls").getAsInt() == 2 && result.get("toolCalls").getAsInt() == 1);
         check(!ResearchAgentExperiment.JSON.toJson(sent.get(0)).contains("没有公告确认订单金额"));
+        check(sent.get(0).has("tools") && !sent.get(0).has("response_format"));
+        check(!sent.get(1).has("tools") && sent.get(1).has("response_format"));
         JsonArray history = sent.get(1).getAsJsonArray("messages");
         check(history.size() == 4 && history.get(2).getAsJsonObject().get("role").getAsString().equals("assistant"));
         check(history.get(3).getAsJsonObject().get("tool_call_id").getAsString().equals("call_demo"));
@@ -56,6 +58,11 @@ final class ExperimentChecks {
         stale.getAsJsonArray("members").get(0).getAsJsonObject().add("sourceIds", ResearchAgentExperiment.parse("{\"x\":[\"op1\"]}").get("x"));
         rejects("STALE_MEMBER_SOURCE", () -> ResearchAgentExperiment.validateAnswer(stale, true, ResearchAgentExperiment.baseRecords()));
         rejects("BAD_JSON", () -> ResearchAgentExperiment.parse("not JSON"));
+        JsonObject fakeChange = safeSummary.deepCopy();
+        fakeChange.getAsJsonArray("changes").get(0).getAsJsonObject().add("sourceIds",
+                ResearchAgentExperiment.parse("{\"x\":[\"op3\"]}").get("x"));
+        rejects("CHANGE_REQUIRES_COMPARABLE_RECORDS", () -> ResearchAgentExperiment.validateAnswer(fakeChange, true,
+                ResearchAgentExperiment.baseRecords()));
         JsonObject priceFromModel = answer.deepCopy();
         priceFromModel.addProperty("price", "999.99");
         rejects("BAD_ANSWER_FIELDS", () -> ResearchAgentExperiment.validateAnswer(priceFromModel, false, ResearchAgentExperiment.baseRecords()));
