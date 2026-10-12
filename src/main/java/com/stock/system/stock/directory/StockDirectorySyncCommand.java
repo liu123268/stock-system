@@ -1,6 +1,6 @@
 package com.stock.system.stock.directory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;

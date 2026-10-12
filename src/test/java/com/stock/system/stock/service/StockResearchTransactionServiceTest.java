@@ -55,7 +55,7 @@ class StockResearchTransactionServiceTest {
         doAnswer(invocation -> {
             invocation.<ResearchCycle>getArgument(0).setId(31L);
             return 1;
-        }).when(researchCycleMapper).insert(any());
+        }).when(researchCycleMapper).insert(any(ResearchCycle.class));
 
         StockQuoteSnapshot snapshot = new StockQuoteSnapshot(
                 "600519.SH", "行情中的名称", "SSE", "CNY", "SUSPENDED",

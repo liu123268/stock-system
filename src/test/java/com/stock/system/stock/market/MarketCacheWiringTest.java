@@ -1,6 +1,6 @@
 package com.stock.system.stock.market;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -65,7 +65,7 @@ class MarketCacheWiringTest {
 
         @Bean
         ObjectMapper objectMapper() {
-            return new ObjectMapper().findAndRegisterModules();
+            return tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
         }
 
         @Bean

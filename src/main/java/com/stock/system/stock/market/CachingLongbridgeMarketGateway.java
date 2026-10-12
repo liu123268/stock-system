@@ -1,8 +1,8 @@
 package com.stock.system.stock.market;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JavaType;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -226,7 +226,7 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
                 return Optional.empty();
             }
             return Optional.of(envelope.value());
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             LOGGER.warn("Deleted an unreadable market cache value: {}", key);
             cache.delete(key);
             return Optional.empty();
@@ -242,7 +242,7 @@ class CachingLongbridgeMarketGateway implements LongbridgeQuoteGateway,
             String json = objectMapper.writeValueAsString(MarketCacheEnvelope.fromLongbridge(value));
             cache.put(key, json, MarketCacheTtl.withJitter(
                     baseTtl, properties.getTtlJitterPercent()));
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             LOGGER.warn("Skipped an unserializable market cache value: {}", key);
         }
     }

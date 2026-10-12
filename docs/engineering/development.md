@@ -48,6 +48,8 @@ Redis（WSL2）：6380
 - 新增Flyway迁移：重启后端，让Flyway执行。
 - 关闭终端、重启电脑、主动按 `Ctrl+C`：下次开发需要重新启动。
 
+2026-10-12 主源码已完成 Boot 4／Spring AI 框架接入，当前版本只见 [技术栈](../architecture/technology-stack.md#1-后端与数据)。IDE／Maven 需重新载入 pom，再重启后端；前端仍沿用原启动方式。模型默认关闭，本阶段正常启动不需要模型密钥；正式研究生成与页面尚未开放，源码更新不代表云端已经发布。
+
 判断是否正在运行：
 
 - 前端终端显示 `Local: http://localhost:8083/`，说明Vite正在运行。

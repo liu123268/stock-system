@@ -1,6 +1,6 @@
 # 项目实际技术栈
 
-更新时间：2026-10-09（补入独立 Agent 实验的已验证状态；主项目依赖版本未改变）
+更新时间：2026-10-12（正式后端接入框架并完成兼容回归；云端尚未发布本轮构建）
 
 本文档记录项目技术的真实状态。用户最初提供的学习目标和候选技术清单保存在 [技术目标与选型参考](../project/technology-reference.md)，两者不得混淆。
 
@@ -16,16 +16,18 @@
 | 技术               | 当前版本/形式        | 状态               | 当前用途与证据                                                         |
 | ------------------ | -------------------- | ------------------ | ---------------------------------------------------------------------- |
 | Java               | 17                   | 已使用             | 后端运行版本，现有测试基于 JDK 17                                      |
-| Spring Boot        | 3.2.0                | 已使用，计划兼容性评估 | Web 应用、配置和测试基础；V2 接入前的目标稳定线与验证要求见下文技术规划 |
+| Spring Boot        | 4.1.1                | 已使用（本地源码） | 完成升级前／副本／正式工程回归及 test JAR HTTP 验证；云端仍为旧发布 |
 | Spring MVC         | Spring Boot 管理     | 已使用             | REST Controller 和统一 JSON API                                        |
 | Spring Security    | Spring Boot 管理     | 已使用             | 无状态认证过滤链、受保护接口和统一 401                                 |
 | JWT / JJWT         | 0.12.3               | 已使用             | 24 小时访问 Token，包含用户 ID、用户名和凭据版本；改密后校验版本使旧 Token 失效 |
 | BCrypt             | Spring Security 提供 | 已使用             | 密码摘要和匹配                                                         |
 | Jakarta Validation | Spring Boot 管理     | 已使用             | 注册、登录请求参数校验                                                 |
-| MyBatis-Plus       | 3.5.5                | 已使用             | BaseMapper 持久化；当前尚无自定义 SQL XML                              |
+| MyBatis-Plus       | 3.5.17，Boot 4 starter | 已使用             | BaseMapper 持久化；当前尚无自定义 SQL XML                              |
 | MySQL              | dev 8.0.34；prod 8.4 系列 | 已使用             | 业务关系与约束；云端环境快照见 [部署说明](../engineering/deployment.md#2-当前云端部署)，各库迁移状态见 [状态](../project/status.md) |
 | Flyway             | Spring Boot 管理     | 已使用             | 版本化迁移；环境应用版本只在 [状态](../project/status.md) 保存                          |
 | Maven              | 系统 Maven           | 已使用             | 依赖、测试和构建                                                       |
+| Jackson            | 3.1.5（业务 JSON） | 已使用 | Boot 4 管理；JWT 库内部兼容依赖不作为业务 ObjectMapper 使用 |
+| JUnit Jupiter／Mockito | 6.0.3／5.23.0，Boot BOM 管理 | 已使用 | 保留 Jupiter 测试 API，测试替身改用 MockitoBean／MockitoSpyBean |
 
 ## 2. 前端
 
@@ -62,7 +64,7 @@
 | SSE                             | 计划，尚未接入 | Agent 流式结果和状态反馈                       | 先验证同步模型／工具闭环，再补流式、鉴权、中断和取消行为                   |
 | WebSocket                       | 候选         | 有真实需要时的双向通信或行情推送               | 不与 SSE 或当前行情轮询绑定                                               |
 | LLM API + 结构化输出            | 独立实验已使用；业务尚未接入 | 观点整理、风险清单和待验证问题                 | Java HTTP 自造样本已验证；正式权限、会话及页面按 SPEC-004 后续任务接入       |
-| Spring AI                       | 计划，尚未接入 | V2 主框架：模型调用、Tool Calling、会话、RAG 与观测 | 在兼容性验证和一次模型调用后接入；RAG 为完整 V2 必做，具体方案另验，MCP 沿既有实践目标安排 |
+| Spring AI                       | 2.0.1，框架已接入，模型默认关闭 | V2 主框架：模型调用、Tool Calling、会话、RAG 与观测 | 模型适配、工具循环、结构转换与检索契约已做主工程回归；正式研究生成、RAG 与 MCP 仍待接入 |
 | 向量数据库                      | 计划选一种，具体实现待验证 | V2 必做受控文档 RAG 的语义检索 | 与关键词检索比较，验证资料权限与检索收益；Qdrant 为优先评估候选，不将全部业务记录向量化或替换 MySQL |
 
 ### 3.1 外部行情调用与密钥边界
@@ -71,14 +73,14 @@
 
 ### 3.2 V2 Agent 技术规划基线
 
-2026-10-08：按用户要求复核后采用以下讨论与接入规划；2026-10-09 独立模型实验已执行，正式业务增量尚未实施。产品产出和全局边界只维护在 [V2 需求](../product/requirements-v2.md#3-正式讨论采用的规划基线)，岗位证据与难度判断见 [市场对标](../project/java-agent-market-benchmark.md)，先后顺序见 [路线第 6 阶段](../project/roadmap.md#阶段-6java-agent-增量)。
+2026-10-08：按用户要求复核后采用以下讨论与接入规划；2026-10-09 独立模型实验已执行，2026-10-12 框架进入主工程，正式研究业务增量尚未接入。产品产出和全局边界只维护在 [V2 需求](../product/requirements-v2.md#3-正式讨论采用的规划基线)，岗位证据与难度判断见 [市场对标](../project/java-agent-market-benchmark.md)，先后顺序见 [路线第 6 阶段](../project/roadmap.md#阶段-6java-agent-增量)。
 
 架构沿用 [模块化单体](decisions/ADR-001-modular-monolith.md)：在现有后端增加 Agent 业务包与受限工具适配层，调用公开 Java Service；Vue 沿用当前登录和空间上下文。数据库、行情网关与 Redis 缓存仍由各自业务模块管理。原有技术的复用不代表对应 Agent 能力已经实现。
 
 | 部分 | 主选与实际状态 | 问题、代价和验证重点 |
 | --- | --- | --- |
-| Java 与服务端 | 保留 Java 17；现有 Boot 3.2.0，集成阶段优先评估受支持 Boot 4.1.x 稳定线，尚未升级 | 模型能力小验证先独立完成；主项目兼容实验另核对安全、Mapper、JSON／时间、迁移配置与行情。精确版本接入时锁定，不把整项目迁移当第一次能力验证前置 |
-| AI 框架 | Spring AI 2.0.x 为目标主线，尚未接入；直接 Java HTTP API 为能力验证及集成退出路径 | 框架提供工具／会话接入，但不代替业务边界；LangChain4j 仅为另行验证的候选，其当前 starter 同样有 Boot 版本要求，不承诺换框架即可兼容现有 3.2 |
+| Java 与服务端 | Java 17／Boot 4.1.1，已在本地源码升级 | 已核对安全、Mapper、JSON／时间、Flyway、行情传输回归与关闭模型的 API；具体证据沿 AG-CODE-002，云端发布另验 |
+| AI 框架 | Spring AI 2.0.1 已接入，默认 `spring.ai.model.chat=none`；直接 Java HTTP API 保留为能力实验路径 | 无密钥可运行原功能；正式 DeepSeek 失败零重试由 Agent 配置控制。框架不代替授权、会话、引用或预算；LangChain4j 仍为候选 |
 | 模型与输出 | 用户已选 DeepSeek；`deepseek-flash` 已在独立 Java 自造样本验证，正式业务效果尚未验证，见 [首轮模型与费用](#35-首轮模型与费用安排) | 用相同问题核对正确性、时延与费用；JSON／DTO 校验只证明结构，不自动证明内容正确。密钥仅在服务端配置 |
 | 工具与上下文 | 只读工具适配层、参数契约、会话范围和有界执行，计划 | 从现有研究／行情 Service 和待接的财务 Service 取数据；用户身份与可访问范围由 Java 确定，模型不能自行扩大。时间线需分批读取并报告截断范围，数值计算由 Java 完成 |
 | 会话存储 | MySQL 为会话／消息持久化首选；Redis 可用于可丢失的短期状态或限流，Agent 部分尚未实现 | 个人对话保存策略采用已确认阶段需求；每次调用仍校验当前授权，上下文裁剪、清空实现与运行明细保留期限待落实。保存会话与保存独立生成报告分开讨论，不机械建立两份状态存储 |
@@ -86,7 +88,9 @@
 | 观测与可靠性 | 基本调用记录与 Micrometer 观测，计划；OpenTelemetry／观测平台按需要接入 | 记录版本、工具、状态、耗时和用量；控制输入、总超时、有限重试与并发。提示词／工具数据可能敏感，默认记录必要摘要，不导出密钥 |
 | 质量验证 | 复用 JUnit／Mockito 与隔离业务测试，加固定问题集和独立真实模型评测，增量计划 | 替身测试验证工具、权限和错误边界；真实模型检查工具选择、归纳和引用。评分结合程序与人工，保留运行条件、版本、执行记录、坏例子与修改前后比较；具体验收沿 AG-CODE-007／008，不以文案完全相同作为正确标准 |
 
-版本依据：官方 [Spring AI 兼容矩阵](https://github.com/spring-projects/spring-ai#getting-started) 列出 2.x 对应 Boot 4.x、1.1.x 对应 Boot 3.5.x；但 [Boot 3.5.16 发布说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 已声明 3.5.x 结束开源支持。因此 3.5／AI 1.1 只作为历史兼容关系或迁移中间步骤，不能默认当作新的长期目标。[Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html) 允许 Java 17；[MyBatis-Plus 官方说明](https://baomidou.com/getting-started/) 提供自 3.5.13 起的 Boot 4 starter，当前项目的 Boot 3 starter 3.5.5 需单独评估更换。现有 Jackson 2 的注入／序列化与 Boot 4 的 JSON 变化按 [官方迁移说明](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide) 验证，不能由官方组合存在推断项目已经兼容。
+2026-10-11 的独立组件预检及教学工程撤回事宜保留为历史记录。2026-10-12 主工程已锁定 Java 17／Boot 4.1.1／Spring AI 2.0.1／MyBatis-Plus 3.5.17，完成兼容与框架接入任务；研究梳理业务、正式向量库及真实模型效果仍待接入。实际证据只见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。
+
+版本依据：官方 [Spring AI 兼容矩阵](https://github.com/spring-projects/spring-ai#getting-started) 列出 2.x 对应 Boot 4.x、1.1.x 对应 Boot 3.5.x；但 [Boot 3.5.16 发布说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 已声明 3.5.x 结束开源支持。因此 3.5／AI 1.1 只作为历史兼容关系或迁移中间步骤，不能默认当作新的长期目标。[Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html) 允许 Java 17；[MyBatis-Plus 官方说明](https://baomidou.com/getting-started/) 提供自 3.5.13 起的 Boot 4 starter，原项目的 Boot 3 starter 3.5.5 已更换为 Boot 4 starter 3.5.17。业务 ObjectMapper 已迁移到 Jackson 3；注入／序列化和时间行为按 [官方迁移说明](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide) 验证，不能由官方组合存在推断项目已经兼容。
 
 接入原则：先在隔离的 Java 17 能力实验中验证少量数据、一次模型调用和一个受限工具；主框架及 Boot 迁移做独立兼容实验，不先投入整项目升级再判断模型是否适合。后续接入在代码副本和隔离环境验证，避免改动生产配置；必要时经过中间版本迁移，部署目标仍需处于支持期。LLM 网络请求不放进长期数据库事务，先读限定数据再调用模型；结果注明范围和时间。模型失败时可关闭 Agent，核心业务继续运行。框架不适用时评估直接 API 或已验证的核心库适配，保持业务工具契约，不无限扩大升级范围。
 

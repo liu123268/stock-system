@@ -1,6 +1,6 @@
 package com.stock.system.stock.market;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -290,7 +290,7 @@ class CachingLongbridgeMarketGatewayTest {
         properties.setTtlJitterPercent(0);
         properties.setLockWait(Duration.ofMillis(200));
         return new CachingLongbridgeMarketGateway(
-                upstream, cache, new ObjectMapper().findAndRegisterModules(), properties);
+                upstream, cache, tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build(), properties);
     }
 
     private static class InMemorySharedCache implements MarketSharedCache {

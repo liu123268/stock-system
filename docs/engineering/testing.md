@@ -12,7 +12,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 ## 2. 后端测试
 
-- 使用 JUnit 5 和 Spring Boot Test。
+- 使用 JUnit Jupiter 和 Spring Boot Test；版本由 Boot BOM 管理，当前版本见 [技术栈](../architecture/technology-stack.md#1-后端与数据)。核心 `@Test`／断言／Mockito 用法继续结合真实模块教学，不因版本升级重开整套课程。
 - Controller/API 集成测试使用 MockMvc。
 - 认证链路覆盖注册、登录、错误密码、缺失 Token、非法 Token、当前用户和统一 401。
 - 空间创建、列表、详情、非成员访问、邀请状态、成员退出/移除/重入、所有权转让、归档恢复、归档只读和无效操作已经有真实 MySQL 集成测试；超级管理员测试覆盖普通用户越权、分页治理查询、禁用／恢复、旧 Token 全局失效、治理归档／恢复、邀请码撤销、敏感研究字段隔离及成功／失败日志事务。后续继续覆盖其余并发竞争。

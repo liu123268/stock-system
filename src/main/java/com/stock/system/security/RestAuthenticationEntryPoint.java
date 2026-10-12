@@ -1,6 +1,6 @@
 package com.stock.system.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.api.Result;
 import jakarta.servlet.http.HttpServletRequest;

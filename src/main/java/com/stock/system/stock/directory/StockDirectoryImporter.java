@@ -1,6 +1,6 @@
 package com.stock.system.stock.directory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

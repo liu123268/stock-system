@@ -1,7 +1,7 @@
 package com.stock.system.config;
 
 import org.flywaydb.core.Flyway;
-import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
+import org.springframework.boot.flyway.autoconfigure.FlywayMigrationStrategy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 

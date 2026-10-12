@@ -1,7 +1,7 @@
 package com.stock.system.admin;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.stock.system.admin.mapper.SuperAdminOperationLogMapper;
 import com.stock.system.admin.service.SuperAdminInitializerService;
 import com.stock.system.admin.service.AdminGovernanceTransactionService;
@@ -15,7 +15,7 @@ import com.stock.system.workspace.vo.CurrentInvitationResponseVO;
 import com.stock.system.workspace.vo.WorkspaceDetailResponseVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;

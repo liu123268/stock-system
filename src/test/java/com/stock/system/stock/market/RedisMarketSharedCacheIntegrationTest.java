@@ -1,6 +1,6 @@
 package com.stock.system.stock.market;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
@@ -63,7 +63,7 @@ class RedisMarketSharedCacheIntegrationTest {
                 assertThat(releaseFirstUpstream.await(2, TimeUnit.SECONDS)).isTrue();
                 return Map.of("600519.SH", quote);
             });
-            ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+            ObjectMapper objectMapper = tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
             CachingLongbridgeMarketGateway firstGateway = new CachingLongbridgeMarketGateway(
                     firstUpstream, firstCache, objectMapper, properties);
             CachingLongbridgeMarketGateway secondGateway = new CachingLongbridgeMarketGateway(
@@ -133,7 +133,7 @@ class RedisMarketSharedCacheIntegrationTest {
                     Instant.parse("2026-09-11T01:30:00Z"), "Normal", retrievedAt);
             when(firstUpstream.getQuotes(List.of("600519.SH")))
                     .thenReturn(Map.of("600519.SH", quote));
-            ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+            ObjectMapper objectMapper = tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
             CachingLongbridgeMarketGateway firstGateway = new CachingLongbridgeMarketGateway(
                     firstUpstream, cache, objectMapper, properties);
             CachingLongbridgeMarketGateway secondGateway = new CachingLongbridgeMarketGateway(

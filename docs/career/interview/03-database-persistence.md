@@ -211,3 +211,15 @@
 ### 项目证据与追问
 
 `UserService.findByUsername` 使用 Wrapper，`AppUserMapper.selectByIdForUpdate` 使用注解 SQL；XML／foreach 示例属于知识准备，当前未新增 XML 实现。对照和参数展开见 [MyBatis 复习提纲](../../engineering/mybatis.md#3-可选条件与集合参数)。可追问：构建条件是否访问数据库、foreach 怎样生成 in 参数、空集合怎样处理、复杂结果为什么需要明确映射。
+
+## DB-15：JDBC、MyBatis、SqlSession与连接池是什么关系？
+
+> JDBC 是 Java 数据库访问标准 API，驱动负责具体通信；MyBatis 提供 SQL 映射、参数绑定和结果映射，MyBatis-Plus 增加通用 CRUD。Mapper 调用由代理转为 SqlSession 操作，底层通过 JDBC 访问数据库。DataSource 提供连接，连接池复用连接；SqlSession 是工作会话，不是数据库连接。Spring 事务内通常复用底层会话和事务连接，结束后清理；关闭会话不等于物理断开连接。一级缓存属于会话，二级缓存需按 namespace 配置，Redis 则是独立共享缓存服务。
+
+项目 `UserService.findByUsername` 是 Wrapper 查询入口，目录测试曾遇到 JDBC 写入绕过一级缓存的问题；定义、生命周期与缓存边界见 [数据库访问复习](../../engineering/mybatis.md#5-jdbcsqlsession-与连接池)。可追问：无事务时会话何时关闭、连接池耗尽怎样处理、为何不能用一级缓存替代 N+1 优化。项目未配置 Mapper 二级缓存，不将它当作实际优化成果。
+
+## DB-16：为什么@Transactional没有回滚，怎样检查？
+
+> Spring 事务通常由 AOP 代理处理。同类内部调用不会触发被调用方法上的事务规则，但能参加外层已有事务；需检查是否经代理、对象是否由 Spring 管理。默认对 RuntimeException 和 Error 回滚，受检异常需按需求配置。如果 catch 只记日志并吞掉异常，且未标记回滚，代理看到正常结束可能提交。还需检查是否切到新线程，因为新线程不会自动继承原事务。事务范围应围绕完整数据库操作，避免长时间占用连接。
+
+项目邀请加入由 Service 管理多个数据库操作；内部调用对照与异常传播示例见 [Spring 事务与异常](../../engineering/mybatis.md#6-spring-事务与异常)。可追问：Spring 如何复用连接、打印日志为何不触发回滚、为什么不能说所有内部调用都没有事务。

@@ -99,3 +99,43 @@ select id, nickname from app_user where id in (?, ?);
 `join` 只保留匹配行；`left join` 保留左表，未匹配右表字段为 null。左连接后在 where 中要求右表满足条件可能过滤未匹配行；条件应按业务决定放 on 还是 where。一对多连接会增加结果行数，分页与计数需明确主体。
 
 当前项目时间线 SQL 位于 `StockResearchLifecycleService.TIMELINE_SQL`，通过 JDBC 查询并用 `toTimelineRow` 映射 Service 内部 `TimelineRow`，已关联观点、周期和作者。它不是当前 Mapper XML 或 `StockOpinionTimelineRow`；旧类名不能继续作为现实现入口。分页设计与证据见 [DB-08](../career/interview/03-database-persistence.md#db-08为什么研究时间线要先筛选再分页)。这里的单周期作者示例仅解释典型 N+1，不复刻旧实现。
+
+## 5. JDBC、SqlSession 与连接池
+
+JDBC 是 Java 访问关系型数据库的标准 API，驱动实现具体通信；MyBatis 是基于 JDBC 的持久层框架，负责 SQL 映射、参数绑定和结果映射；MyBatis-Plus 增加通用 CRUD 与条件构造。
+
+SqlSession 是执行 MyBatis 数据库操作、维护一级缓存的工作会话对象，SqlSessionFactory 创建它；Connection 是与数据库的连接。Spring 集成中由 SqlSessionTemplate 管理底层会话：无外围事务时通常每次 Mapper 调用后关闭；同一事务内复用会话，事务结束后关闭。共享的 Template 不等于底层会话永远相同，也不能把 SqlSession 等同于用户登录 Session。手动创建的会话须由调用方关闭，Spring 管理的会话不手动提交／回滚／关闭。
+
+DataSource 提供连接，HikariCP 管理可复用的连接与借出／空闲状态，不保存业务记录。借用 → 执行 → 归还；池中连接的 close 通常归还池，不等于物理断开，也不把一级缓存带给下一次会话。池满且无空闲连接时等待，超过获取连接超时则失败。池上限由应用配置或工具默认值决定，MySQL 的 max_connections 限制数据库整体连接量；多个应用实例应合计考虑，连接数不是用户数，也不是越多越快。项目配置入口是 `application-prod.properties`，具体运行值仍可能受环境覆盖。
+
+## 6. Spring 事务与异常
+
+通常同线程、同数据源的一次 Spring 事务让 Mapper 操作复用事务连接，共同提交或回滚；新线程不会自动继承原事务。事务太长可能占用连接并让其他请求等待。
+
+事务规则通常由 Spring AOP 代理处理。对照：
+
+```java
+// 外部调用 join，但它无事务：内部 save 的注解不会被代理触发
+public void join() { save(); }
+@Transactional
+public void save() { /* 两项数据库修改 */ }
+
+// 外部经代理调用 join，先开启事务：save 参加已有事务
+@Transactional
+public void join() { save(); }
+private void save() { /* 两项数据库修改 */ }
+```
+
+同类内部调用不会触发被调用方法上的事务规则，不意味着内部操作一定没有事务；外层已有事务时可以参加。自行 new 的 Service 未经过 Spring 代理。
+
+异常发生后，catch 接住它，程序可继续。catch 只打印日志、未重新抛出，且事务未被其他机制标记为回滚时，代理看到正常返回可能提交；日志不撤销数据。需要捕获后仍按异常回滚，可以记录日志后 `throw e`，也可直接让异常传出。默认对 RuntimeException／Error 回滚，受检异常默认不回滚，需要时配置 rollbackFor；不是所有异常都默认回滚。
+
+## 7. 一级缓存、二级缓存与项目边界
+
+- 一级缓存默认以 SqlSession 为范围，相同映射语句和参数等缓存键条件命中时可复用结果；不是仅凭相同用户 ID，也不能默认跨请求共享。
+- 同会话的写操作、提交／回滚、关闭或 clearCache 会清除本地缓存；localCacheScope 等配置会影响范围。
+- 绕过 MyBatis 用 JDBC 修改数据不会自动通知其一级缓存，项目目录测试因此在 JDBC 写入后清缓存，案例见 [BUG-004](bugs/BUG-004-stock-search-character-set.md)。一级缓存不是消除 N+1 的通用办法。
+- 二级缓存按 namespace 配置，可跨 SqlSession；缓存结果通常在正常提交后供其他会话复用。当前未配置 Mapper 二级缓存，此项属于知识准备。跨 Mapper 或直接 JDBC 写入可能不使相关缓存失效，多表查询要核对依赖。
+- Redis 是独立服务，可跨后端实例共享，项目用于行情缓存；默认 MyBatis 本地／二级缓存不等于 Redis。
+
+官方参考：[Spring 会话管理](https://mybatis.org/spring/sqlsession.html)、[Spring 事务集成](https://mybatis.org/spring/transactions.html)、[MyBatis 本地缓存](https://mybatis.org/mybatis-3/java-api.html#Local_Cache)、[二级缓存](https://mybatis.org/mybatis-3/sqlmap-xml.html#cache)。
