@@ -1,6 +1,6 @@
 # SPEC-004：研究 Agent 任务计划与证据
 
-状态：2026-10-12，P-001～P-007 使用细则均已确认；按 AG-020 补入财务预检及工具，受控 RAG 由 AG-CODE-001R 提前预检、AG-CODE-008 接入系统维护的报告库，既有 MCP 目标落实为 AG-CODE-009。独立财务源已运行 SDK 样本，详见第 5 节；AG-CODE-001 已完成真实 DeepSeek 自造样本实验及人工核对，见第 7 节，业务 Agent 未接入。AG-CODE-002 已完成正式后端框架接入与兼容回归，见第 9 节；研究梳理业务和页面尚未接入。其余任务未完整验收，勾选须有本任务的真实证据，文档检查不算功能验收。主项目 V2 接入沿 [V1／V2 阶段关系](../../product/requirements-v2.md#1-版本定位)，独立预检不代表正式业务开发已开始。
+状态：2026-10-13，P-001～P-007 使用细则均已确认；按 AG-020 补入财务预检及工具，受控 RAG 由 AG-CODE-001R 提前预检、AG-CODE-008 接入系统维护的报告库，既有 MCP 目标落实为 AG-CODE-009。独立财务源已运行 SDK 样本，详见第 5 节；AG-CODE-001 已完成真实 DeepSeek 自造样本实验及人工核对，见第 7 节。AG-CODE-002 已完成正式后端框架接入与兼容回归，见第 9 节；AG-CODE-003 的授权内周期资料／原文首段见第 10 节，固定资料生成核心与来源重校验见第 11 节，公共生成入口、完整工具、会话和页面尚未接入。其余任务未完整验收，勾选须有本任务的真实证据，文档检查不算功能验收。主项目 V2 接入沿 [V1／V2 阶段关系](../../product/requirements-v2.md#1-版本定位)，独立预检与已取得的正式接入证据分开，不由其中一项推断整个业务闭环完成。
 
 ## 1. 实施顺序
 
@@ -8,16 +8,16 @@
 - [ ] AG-CODE-001F：最早财务数据源预检，可与模型小实验独立安排，在正式财务开发前完成。离线签名／help 核对只作准备；在符合测试授权与连接规则的环境中，实际查询至少一个 A 股和一个港股代表样本，检查可用科目、期间、缺失、币种／单位和源端时间。分别核对开发 SDK 与生产 CLI 的协议／路由，复用既有授权，不额外建立同账号行情连接，不先发送财务资料给模型。至少核对一次对应官方披露的代表数字，记录样本与版本的真实覆盖，不据两个样本推断全市场。条件不成立先核对原因、尝试合法可用来源或限定覆盖；未过关不勾选财务任务，也不把无财报版本称为先行财务闭环已验收。
 - [ ] AG-CODE-001R：提前验证报告与 RAG 核心条件，可与财务／兼容性预检独立安排，不等先行闭环完成。先用自造文字，再以已选定公开报告的可读章节核对解析、段落／页面定位、中文向量化、一个向量库的写入／检索及空检索反馈；核对文本向量模型和运行资源、版本／维度一致性及费用，记录实际可读范围。真实材料处理及新服务条件沿已确认范围和预算落实，未知不能自动发起付费调用。失败时分别定位来源／解析、Embedding、存储或检索，再缩小到已核实可读章节或验证替代；未通过不标 RAG 条件齐备。独立实验不代替 AG-CODE-008 的业务验收。
 - [x] AG-CODE-002：框架兼容与正式接入验证。版本组取技术栈，检查认证、Mapper、JSON／时间、Flyway、既有行情和关闭 Agent 后的核心 API；同时验证所选 Java AI 框架的模型、受控工具和检索组件实际可用，不改生产配置。框架不适用时保留直接 HTTP 的阶段成果，再验证兼容核心库或另一候选框架，显式保留尚未完成的框架学习目标；不由依赖能安装推断整个项目已兼容或用户已掌握框架。
-- [ ] AG-CODE-003：正式受限读取与原文接口。补周期过滤、完整／超限范围、有效正文和来源校验；接入最新报价及有界日 K 适配，Java 计算名义价差。检查跨空间／股票／周期拒绝、撤回和查询期间变化；不循环读取无界全股票历史。
+- [ ] AG-CODE-003：正式受限读取与原文接口。补周期过滤、完整／超限范围、有效正文和来源校验；接入最新报价及有界日 K 适配，Java 计算名义价差。检查跨空间／股票／周期拒绝、撤回和查询期间变化；不循环读取无界全股票历史。周期资料与单条原文首段已验证，后续来源重校验见 [第 11 节](#11-研究梳理生成核心与首次带学2026-10-13)，子范围、报价／日 K 与跨连接并发证据仍待补齐。
 - [ ] AG-CODE-004：最早页面可见闭环。用户可点击一个周期的研究梳理，看到报价＋有依据的结果、原文弹窗，离开返回可恢复个人记录。同期完成模型失败、无权限、输入上限、私有会话、幂等和预算基本保护，不将这些推迟到“最后加安全”。
 - [ ] AG-CODE-005：正式工具追问。接上研究、报价和短期日 K 三个受限工具，验证直接回答／补查、消息配对、当前报价、停止条件与次数限制；历史价格工具未接入时如实提示，不把该阶段标完整。
 - [ ] AG-CODE-005F：财报追问与依据展示。以已过 AG-CODE-001F 的覆盖补财务 Service、SDK／CLI 适配、字段映射和 `read_financial_facts`；验证受限科目／期间、Java 数值比较、数据缺失和超时反馈。核对财务来源快照、当前权限、问“最新”时重新读取，以及与成员观点／报价的组合问题；不能把提供商 AI 财报摘要当原始数字来源。完成后才进入包含财报的先行闭环验收，报告解析由 001R／008 处理，普通用户资料上传不进入本版。
 - [ ] AG-CODE-006：记录变化和恢复验收。核对撤回影响的生成内容、当前访问、历史上下文、重新梳理、断网恢复、清空及迟到回答；调用账本不随清空对话重置。必要运行明细保留期限在实际上线前落实。
 - [ ] AG-CODE-007：SSE 与先行闭环质量回归。同步闭环后接流式状态／结果、认证、取消和部分结果行为；在 AG-CODE-005F 通过后验收包含研究、报价、短期日 K 和财报的先行闭环。扩展固定问题集，明确评分规则、运行次数／分母、必要重复及真实模型人工核对，分别记录工具选择与任务完成。补请求／运行关联 ID、失败阶段、版本、调用轨迹、耗时／用量及基本指标；保留至少一轮实际基线／修改后比较及一个真实坏例子的复现、定位、修正和复测，修改后回归原问题集，注明仍未解决项。整理范围适当的浏览器与跨模块回归。首次可用页与先行闭环验收分别记录，完整 V2 的 RAG 与 MCP 学习要求仍见 008／009。
 - [ ] AG-CODE-008：系统报告库与 RAG 闭环。以 AG-CODE-001R 通过的条件接入 [必做 RAG 功能范围](../../product/requirements-v2.md#33-必做阶段受控文档-rag)，落实公开来源清单、版本与导入脚本；不增加普通用户上传。完成处理状态、重复导入、更新／移除及失败重建保护，再接同一助手的段落检索、组合回答和引用查看。访问与股票范围由 Java 绑定，来源定位真实可核对。用已知正确段落及无答案的问题集对照关键词、向量与混合检索，并记录一次重排前后比较；是否默认启用重排由质量／耗时／费用决定。分别检查检索命中和答案依据，覆盖错误股票／版本、无资料、权限失效、文档诱导、错误引用、更新移除、故障及费用。独立实验不能代替实际页面闭环，未完成不能称完整 V2；OCR、全市场自动采集和 Graph RAG 不自动加入。
-- [ ] AG-CODE-009：至少一个 MCP Server 的真实实践。按 [必做学习边界](../../product/requirements-v2.md#34-必做学习实践至少一个-mcp-server) 实现或接入一个 Server，优先评估把本项目一个受限研究 Service 发布为只读工具。先核版本、传输、身份绑定与业务授权，不用连接／会话 ID 代替用户身份。客户端实际完成工具发现与调用，记录合法结果、参数无效、越权、源端错误／超时和清理；能解释 Client／Server、Tool／Resource／Prompt 及与 REST／Tool Calling 的关系。框架与真实业务边界须有证据，不以 mock 成功或写了配置代替；不要求同时建设工具平台，不把通达信／Wind 许可当作唯一实现路径。
+- [ ] AG-CODE-009：至少一个 MCP Server 的真实实践。按 [必做学习边界](../../product/requirements-v2.md#34-必做学习实践至少一个-mcp-server) 实现或接入一个 Server，优先评估把本项目一个受限研究 Service 发布为只读工具。先核版本、传输、身份绑定与业务授权，不用连接／会话 ID 代替用户身份。客户端实际完成工具发现与调用，记录合法结果、参数无效、越权、源端错误／超时和清理；个人对协议角色、能力与业务关系的解释按 [V2 学习地图](../../project/roadmap.md#v2-功能与学习地图) 单独验收，不由本功能任务的勾选代替。框架与真实业务边界须有证据，不以 mock 成功或写了配置代替；不要求同时建设工具平台，不把通达信／Wind 许可当作唯一实现路径。
 
-RAG 与 MCP 均已列为上述明确任务；完整知识覆盖与学习层次只见 [原始目标覆盖表](../../architecture/technology-stack.md#原始-agent-目标覆盖与验收)。本文件维护执行和证据，不把通达信／Wind 已接通、用户已掌握或模型训练写入本阶段成果。
+RAG 与 MCP 均已列为上述明确任务；教学范围、深度与顺序只见 [V2 学习地图](../../project/roadmap.md#v2-功能与学习地图)，原始目标与任务的对应见 [技术映射表](../../architecture/technology-stack.md#原始-agent-目标覆盖与验收)。本文件维护执行和证据，不把通达信／Wind 已接通、用户已掌握或模型训练写入本阶段成果。
 
 ## 2. 小实验固定问题与质量核对
 
@@ -177,3 +177,40 @@ RAG 与 MCP 均已列为上述明确任务；完整知识覆盖与学习层次�
 交接检查：12 份相关文档的 228 处本地链接／锚点无错误，pom 与专项 Maven settings XML、兼容脚本 PowerShell 语法及 Git 空白检查通过；升级后的主工程再跑 Adapted 副本编译成功，说明工程检查脚本可继续复用。打包 JAR 中未包含 `.env` 或 `.local/` 文件，已撤回的教学工程和启动脚本没有恢复。
 
 AG-CODE-002 在以上本地框架与业务回归范围内关闭；正式研究效果、真实资料授权／引用校验、会话持久化、网页验收、财务与报告 RAG 仍未完成。下一项为 AG-CODE-003：在真实股票 Service 中按研究周期读取有权资料及原文，随后接最早可操作的研究梳理页面。没有 Git 提交、推送、部署或新增模型费用。
+
+## 10. AG-CODE-003：周期资料读取首段（2026-10-12）
+
+在正式股票模块新增 [StockResearchSourceService](../../../src/main/java/com/stock/system/stock/service/StockResearchSourceService.java) 和 [ResearchCycleSourcesResponseVO](../../../src/main/java/com/stock/system/stock/vo/ResearchCycleSourcesResponseVO.java)，原 Controller 增加周期 `/sources` 与 `/opinions/{opinionId}` 两个只读接口，用户来自登录身份。ResearchCycleMapper 按空间／空间股票／周期共同查询，关系不符返回 404；复用现有成员权限及归档读取规则，保留原时间线行为。
+
+服务先统计有效条数与理由／观察条件的 Unicode 字符数，再在同一只读 RR 事务中读取正文，按日期＋ID 排序。包括 INITIAL／UPDATE／REVIEW，排除撤回资料；超限返回实际范围与空正文，不把最新一批冒充完整周期。单条原文再次查询当前可读记录，不能通过旧响应重新打开已撤回正文。子范围与模型交付前的新鲜状态检查尚未实现，不以本次快照代替生成后的来源核对。
+
+本次定向回归为 [新增资料集成测试](../../../src/test/java/com/stock/system/stock/StockResearchSourceIntegrationTest.java) 8 项＋原 StockResearchIntegrationTest 20 项，合计 28 项、失败 0、错误 0、跳过 0。覆盖 25 条观点完整读取、同日期 ID 排序、历史／新周期隔离、三种观点类型、匿名／非成员／移除后拒绝、错误空间／股票／周期／原文拒绝、撤回、100／101 条、20,000／20,001 Unicode 字符、空周期及归档读取。测试样本最初漏填成员失效时间，被既有约束拒绝；改用真实 WorkspaceMemberService.remove 后复测通过，没有更改业务约束。
+
+在项目根目录执行 `mvn.cmd "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" -s scripts/agent-compatibility-maven-settings.xml -B -ntp -o "-Dtest=StockResearchSourceIntegrationTest,StockResearchIntegrationTest" test`：复用已下载依赖和专项镜像设置，只运行上述两个测试类。以本次 BUILD SUCCESS 及两份 XML 判断成功；原始日志为 `target/agent-compatibility/research-sources-20261012.log`，两份报告另存 `target/agent-compatibility/research-sources-20261012/`，不与残留报告相加。
+
+创建范围仅为测试库中的三个专用账号、空间／成员、模拟股票、研究周期与观点；每项测试事务回滚并在 AfterTransaction 核对专用账号及关联资料为 0。实际 JDBC catalog 测试前后均为 stock_system_test，12 张业务／目录表均为 0，Flyway 历史仍 12 条，前后快照见同目录 `research-sources-before-20261012.log`／`research-sources-after-20261012.log`。测试 fork 正常结束；使用 MockMvc，无额外 Web 监听端口、真实供应商或模型连接，没有开发／生产写入、迁移、费用或部署。
+
+AG-CODE-003 保持未勾选：日期／成员子范围、查询期间变化的并发证据、生成交付前的当前权限／来源重校验、报价及有界日 K 适配仍待完成。页面、模型生成和个人会话仍属后续闭环。本轮教学提纲见 [正式资料读取](../../engineering/agent-experiment.md#5-正式业务学习按周期读取资料)，仅记录已讲与待巩固，不据测试通过认定用户掌握。
+
+## 11. 研究梳理生成核心与首次带学（2026-10-13）
+
+在正式 agent 模块增加 [ResearchSummaryService](../../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java)、[消息组织](../../../src/main/java/com/stock/system/agent/service/ResearchSummaryPrompt.java)、[ChatClient 调用](../../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java)、[结果校验](../../../src/main/java/com/stock/system/agent/service/ResearchSummaryValidator.java) 和 [结构对象](../../../src/main/java/com/stock/system/agent/dto/ResearchSummary.java)。主流程复用现有授权周期资料，组织字段白名单和内部作者别名，通过一次同步模型请求取得结果，再校验引用关系并重新授权、核对原快照正文。模型结束原因为 Spring AI 转换后的 STOP，正常／截断对照已验证；不直接按原始响应的小写值拒绝正常完成。
+
+新增 StockResearchSourceService.revalidate 在新的短读事务内检查当前账号／空间／股票／周期访问，只统计当前总数，并对原快照最多 100 条 ID 重新查正文。撤回、变更或失权拒绝交付；新增观点只标记 newOpinionsAvailable，原范围与时间仍绑定初次快照，不自动付费重跑。消息序列化上限、零重试、异常脱敏、未知／重复引用、成员最新记录和同成员前后关系有程序保护。真实模型的语义准确性、正式预算、总时限、完整请求字节上限、HTTP 幂等和个人会话仍待验收，内部 Result 不直接作为公开 API 响应。
+
+本次最终定向命令在项目根目录运行 `mvn.cmd "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" -s scripts/agent-compatibility-maven-settings.xml -B -ntp -o "-Dtest=ResearchSummaryServiceTest,ResearchSummaryValidatorTest,ResearchSummaryModelTest,StockResearchSourceIntegrationTest,StockResearchIntegrationTest" test`。命令复用本地依赖，只检查本次生成核心与既有研究业务；判断成功以 BUILD SUCCESS 和此次五份 XML 为准，未叠加旧报告。
+
+| 检查 | 本次结果与边界 |
+| --- | --- |
+| ResearchSummaryServiceTest | 9 项：正常顺序、权限、关闭、资料超限、空资料不调用、交付前拒绝、新资料标记、非法来源、序列化超限；资料与模型为内存替身 |
+| ResearchSummaryValidatorTest | 4 项：成员缺失／跨成员／旧引用／重复、变化关系、结构与长度、不可修改结果列表；不证明语义支持 |
+| ResearchSummaryModelTest | 7 项：关闭默认、真实 DeepSeek 适配器生成的请求／结构解析／用量、四种坏输出及 503 零重试；使用 MockRestServiceServer 内存 HTTP 响应，无监听端口或官方请求 |
+| StockResearchSourceIntegrationTest | 11 项：原 8 项及新增 3 项；真实测试库验证新增／撤回／正文变化／失权／错误周期和新增至超限后仍可核对原快照。变更为顺序执行，不假称跨连接并发验证 |
+| StockResearchIntegrationTest | 原 20 项通过，保留研究业务定向回归 |
+| 总计 | **51 项，失败 0、错误 0、跳过 0**；主源码与全部测试源码编译通过 |
+
+原始日志：`target/agent-compatibility/summary-core-regression-20261013.log`；此次五份报告另存 `target/agent-compatibility/summary-core-20261013/`。最初沙箱不允许本机回环连接，数量检查的自动审批两次因服务容量失败而未执行；后续审批恢复，在允许本机连接的环境中完成上述受保护回归，不跳过数据库保护。组件测试采用不建端口的内存 HTTP 替身；最初卡住的本轮 Maven 会话已终止，最终测试 fork 正常结束。
+
+前后 MySQL catalog 都为 stock_system_test，相关 app_user／workspace／workspace_member／workspace_stock／research_cycle／stock_opinion／stock 七张表均为 0，Flyway 历史仍 12 条；快照见 `summary-db-before-20261013.log`／`summary-db-after-20261013.log`。新增资料测试的三个账号、空间／成员、模拟股票、周期与观点均在测试事务中回滚，并按原 AfterTransaction 核对剩余 0；既有研究回归继续执行原清理。没有迁移、开发／生产数据写入、真实模型／行情请求、付费调用、Web 服务启动或部署。
+
+本人自然语言要求已落到 ANSWER_RULE，并从实际序列化请求核对进入 system；时间与事实性质的反馈、所需提示和待验收项只见 [学习交接](../../project/status.md#求职专题学习交接)，不把 AI 接线或本次 51 项通过记为本人掌握。生成核心已落地，但 AG-CODE-003／004 不勾选：子范围／并发、报价与日 K、公开生成入口、费用／运行账本、个人会话和页面仍待完成。当前教学继续 AG-01，不自动切换专题。

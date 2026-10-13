@@ -1,6 +1,6 @@
 # 本地开发与启动说明
 
-更新时间：2026-10-08
+更新时间：2026-10-12
 
 ## 1. “前端”到底是什么
 
@@ -241,7 +241,7 @@ Redis 的 TTL、锁、冷却和抖动参数及含义集中见 [缓存设计](../
 | 传输 | `LongbridgeUpstreamGateway` 是四类只读网关的统一上游接口；`LongbridgeSdkClient` 调用 SDK；`LongbridgeSdkSession` 管理 OAuth／Config／QuoteContext；`LongbridgeJsonRpcClient` 保留供 prod 使用 |
 | 缓存 | `CachingLongbridgeMarketGateway` 依赖统一上游接口，不再固定依赖 CLI；SDK 保留四类有界短缓存、市场日期与供应商时间 |
 | 业务与错误 | 三个 `LongbridgeMarket*Provider` 继续转换项目 DTO；共用异常更名为 `LongbridgeUpstreamException`，保留配额码和分钟历史最早日期；搜索、研究 Service 和前端契约不因传输切换改写 |
-| 验证与部署 | `LongbridgeSdkClientTest`、`LongbridgeTransportWiringTest` 和原缓存／provider／CLI 单元测试；真实账号验证尚未完成；`deploy/backend` 的 CLI Dockerfile 和云端 Compose 暂不迁移 |
+| 验证与部署 | `LongbridgeSdkClientTest`、`LongbridgeTransportWiringTest` 和原缓存／provider／CLI 单元测试；授权、SDK 探测和登录后网页已验证，真实 Token 到期刷新仍待验收，具体证据与缺口只见 CODE-206I／status；`deploy/backend` 的 CLI Dockerfile 和云端 Compose 保留生产路径 |
 
 ## 10. Redis 本地学习环境
 

@@ -1,9 +1,9 @@
 # Java 与 Agent 求职能力对标
 
-首次调研：2026-10-08；最近复核：2026-10-09（中国标准时间）
+首次调研：2026-10-08；最近复核：2026-10-12（中国标准时间）
 
 适用目标：Java 后端实习／应届，逐步增加 Agent 应用工程能力  
-性质：公开岗位、求职者面经、项目作者复盘与官方资料的交叉证据记录。第 1～4 节保留 2026-10-08 的基础证据；第 5 节记录 2026-10-09 再次核查的新样本、读取边界与计划对照；第 6 节保存本轮课程核查与选学建议。产品尺度见 [V2 规划基线](../product/requirements-v2.md#3-正式讨论采用的规划基线)，技术、知识安排与可行性验证见 [技术规划](../architecture/technology-stack.md#34-可行性验证与知识安排)；调研不充当详细规格或实现证明。
+性质：公开岗位、求职者面经、项目作者复盘与官方资料的交叉证据记录。第 1～4 节保留 2026-10-08 的基础证据；第 5／6 节记录 2026-10-09 的岗位与课程核查；第 7 节保存 2026-10-12 的 Java 基础补漏；第 8 节是同日进一步取得近期 Java／Agent 官方完整岗位后，对教学地图的再评估。产品尺度见 [V2 规划基线](../product/requirements-v2.md#3-正式讨论采用的规划基线)，技术、知识安排与可行性验证见 [技术规划](../architecture/technology-stack.md#34-可行性验证与知识安排)；调研不充当详细规格或实现证明。
 
 ## 1. 对标方法与样本
 
@@ -84,7 +84,7 @@ Java 主线仍按 [实习准备路线](roadmap.md#实习准备与阶段关系) �
 
 这些是已有业务能力，不表示已经向模型开放工具，也不表示已经通过 Agent 验收。
 
-版本复核补充：此前只核对了 Boot 与 AI 的兼容关系；本次进一步核对维护周期，官方 [Boot 3.5.16 发布说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 明确这是 3.5.x 最后一个开源发行版。因而“Boot 3.5＋AI 1.1 兼容”不代表它是新的长期接入首选。目标线、迁移风险和退出路径已同步技术规划；[官方矩阵](https://github.com/spring-projects/spring-ai#getting-started)、[Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html) 与 [MyBatis-Plus starter 说明](https://baomidou.com/getting-started/) 是版本判断的依据，实际项目兼容性尚未验证。
+2026-10-08 版本复核补充：此前只核对了 Boot 与 AI 的兼容关系；本次进一步核对维护周期，官方 [Boot 3.5.16 发布说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 明确这是 3.5.x 最后一个开源发行版。因而“Boot 3.5＋AI 1.1 兼容”不代表它是新的长期接入首选。目标线、迁移风险和退出路径已同步技术规划；[官方矩阵](https://github.com/spring-projects/spring-ai#getting-started)、[Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html) 与 [MyBatis-Plus starter 说明](https://baomidou.com/getting-started/) 是版本判断的依据。当时实际项目兼容性尚未验证；2026-10-12 后续正式验证见 [AG-CODE-002](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)，不以本节历史状态代替当前技术栈。
 
 ## 4. 官方技术依据
 
@@ -161,13 +161,13 @@ Java 主线仍按 [实习准备路线](roadmap.md#实习准备与阶段关系) �
 
 ## 6. 课程核查与选学建议（2026-10-09）
 
-用户要求核实外部 GPT 推荐的尚硅谷 Spring AI Alibaba、黑马 2026 AI 版天机学堂及一个月学习安排，随后追问框架必要性、LangChain 路线和课程时效。本节保存补查后的当前建议；框架关系见 [入门解释](../engineering/agent-experiment.md#14-agent-与框架是什么关系)，功能、开发顺序及个人能力标准继续沿 [现有学习地图](roadmap.md#v2-功能与学习地图)，不将建议写成新确认的业务范围。
+用户要求核实外部 GPT 推荐的尚硅谷 Spring AI Alibaba、黑马 2026 AI 版天机学堂及一个月学习安排，随后追问框架必要性、LangChain 路线和课程时效。本节保存 2026-10-09 的课程核查与当时选材依据；当前观看安排、业务实践顺序及个人能力标准只见 [现有学习地图](roadmap.md#v2-功能与学习地图)，不将调研中的选材表当成另一套执行课表。框架关系见 [入门解释](../engineering/agent-experiment.md#14-agent-与框架是什么关系)，建议不新增已确认业务范围。
 
 ### 6.1 课程比较与读取边界
 
-| 主办者原始页面 | 本轮可核实内容 | 当前使用建议 |
+| 主办者原始页面 | 当时可核实内容 | 选材理由与使用边界 |
 | --- | --- | --- |
-| [java1234 官方 Spring AI2.0 基础课](https://www.bilibili.com/video/BV1DAoZBRERx/)，2026-04-26 | 原作者公开视频有 16 集目录，分集约 3 小时；单体示例，含 ChatClient、Advisor、结构化输出、Memory、Tool Calling、向量／RAG、MCP | 保留为带学中的固定观看材料。录制早于 2.0 正式版，精确配套 BOM 未核实；版本核对和当前代码练习由 AI 带学，不要求学生自行迁移，不以三小时视频代替业务实践 |
+| [java1234 官方 Spring AI2.0 基础课](https://www.bilibili.com/video/BV1DAoZBRERx/)，2026-04-26 | 原作者公开视频有 16 集目录，分集约 3 小时；单体示例，含 ChatClient、Advisor、结构化输出、Memory、Tool Calling、向量／RAG、MCP | 保留为入门选材依据，是否补看片段沿当前学习地图。录制早于 2.0 正式版，精确配套 BOM 未核实；版本核对和代码练习由 AI 带学，不要求学生自行迁移，不以三小时视频代替业务实践 |
 | [黑马 SpringAI＋DeepSeek 大模型应用开发](https://www.bilibili.com/video/BV1MtZnYtEB3/)，2025-04-01 | 官方 UP 主页面索引有 26 集目录；分集时长相加约 8 小时 32 分钟。包含模型调用、ChatClient、会话记忆／历史、提示词、工具调用、PDF 向量检索与多模态 | 保留研究记录，当前不追加整套观看要求；以后确有讲解缺口时，由 AI 指定具体章节并处理代码版本差异 |
 | [尚硅谷 Spring AI Alibaba：B 站官方入口](https://www.bilibili.com/video/BV1pvWGznEqh/)，2025-09-23；[官网目录](https://www.atguigu.com/video/347/) | 官方 UP 主原页索引可读；官网有 86 节目录，明确先修 JDK17＋、Boot3、Maven、Redis、大模型入门。覆盖结构化输出、持久化记忆、SSE、RAG、Tool Calling、MCP 和百炼生态案例；标明教程／资料免费下载；原始精确 BOM 仍未取得 | 移出本阶段默认学习安排。原理不能整体判为失效，但原课不能视作 2.0.1 的原样跟写教材；用户尚不能自行核对 API，不再要求其自行选专题补课 |
 | [黑马 2026 AI 版天机学堂](https://www.bilibili.com/video/BV1MFokBkEzC/)，2026-04-28 | 官方 UP 主页面索引有 106 集目录，主办者定位为 AI＋Java 微服务进阶课。可见 aigc 微服务、Nacos 提示词热更新、持久化会话、ES 检索、多智能体协作和故障修正；未核实到完整精确依赖和独立 MCP／评测专题 | 当前不列为入门后的必修第二课。用户尚未掌握微服务，运行与理解其完整工程会叠加独立学习成本；以后补微服务或遇到明确专题问题再参考 |
@@ -176,17 +176,17 @@ Java 主线仍按 [实习准备路线](roadmap.md#实习准备与阶段关系) �
 
 尚硅谷视频补查：上轮只给官网入口，本轮找到上述官方 B 站发布；[尚硅谷官方课程专栏](https://www.bilibili.com/read/cv5216534)的索引也将 Spring AI Alibaba 对应到同标题的“01_教程简介”。原页索引会混入关联合集目录，章节编号以官网该套 86 节目录核对；不据此冒认所有关联合集都是本课内容。原视频发布于 2025 年，仍需沿 6.3 核对现行 API，方便观看不等于版本更新。
 
-java1234 标题中的“2027”不是录制日期；[原作者公开文章](https://blog.csdn.net/caoli201314/article/details/160716256)能核对 Java／ChatClient 示例，但没有完整精确 BOM。该课与天机初次发布均早于 [Spring AI2.0 GA 的 2026-06-12](https://spring.io/blog/2026/06/12/spring-ai-2-0-0-GA-available-now/)，不能仅凭年份或“2.0”标题保证使用最终正式 API。当前选它作为固定观看材料，是因为较小规模和核心专题覆盖，配套代码尚未完整验证，实际代码不直接承诺照搬。
+java1234 标题中的“2027”不是录制日期；[原作者公开文章](https://blog.csdn.net/caoli201314/article/details/160716256)能核对 Java／ChatClient 示例，但没有完整精确 BOM。该课与天机初次发布均早于 [Spring AI2.0 GA 的 2026-06-12](https://spring.io/blog/2026/06/12/spring-ai-2-0-0-GA-available-now/)，不能仅凭年份或“2.0”标题保证使用最终正式 API。当时选它作为入门材料，是因为较小规模和核心专题覆盖，配套代码尚未完整验证，实际代码不直接承诺照搬。
 
-用户反馈不能自行阅读官方 API 后，再次窄查近期候选：[图灵学院徐庶 38 集原视频](https://www.bilibili.com/video/BV12ju16hEYM/)可核对原作者与课程介绍，但未取得公开稳定版 BOM；另见老杜 9 月和乐哥 8 月原作者课程的 B 站搜索索引，仍未取得足够的独立目录与配套依赖。本轮没有核实到可按当前稳定版完整跟写、适合本阶段的替代主课，不将新标题／上传日期当作推荐依据。当前采取固定视频选材与项目带学，版本验证由 AI 承担；不声称近期中文课程不存在，也不声称新版练习已经完成。
+用户反馈不能自行阅读官方 API 后，再次窄查近期候选：[图灵学院徐庶 38 集原视频](https://www.bilibili.com/video/BV12ju16hEYM/)可核对原作者与课程介绍，但未取得公开稳定版 BOM；另见老杜 9 月和乐哥 8 月原作者课程的 B 站搜索索引，仍未取得足够的独立目录与配套依赖。当时没有核实到可按稳定版完整跟写、适合本阶段的替代主课，不将新标题／上传日期当作推荐依据。选材和版本验证由 AI 承担，后续观看与实践安排由学习地图维护；不声称近期中文课程不存在，也不声称新版练习已经完成。
 
 ### 6.2 章节与项目的对应
 
-当前安排：java1234 短课作为固定观看材料，由 AI 给出每单元的具体集数和理解目标；结合股票系统中实际开发的模型接入、受限工具、会话和报告检索解释原理、安排本人小改动并验证，教学方式沿 [项目入口](../../AGENTS.md#教学与能力验收)。学生负责理解、本人小改动与复述，不承担独立选择补课专题或解决版本迁移的前置任务。尚硅谷／2025 黑马旧课暂不进入默认观看安排，天机学堂继续后移。Spring AI 是当前 Java 框架主选，既有 HTTP 实验保留为工程预检证据，不作为当前教学操作入口。
+下表保留 2026-10-09 的课程片段与项目主题对应，供 AI 在实际理解缺口需要时选材；当前是否观看及本人任务由 [学习地图](roadmap.md#怎样学与完成标准) 和 [学习交接](status.md#求职专题学习交接) 决定，不按表中序号重新开始课程。教学方式沿 [项目入口](../../AGENTS.md#教学与能力验收)，版本迁移由 AI 处理。Java 框架采用与 HTTP 实验边界分别见技术栈和任务证据。
 
 三小时入门讲组件和最小示例；本项目实践讲有权资料、真实查询、会话对象、引用与失败处理；尚硅谷增加专题细节及 Alibaba 生态；天机还需理解既有微服务工程与跨服务问题。它们不能按“短课→长课→项目课”的时长机械排列。接下来的主实践是现有股票系统，框架版本升级本身不要求拆成微服务。
 
-| 当前专题顺序 | 固定观看材料 | 在本项目中的练习结果 |
+| 素材对应主题 | 可参考的课程片段 | 与本项目实践的关系 |
 | --- | --- | --- |
 | 1. 模型、消息与一次请求 | java1234 1、3；第 2 集是百炼接入，已有官方 DeepSeek 账号不因视频重开户；4～5 的 Ollama 暂不作为必修 | 在带学下理解谁发送问题、模型返回什么，亲手改一处问题或输入校验；依赖与模型适配由 AI 先核对 |
 | 2. 提示词与结构化输出 | java1234 7～9，Advisor 先理解在请求前后做什么，不要求第一遍读源码 | 在正式研究梳理功能中修改一段提示词或输出校验，区分模型生成与程序验证；结合主项目本阶段的版本与代码验证 |
@@ -195,11 +195,11 @@ java1234 标题中的“2027”不是录制日期；[原作者公开文章](http
 | 5. 系统报告检索 | java1234 12～14；由 AI 带学报告处理、检索和引用 | 提前验证中文报告解析与检索；正式接系统维护、脚本导入的报告库，核对段落引用和更新／移除。课程上传案例只用于理解资料处理，不新增普通用户上传功能 |
 | 6. MCP 实践 | java1234 15；由 AI 先核对当前 SDK 与依赖，再带学客户端／服务端 | 一个客户端真实发现并调用受控工具，说明 MCP 与 Tool Calling 的关系；再按需要学习编排 |
 
-这张表是教师选材与逐段推进的地图，不要求学生先看完全部章节再动手。尚硅谷与黑马旧课的可用原理保留在研究判断中；以后若需慢讲材料，由 AI 指定具体章节，不能仅说“按需补课”。
+这张表只说明课程素材可以解释哪些项目问题，不规定当前授课顺序或重新观看要求。尚硅谷与黑马旧课的可用原理保留在研究判断中；以后若需慢讲材料，由 AI 指定具体章节，不能仅说“按需补课”。
 
 学习章节与开发验收分开：初次研究梳理是 Java 固定读取资料后的整理；追问才检验模型按需选择工具。当前 `StockResearchLifecycleService.timeline` 每批约 20 条且可以跨周期，正式工具需核对选定范围，不能将首批页面内容当作整周期资料。模型循环的自造样本已有实现，但尚未调用正式业务 Service；本轮未新增实现或重跑模型。
 
-一个月可以作为第一段目标安排，当前更合适的核心成果是理解并参与实现一个有权限、引用和失败处理的真实工具闭环，随后按个人表现推进会话和报告检索。完整 V2 的 RAG／MCP 目标继续保留；不以固定四周承诺完成全部主题、掌握多 Agent 或达到招聘要求。Java 骨架练习与既有数据库／持久化学习并行，安全、用量和坏例子检查从第一次调用起穿插进行。
+当时对一个月安排的判断：第一段成果宜为理解并参与实现一个有权限、引用和失败处理的真实工具闭环，再按个人表现推进会话和报告检索；不以固定四周承诺完成全部主题、掌握多 Agent 或达到招聘要求。完整 V2 的 RAG／MCP 目标、Java 并行练习及当前授课顺序由学习地图维护。
 
 ### 6.3 课程版本与招聘说法的复核
 
@@ -212,7 +212,7 @@ java1234 标题中的“2027”不是录制日期；[原作者公开文章](http
 | [2.0.1 发布记录](https://github.com/spring-projects/spring-ai/releases/tag/v2.0.1)含工具调用限制、流式取消／循环状态、PDF 与向量检索等修复 | SSE 和 RAG 主原理仍可学，结束、取消、解析与检索效果要按实际版本验证 | 按当前稳定 API 实践，并验证项目失败场景，不按版本标题推断效果 |
 | [2.0.x 官方兼容说明](https://docs.spring.io/spring-ai/reference/getting-started.html)对应 Boot4.0／4.1，当时工程是 Boot3.2.0 | 主项目依赖有兼容改造成本；升级 Boot 与采用微服务是两项不同选择 | 当时先隔离验证框架，该轮没有升级；当前采用状态只见技术栈 |
 
-选课结论：概念课可以继续，正式代码需要补现行 API；若找到确实展示 2.0 正式版 BOM、当前工具循环和 MCP API 的近期材料，可减少迁移负担。不能以“2026／2027 最新”标题或上传日期替代这些证据。本轮未取得精确完整课程源码，不承诺逐行照搬可运行，也不把旧课整体判为作废。
+当时选课判断：已有概念材料仍可用于理解，正式代码需要补该轮核查的 API；若找到确实展示 2.0 正式版 BOM、工具循环和 MCP API 的近期材料，可减少迁移负担。不能以“2026／2027 最新”标题或上传日期替代这些证据。当时未取得精确完整课程源码，不承诺逐行照搬可运行，也不把旧课整体判为作废；当前是否继续观看沿学习地图决定。
 
 - 2026-10-09 核查当时主工程为 Java17、Boot3.2.0、MyBatis-Plus3.5.5，未引入 Spring AI；后续实际迁移只见 [技术栈](../architecture/technology-stack.md#1-后端与数据)。核查时 [Spring AI 官方发布列表](https://github.com/spring-projects/spring-ai/releases) 将 2.0.1 标为最新稳定版，2.1.0-M1 为预发布；[官方兼容说明](https://docs.spring.io/spring-ai/reference/getting-started.html) 的 2.0.x 对应 Boot4.0／4.1。正式集成继续沿技术栈中的隔离兼容验证，不因跟课升级主项目。
 - [Boot3.5.16 官方说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 已宣布 3.5.x 开源支持结束。旧版本可以匹配课程练习，但不能自动作为本项目长期目标；[MyBatis-Plus 官方安装说明](https://baomidou.com/getting-started/install/) 的 Boot4 starter 自 3.5.13 起提供，当时的 3.5.5 需另验迁移，当前采用状态沿技术栈。
@@ -224,7 +224,7 @@ java1234 标题中的“2027”不是录制日期；[原作者公开文章](http
 
 ### 6.4 LangChain 分支与课程时效
 
-LangChain 是另一条框架路线，值得了解，但不作为本学期 Java 主项目与开始投 Java／接受 Java 的 Agent 实习的必修依赖。正式学习时机由目标岗位明确要求熟练 Python／LangChain、决定承担 Python Agent 服务或经验证确实需要某项 Python 库触发；“主流”本身不足以要求同时学两套。具体学期顺序与投递准备检查只见 [实习准备与阶段关系](roadmap.md#实习准备与阶段关系)。选择 Python Agent 应用方向时，需要补真实 Python 方法／API 和工程能力；Java＋Python 服务还需处理授权边界、超时与部署。本项目当前推荐学一种 Java 框架；LangChain4j 是可验证的 Java 替代，最新 Boot starter 同样有版本门槛，不能直接承诺兼容现有 3.2。语言和职责的解释只见上方入门材料。
+LangChain 是另一条框架路线，值得了解，但不作为本学期 Java 主项目与开始投 Java／接受 Java 的 Agent 实习的必修依赖。正式学习时机由目标岗位明确要求熟练 Python／LangChain、决定承担 Python Agent 服务或经验证确实需要某项 Python 库触发；“主流”本身不足以要求同时学两套。具体学期顺序与投递准备检查只见 [实习准备与阶段关系](roadmap.md#实习准备与阶段关系)。选择 Python Agent 应用方向时，需要补真实 Python 方法／API 和工程能力；Java＋Python 服务还需处理授权边界、超时与部署。本项目当前推荐学一种 Java 框架；LangChain4j 是可验证的 Java 替代，其 starter 仍有版本门槛，兼容性须按当前技术栈另验，不沿用调研当时 Boot 3.2 的判断。语言和职责的解释只见上方入门材料。
 
 | 主办者原始课程 | 核实内容与边界 | 使用时机 |
 | --- | --- | --- |
@@ -235,3 +235,82 @@ LangChain 是另一条框架路线，值得了解，但不作为本学期 Java �
 另核实 [黑马 2026 LangChain＋LangGraph](https://www.bilibili.com/video/BV178w1z7EHQ/)发布于 2026-03-20，但本轮可见公开视频目录仅 28 集，重点为工具、记忆、LangSmith 与 AI 私厨，不能凭标题证明已经完整公开 Graph／RAG／系统评测课程。后续选择时先核对实际可读目录。
 
 官方 [LangChain 当前入口](https://docs.langchain.com/oss/python/langchain/overview)为 create_agent；[v1 迁移指南](https://docs.langchain.com/oss/python/migrate/langchain-v1)将旧 Chain 等移至 langchain-classic。课程若主要围绕旧 LLMChain／AgentExecutor 等，应明确旧 API 基线，不能装最新包盲跑。选课同时核对原作者、实际发布时间、语言／前置、框架基线和目录；新上传或新标题不等于重录过当前 API，近期视频也可能需要迁移。
+
+## 7. 2026-10-12 Java 后端教学范围复核
+
+本轮重新读取用户提供的三个官方岗位，并补一个九月发布的企业官方后端实习样本。以下是能力比较，不是正在招聘的岗位清单；页面可读或有投递按钮不证明岗位仍开放。第 1／5 节的面经和工程实践仍保留为当时证据，本轮没有将其重新标成最新样本。
+
+### 7.1 官方岗位与读取边界
+
+| 官方岗位 | 页面日期／本轮读取状态 | 一般要求与优先条件 | 对教学范围的作用 |
+| --- | --- | --- | --- |
+| [海康睿影 Java 实习](https://talent.hikvision.com/home/socity/position?postId=9BE3D2BA90CC2E6E4C8AD09E0A45FACB) | 2026-07-30 发布，正文可读；入口属于社会招聘，岗位标题明确为实习 | Java／面向对象、Boot、MySQL／SQL、Redis、MQ 概念、Tomcat、文档和项目经验；微服务／分布式概念列优先 | 请求容器、基础中间件与真实业务解释不可漏；不用优先项把实习范围扩大为微服务平台 |
+| [海尔 Java 实习](https://maker.haier.net/client/practicemobile/jobdetail/id/10001632) | 2026-06-29 发布，正文明确已过期；2027 届、出勤与时长需单独核对 | Java／面向对象、数据结构算法、数据库基础、开发测试和协作；框架、Linux、前端、开源等列加分 | 算法基础并行，框架和工程工具服务实际开发，不把加分项统称硬门槛 |
+| [美图 Go／Java 后端暑期实习](https://hr.meitu.com/jobCampus/67ec47a2-7f1c-42b6-9c63-5f6515ac9520) | 本轮官方全文已成功读取，该地址重定向至用户原 `/en/` 链接；未见发布日期，描述为 2026 暑期、实习 5 个月以上 | Java 分支含 Boot／Cloud、多线程／JVM、MySQL／Redis／SQL 优化、Kafka 概念、Linux／Git及 AI 开发基础；高并发／分布式／Docker、业务 Agent 和完整项目列加分 | 补 Linux 与 MQ 概念，保留并发／JVM／SQL；暑期样本不写成十月新岗位，Cloud 不因此成为独立必修 |
+| [TNG Digital 后端实习](https://www.tngdigital.com.cn/tngd_career/) | 页面日期 2026-09-24，官方全文可读；条件写 2026 届、每周至少 4 天、至少 4 个月 | Java／集合／异常、真实 Boot 项目、SQL／join、Git／Linux、算法及 JVM／线程／网络概念；Redis／MQ、分布式／幂等／限流、监控、模式与 SQL 优化列加分 | 支持基础、独立小模块、自测与排错共同验收；此岗位资格不能推为所有在校生的统一条件 |
+
+海康另一个 [软件产品 Java 实习](https://talent.hikvision.com/home/socity/position?postId=3DBC4346A3391150639BCB4895723F64) 的官方搜索正文可读、直接打开偶发超时，页面日期为 2026-06-04，涉及 IO、线程、集合、设计模式、MVC／MyBatis 和测试部署；只作补充，不称近期新发布岗位。
+
+### 7.2 原始目标、官方机制与范围修订
+
+与用户原始清单对照，原九块列法漏写了 Queue／Deque、NIO、ThreadLocal、线程池参数／队列／拒绝策略、JVM 对象创建与基础排查、Interceptor、OAuth2 思想、动态 SQL／N+1、分页／批量／慢 SQL、TCP／DNS、Linux 及用户态／内核态。它们补入已有专题；不增加课程数量，不删除原始文字。尚未采用的机制标为知识准备，MQ 的实际实践与更完整观测／交付目标继续按阶段进入。
+
+官方机制补核支持以下边界：
+
+- [JDK 17 ThreadLocal](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/ThreadLocal.html) 与 [ThreadPoolExecutor](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.html)：线程本地值、清理、线程复用以及队列／饱和／拒绝属于基础使用问题，不要求读 AQS 源码。
+- [Spring MVC DispatcherServlet](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet.html) 与 [Security Servlet 架构](https://docs.spring.io/spring-security/reference/servlet/architecture.html)：容器、过滤器链和前端控制器职责不同；Filter 可提前结束请求，不能假定每个请求都经过 Controller 或全局 MVC 异常处理。
+- [RFC 9110 幂等语义](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2)：关注重复请求的预期服务端效果，返回值可以不同；是否可安全重试仍须结合实际接口和业务。
+- [Redis 锁模式](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/) 与 [RabbitMQ 消息确认](https://www.rabbitmq.com/tutorials/tutorial-two-java)：锁所有权与失效、消息确认／重投递和消费幂等需要解释；本项目单 Redis 锁不称 Redlock，了解 MQ 不称已接入。
+
+当前采用版本已由主 POM、starter／BOM 与业务代码重新只读核对，集中见 [技术栈](../architecture/technology-stack.md)，不在调研记录复制版本快照。案例需区分 dev SDK／prod CLI、池化 Web DataSource／目录命令的直接 DataSource、DTO 校验异常／其他请求绑定异常，以及局部幂等／全局幂等键。
+
+结论：保留九块主线、并行算法与操作系统，补齐上述基础；范围、深度及四项验收只在 [教学范围](roadmap.md#java-后端教学范围) 维护。Cookie／Session／JWT 原理归安全，Profile／自动配置归 Spring，JSON 概念归 Java 基础，Jackson 请求转换归 Web；其他专题用实际链路和引用承接，避免重复教学。既有进度继续沿 status，本轮文档审计不产生个人掌握或新业务验收证据。
+
+## 8. 2026-10-12 Java 与 Agent 岗位及教学地图再评估
+
+用户进一步明确要评估教学地图本身。本轮取得 11 个有近 90 天公开发布字段的官方完整职位：Java／后端 6 个、Agent／AI 应用 5 个，覆盖实习、应届、头部与行业企业；不继续用第 7 节的过期或暑期样本替代近期主证据。读取日统一为 2026-10-12（中国标准时间），这是小样本比较，不能计算市场占比或保证投递成功。
+
+### 8.1 完整官方正文、日期与资格
+
+动态官网在普通网页抓取时可能只有页面框架。本轮通过企业招聘页面自身的公开只读接口取得完整职位正文，区分要求、优先项和职责。字节时间字段为 Unix 毫秒，换算成 +08:00；北森日期未附时区，按官网显示记录。以下“发布”是当前公开字段，不证明历史首次发布或从未重新上架。
+
+| Java／后端岗位 | 官方发布字段与资格 | 任职要求及需要保留的区别 |
+| --- | --- | --- |
+| [字节 Seed 后端实习](https://jobs.bytedance.com/campus/position/7675681181492807941/detail) | 2026-08-19 18:04:08；深圳，本科及以上在读、日常实习 | Go／Python／Java／C/C++ 至少一种，Web 后端、数据库／缓存、网络与分布式基础，代码质量与动手验证；AI／开源为加分。高并发、容灾等是职责，不能倒推为已独立达到同规模架构要求 |
+| [字节番茄小说／红果短剧／番茄畅听后端实习](https://jobs.bytedance.com/campus/position/7677434632173832453/detail) | 2026-08-24 11:28:41；北京，本科及以上计算机在读，每周至少 4 天、5 个月 | Java 等至少一种，数据结构／算法／操作系统与业务抽象；系统调优、制定代码／测试规范属于职责。具体到岗要求优先于通用实习介绍的 3 个月 |
+| [捷顺 Java 应届](https://jieshun.zhiye.com/campus/jobs?jobAdId=64fd1bd0-5cab-4bcc-9fe0-05e06f25780b) | 2026-08-25 17:56:15；本科及以上、校园全职 | Java 基础、了解 JVM、学习过 Boot／Cloud／MyBatis；MySQL／Redis／RabbitMQ／Kafka 中至少两种；Maven／Git 等。项目与竞赛优先，不要求四种中间件全部熟练 |
+| [金证 2027 Java 应届](https://szkingdom1.zhiye.com/campus/jobs?jobAdId=ed0ea4c2-dc9c-4bbe-adc6-08df1122a574) | 2026-08-13 15:53:08；本科及以上、2027 应届 | Spring／Dubbo／Cloud 一种或类似技术，明确要求熟悉 JS／AS／AJAX／HTML5／CSS 等前端技术，前后端联调、DNS／HTTP、沟通与短期出差适应；金融实习优先，职责包含实施部署 |
+| [金证 2028 Java 实习](https://szkingdom1.zhiye.com/campus/jobs?jobAdId=afff0ebe-e806-49b8-b2dc-f9487550fb25) | 2026-08-13 15:53:08；本科及以上、2028 届在校生 | 框架、联调与网络要求类似上条，同样要求熟悉 JS／AS／AJAX／HTML5／CSS 等前端技术；金融经验、6 个月及以上实习列优先。毕业届别是独立资格，不能默认当前用户可投 |
+| [思必驰 2027 Java 应届](https://aispeech.zhiye.com/campus/jobs?jobAdId=be29e279-3393-416d-9cf5-695feb2e1271) | 2026-08-28 19:23:30；2027 届本科及以上 | 扎实编程、Java／Python／Go／JS 至少一种，数据结构、网络和工程实践；明确要求主动用 AI 工具完成研发闭环、判断产出质量。语音／音视频／SIP 等项目列优先 |
+
+| Agent／AI 应用岗位 | 官方发布字段、资格与性质 | 语言、技术要求与优先条件 |
+| --- | --- | --- |
+| [字节 Agent 全栈实习：数据平台](https://jobs.bytedance.com/campus/position/7673799813086955829/detail) | 2026-08-14 16:23:25；本科及以上在读，每周 4 天、至少 3 个月；官方分类为前端 | Python／Java／Go／Node.js 至少一种服务端语言，前端、HTTP 与接口闭环；模型 API、Agent 框架、Prompt／评测动手为优先。接受 Java，但不能称纯后端岗位 |
+| [思必驰 2027 Agent 开发](https://aispeech.zhiye.com/campus/jobs?jobAdId=55edb0b1-0a32-435f-951c-4bb5bfae8db3) | 2026-08-28 19:29:38；本科及以上应届，应用与平台后端 | Java／Python／Go／TS 至少一种，熟悉一种 Agent 框架、微服务／REST，了解流式与 LLM；ReAct、分布式或 RAG 项目优先。会话、权限、审计、MCP、检索与失败恢复写在职责 |
+| [联通数智 AI 平台 J10886](https://cudataintelligence.zhiye.com/campus/jobs?jobAdId=3aded2a7-8e7f-4275-85e4-70d955428afe) | 2026-08-31 20:29:29；硕士及以上应届 | Python／Java／Go 至少一种，Spring Boot 等至少一框架，数据库、REST、Redis／Linux／Git／Docker基础，了解 Vue／React 及 ElementPlus／AntDesign 等前端框架／组件库；SSE／异步经验优先，Agent／RAG 项目加分。语言可用 Java，学历仍有独立门槛 |
+| [神州信息 2027 AI Agent J22512](https://dcits.zhiye.com/campus/jobs?jobAdId=2f60efee-ebcb-461c-8a73-8162b24a032c) | 2026-08-20 10:54:17；应届硕士、金融应用开发 | 明确要求熟练 Python、一种 AI 框架、Function Calling／ReAct／RAG／向量库／Prompt；微调或评测经历优先。应用岗也可能有 Python 硬要求 |
+| [联通数智智能体应用 J10885](https://cudataintelligence.zhiye.com/campus/jobs?jobAdId=ab177523-718c-46b5-9902-1b119b32f768) | 2026-08-31 20:29:29；硕士及以上应届 | 明确要求 Python、LLM 基本原理、至少一种应用技术及 MCP／工具认知；框架使用与项目为加分，职责含日志、状态、异常和评测 |
+
+公开接口的在线状态为字节 `channel_online_status=1`、北森 `Status=1`，表示本轮数据可查询；未登录或提交简历，未核 HC。北森 `EndTime=2222-02-02` 是占位值，不作为真实截止时间。部分详情接口省略显示字段会返回 `PostDate=0001-01-01`，上述日期取完整列表的 `PostDate`，并核对 `ChangeDate`、GUID、标题和正文。字节 Seed 岗在聚合页仍叫“飞书”，本记录采用当前官方标题；金证另一个标题带 2027 的实习岗实际发布于 2025-08-05，未列入近期主样本。
+
+复查来源：字节 [Seed 完整接口](https://jobs.bytedance.com/api/v1/job/posts/7675681181492807941)、[番茄完整接口](https://jobs.bytedance.com/api/v1/job/posts/7677434632173832453)、[Agent 完整接口](https://jobs.bytedance.com/api/v1/job/posts/7673799813086955829)；北森各官网用公开 `POST /api/Jobad/GetJobAdPageList` 查询列表，按职位 GUID 与官网 `BSGlobal.PortalId` 读取 `GET /api/JobAd/GetJobAdInfo`。对应 [思必驰 Agent 详情](https://aispeech.zhiye.com/api/JobAd/GetJobAdInfo?jobAdId=55edb0b1-0a32-435f-951c-4bb5bfae8db3&category=2&portalId=ba4fe488-9d6c-4a0d-bd81-2d62ec0cff63)、[捷顺详情](https://jieshun.zhiye.com/api/JobAd/GetJobAdInfo?jobAdId=64fd1bd0-5cab-4bcc-9fe0-05e06f25780b&category=2&portalId=8101428c-ac8d-4ba6-bf3c-84c38800de5a)、[金证应届详情](https://szkingdom1.zhiye.com/api/JobAd/GetJobAdInfo?jobAdId=ed0ea4c2-dc9c-4bbe-adc6-08df1122a574&category=2&portalId=7f04bfd9-a96f-4878-a66e-b76fe8a65fce)、[神州详情](https://dcits.zhiye.com/api/JobAd/GetJobAdInfo?jobAdId=2f60efee-ebcb-461c-8a73-8162b24a032c&category=2&portalId=56a70213-bcfb-4cc6-bb56-e0798d036d11)、[联通 AI 平台详情](https://cudataintelligence.zhiye.com/api/JobAd/GetJobAdInfo?jobAdId=3aded2a7-8e7f-4275-85e4-70d955428afe&category=2&portalId=6f158f01-4a80-488b-b0ff-d60fe0085dbc)，均是招聘页面自身的公开读取入口。
+
+补充索引只用于边界比较：小红书 [Agent 引擎实习](https://job.xiaohongshu.com/campus/position/21231) 官方域名索引明确接受 Java，发布日期未公开；[社区 Agent 应届](https://job.xiaohongshu.com/campus/position/22018) 未写语言且混合研究／工程；[REDstar AI Coding](https://job.xiaohongshu.com/campus/position/21828) 属顶尖人才计划。它们没有列入上面的近 90 天完整正文计数，也不能用标题推导全部语言或算法要求。
+
+### 8.2 面试与工程实践交叉核对
+
+本轮补查 [9.10 爱学习 Java 实习自述](https://www.nowcoder.com/feed/main/detail/248055ff78ba49c5ad5dfa1b3ef822dd) 与 [9.24 九方 Agent 面试自述](https://www.nowcoder.com/feed/main/detail/92efed84eb68493d82132e03b7e43ae0)：搜索索引可见 Java 并发／线程池／Boot／MQ，以及检索、MCP 权限与 Java 基础的追问，原页未再次取得可读正文。只作追问线索，日期与经历未独立验证，不冒充官方要求或完整题库；第 5 节已访问的旧原文保留当时边界。
+
+工程机制重新读取 [美团 2026-09-10 Agent 评测全览](https://tech.meituan.com/2026/09/10/Agent-Evaluation-White-Paper-01.html) 与 [Anthropic 2026-01-09 Agent evals 实践](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)。前者为近期企业实践，后者是仍适用的原始工程说明，不称十月新发布。二者支持用任务、轨迹、结果、成本和失败比较判断效果，不能用一次回答成功代替质量验证；它们不是学生必须复制的完整生产平台。
+
+### 8.3 教学地图判断与实际调整
+
+总体判断：九块 Java 与八组 Agent 的覆盖合理，能对应本轮应用和后端样本；缺口主要在优先级、深度与个人产出。没有依据把多 Agent、RL、训练模型、高级 GC、完整云原生平台或多个框架一并提高为当前共同门槛。
+
+落实的调整包括：九块按知识归属而非线性重学；共同底座与目标岗位额外条件分开；专题级四项标准区分核心实践和原理理解；AI 辅助研发加入质量判断闭环；Agent 单元维持模型／工具／会话／检索主线；MQ、Redisson、分布式、CI／观测等原始目标补进入条件和产出；评测和权限从首个可核对例子贯穿。RAG 正式接同一助手、检索／重排比较及 MCP 真实发现调用仍为已确认必做，不被样本里的“加分”降级。
+
+岗位差距须诚实表达：本轮没有统一点名 Spring AI，通用链路能力可迁移，指定另一框架的 API 实践仍须另验；思必驰 Agent 的微服务要求不能由模块化单体冒充；金证两条岗位的前端“熟悉”与联通 AI 平台的前端“了解”分别核对，不把前后端数据流理解当作满足前端开发要求；明确 Python／硕士／研究或顶尖计划的岗位需要独立核对。实际依赖、实现／功能证据、学习安排和本人表现分别由技术栈、specs、roadmap、status 维护。文档同步修正已正式接入框架／资料首段的状态和 V1 非阻塞尾项并行条件，不产生新的业务或个人验收证据。
+
+同日对齐复审再次读取上述 11 个官方岗位的完整正文与发布字段，日期及语言／学历分流与记录一致；补明前端条件并删除番茄摘要中正文未支持的“上线”表述。跨文档修正了入口的并行口径、历史课程选材与当前安排的边界、当前本人任务的唯一落点、周期资料覆盖摘要、DEFAULT／显式 RR 的面试适用范围及协作成果的表达。原始用户清单与 Git 基线逐字一致；本次文档复核和修正未新增业务实现或个人掌握证据。
+
+当前执行正文只见 [岗位分流与优先级](roadmap.md#岗位分流与学习优先级)、[Java 教学范围](roadmap.md#java-后端教学范围)、[V2 学习地图](roadmap.md#v2-功能与学习地图)；本节保存依据和此次调整理由，不再存第二套课表。

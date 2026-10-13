@@ -13,6 +13,7 @@ Controller 接请求，Service 处理业务，Mapper 访问数据库。MyBatis �
 - `#{}` 生成占位符并绑定参数值；`${}` 直接替换文本，不可信输入会改变 SQL 结构。
 - 列名、表名和排序方向不能用参数占位符绑定，动态选择须由后端白名单决定。
 - 结果映射将列值转换为对象属性；名称对应可用自动映射、别名或显式 `resultMap`，类型转换由 TypeHandler 支持。
+- 使用 Mapper 接口时，方法返回类型决定单条或列表接收；`resultType` 指定每一行转换成什么对象，SQL 和数据决定实际行数。`List<OpinionRow>` 与 `OpinionRow` 两种返回声明的每行类型都可为同一个 OpinionRow；XML 写该类完整名称，不写 List。列表无记录返回空列表，单条无记录通常返回 null，单条查询得到多条默认报错。OpinionRow 是教学设定，不指代未声明的现有项目类。
 - Entity 表示表记录；多表查询可用专门结果对象；Service 再组装 ResponseVO，避免把内部字段直接暴露。
 - 查询对象修改后必须显式更新。MyBatis-Plus 的字段更新策略可能忽略 null，不能把“未提交字段”误当“要求清空字段”；归档恢复案例见 [DB-04](../career/interview/03-database-persistence.md#db-04为什么对象字段设为-null数据库列却可能没有被清空)。
 

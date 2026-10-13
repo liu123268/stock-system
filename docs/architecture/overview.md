@@ -1,6 +1,6 @@
 # 系统架构总览
 
-更新时间：2026-09-18
+更新时间：2026-10-12
 
 ## 1. 架构目标
 
@@ -13,7 +13,7 @@ Browser
   │
   ▼
 Vue 3 + TypeScript + Vite
-  │  /api development proxy
+  │  /api：开发 Vite 代理；生产 Nginx 反向代理
   ▼
 Spring Boot REST API
   │
@@ -22,13 +22,15 @@ Spring Boot REST API
   └─ 行情适配（目录、Mock、Longbridge 报价、K 线与分时）
        ├─ Redis 共享缓存（启用且命中时直接返回）
        └─ 未命中／关闭／故障 → 进程内短缓存 → 受控回源
-            └─ Spring Boot 管理的 `longbridge serve` 子进程
+            └─ LongbridgeUpstreamGateway
+                 ├─ dev：官方 Java SDK / 一个 QuoteContext
+                 └─ prod：受管理的 `longbridge serve` 子进程
   │
   ▼
 MySQL 8
 ```
 
-生产交付阶段计划使用 Nginx 统一托管前端并反向代理 `/api`，使用 Docker Compose 组织必要服务；这些内容尚未实现，不能写成当前事实。
+生产已由 Nginx 托管前端构建并反向代理 `/api`，Docker Compose 组织必要服务；结构与操作见 [部署说明](../engineering/deployment.md)，发布日期、验证和未完成边界只见 [当前状态](../project/status.md)，不由架构图推断全部运维能力已经完成。
 
 开发／测试端口只在 [开发环境](../engineering/development.md) 维护。
 
@@ -57,7 +59,7 @@ MySQL 8
 
 ## 6. 外部行情边界
 
-业务 Service 分别依赖项目自己的 `MarketDataProvider`、`MarketCandlestickProvider` 和 `MarketIntradayProvider`，供应商 DTO 不进入研究事务或 Controller。开发默认由 MySQL 搜索标准股票身份，再通过 Spring Boot 管理的官方 `longbridge serve` 子进程批量补充真实价格，并为已加入空间的单只股票按需读取 K 线或分时；测试继续使用明确的 Mock。当前接口和调用位置见 [SPEC-002 设计](../specs/002-stock-research/design.md)。
+业务 Service 分别依赖项目自己的 `MarketDataProvider`、`MarketCandlestickProvider` 和 `MarketIntradayProvider`，供应商 DTO 不进入研究事务或 Controller。搜索先由 MySQL 取得标准股票身份，再批量补充报价；统一上游接口在 dev 使用官方 Java SDK，在 prod 保留受管理的 CLI sidecar，测试默认 Mock。有效空间成员可按可信标的只读查看报价、K 线或分时，无需先创建共享关注或研究记录；只有明确提交加入／重新加入才进入研究写入。当前接口和调用位置见 [SPEC-002 设计](../specs/002-stock-research/design.md)。
 
 当前行情网关在进程内短缓存外增加了可关闭的 Redis 共享缓存，并保留批量请求、并发与速率上限；闭环证据统一见 SPEC-002 tasks。具体请求合并、TTL、故障降级和已知差距见 [缓存设计](../specs/002-stock-research/design.md#46-redis-共享行情缓存与访问保护)，不能据此宣称已解决所有跨实例并发或容量问题。K 线和分时不随搜索候选或共享列表预取，只有当前展开面板按需读取，分时刷新生命周期见 [前端数据流](../engineering/frontend.md#十二按需-k-线与分时图的数据流)。
 

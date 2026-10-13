@@ -15,7 +15,7 @@
 7. 区分项目真实使用、面试基础知识和暂时没有真实场景的高级能力，能够形成准确的简历描述。
 
 教学按以下顺序推进：整体系统地图；Redis 基础模型；项目文件关系；一次命中与未命中；Key、JSON 与 TTL；并发和锁；穿透、击穿与雪崩；故障降级；持久化、淘汰和部署边界；测试、简历与面试复述。没有建立前一层心智模型时，不跳到后续代码细节。
-掌握以能自己解释概念、定位项目代码、推演正常和故障流程、讲出方案边界为准；代码存在不等于学习者已经掌握。
+本专题按 [统一专题完成标准](../project/roadmap.md#专题完成标准) 验收；上面的目标用于组织复习与练习，不另设一套较弱的掌握标准。
 
 ## 2. 第一张整体地图
 
@@ -66,8 +66,9 @@ WorkspaceStockController
        -> MarketSharedCache
             |-> RedisMarketSharedCache（Redis 开启）
             `-> NoOpMarketSharedCache（Redis 关闭）
-       -> LongbridgeJsonRpcClient（未命中或降级时回源）
-  -> Longbridge CLI / OpenAPI
+       -> LongbridgeUpstreamGateway（未命中或降级时回源）
+            |-> dev：LongbridgeSdkClient -> Java SDK / OpenAPI
+            `-> prod：LongbridgeJsonRpcClient -> CLI / OpenAPI
 ```
 
 各文件只承担一个主要问题：
@@ -84,7 +85,8 @@ WorkspaceStockController
 | `MarketCacheTtl` | 给基础 TTL 增加随机抖动 |
 | `MarketCacheLock` | 表示获得锁、发生竞争或 Redis 不可用三种结果 |
 | `CachingLongbridgeMarketGateway` | 编排读取缓存、请求合并、抢锁、回源、写缓存和降级的完整流程 |
-| `LongbridgeJsonRpcClient` | 真正与 Longbridge sidecar 通信，并保留进程内短缓存和访问限制 |
+| `LongbridgeUpstreamGateway` | 隔离 SDK／CLI 传输，缓存网关依赖这个统一接口 |
+| `LongbridgeSdkClient`／`LongbridgeJsonRpcClient` | 分别访问官方 SDK／CLI sidecar，保留进程内短缓存与各自的访问限制；实现与环境分工见 [ADR-002](../architecture/decisions/ADR-002-longbridge-cli-sidecar.md) |
 
 ### 3.1 用当天分时串起一次真实请求
 
@@ -92,7 +94,7 @@ WorkspaceStockController
 
 1. HTTP 请求 → [`WorkspaceStockController.intraday`](../../src/main/java/com/stock/system/stock/controller/WorkspaceStockController.java) → [`StockIntradayService.get`](../../src/main/java/com/stock/system/stock/service/StockIntradayService.java)（校验空间、查股票）→ [`StockMarketSeriesService.getIntraday`](../../src/main/java/com/stock/system/stock/service/StockMarketSeriesService.java)（确定日期）→ [`LongbridgeMarketIntradayProvider`](../../src/main/java/com/stock/system/stock/market/LongbridgeMarketIntradayProvider.java)（选择当天分支）→ [`CachingLongbridgeMarketGateway`](../../src/main/java/com/stock/system/stock/market/CachingLongbridgeMarketGateway.java)。
 2. 网关用 `MarketCacheKeys.intraday` 生成 Key，`read` 经 `MarketSharedCache`、`RedisMarketSharedCache` 发起 `GET`。命中则解析 `MarketCacheEnvelope` 的来源与分时点列表；Key 不存在时得到 `Optional.empty()`，不是异常。`json` 只是 `Optional<String>` 变量名；连接故障也返回空，但会记录故障并冷却，单看返回值分不出两者。
-3. 未命中：`inFlight` 合并进程内请求 → Redis 锁协调跨进程加载 → 二次检查 → `LongbridgeJsonRpcClient`（可能命中其短缓存）→ 非空结果带 TTL 写入 Redis 并直接返回 → 安全解锁。锁竞争与超时见 [5.2](#52-本项目如何减轻热点-key-击穿)，解锁见 [4.2](#42-为什么解锁必须核对-owner)。
+3. 未命中：`inFlight` 合并进程内请求 → Redis 锁协调跨进程加载 → 二次检查 → `LongbridgeUpstreamGateway` 对应的 SDK／CLI 客户端（可能命中其短缓存）→ 非空结果带 TTL 写入 Redis 并直接返回 → 安全解锁。锁竞争与超时见 [5.2](#52-本项目如何减轻热点-key-击穿)，解锁见 [4.2](#42-为什么解锁必须核对-owner)。
 
 边界：整个分时响应还可能读取交易日和前收盘价，并非只访问这一个 Key；Redis 未命中也不等于一定新发 Longbridge 网络请求。
 
@@ -158,7 +160,7 @@ TTL 是异常兜底：如果 Java 进程崩溃、机器断电或执行没有机�
 
 雪崩既可能是许多 Key 在同一秒过期，也可能是 Redis 故障后所有读取都相当于未命中。后果不是某一个 Key 多调用几次，而是报价、K 线、分时等大量不同请求一起压到 Longbridge，继而占满 Java 请求、延迟升高、触发上游限制。
 
-项目使用不同类型的基础 TTL，并给实际 TTL 加随机抖动，降低大批 Key 同时到期的概率；Redis 故障后使用冷却时间，避免每个业务请求都重复等待一次 Redis 连接失败；Longbridge 客户端还限制最大并发和最小请求间隔。这些属于单机/小规模项目的合理保护，但不是生产级高可用方案：当前仍缺少按接口或用户的全局限流、完整熔断与 Redis Sentinel/Cluster 部署验证。是否继续增加这些能力，应由真实压力、监控指标和部署规模决定。
+项目使用不同类型的基础 TTL，并给实际 TTL 加随机抖动，降低大批 Key 同时到期的概率；Redis 故障后使用冷却时间，避免每个业务请求都重复等待一次 Redis 连接失败；上游两条传输均控制请求间隔，生产 CLI 用 Semaphore 限制并发，本地 SDK 用 ReentrantLock 串行；具体约束见 [ADR-002](../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。这些属于单机/小规模项目的合理保护，但不是生产级高可用方案：当前仍缺少按接口或用户的全局限流、完整熔断与 Redis Sentinel/Cluster 部署验证。是否继续增加这些能力，应由真实压力、监控指标和部署规模决定。
 
 ## 6. 缓存一致性：先区分数据源
 
@@ -214,7 +216,7 @@ Redisson 是另一套 Java Redis 客户端库。其 `RLock` 是供 Java 调用�
 
 Redis 主要在内存中提供数据。RDB 记成“快照”：定时把某一时刻的数据整体保存到磁盘；重启可加载最后一份快照，快照之后的变更可能丢失。AOF 记成“追加操作记录”：把修改数据的命令继续写到文件末尾，重启时重放；能恢复到什么程度取决于同步到磁盘的策略，也不是无条件零丢失。两者可组合使用，或都关闭。
 
-当前本机学习实例的启动参数为 `--save "" --appendonly no`，即关闭 RDB 和 AOF。Redis 重启后行情 Key 和锁 Key 都不从磁盘恢复；后续 HTTP 请求读取不到缓存，会沿原有 Longbridge 网关重新获取并写入。Redis 暂时不可用时，Java 的故障冷却跳过 Redis，走旧客户端的进程内缓存或受限回源。MySQL 中的用户、空间和研究事实不依赖 Redis 恢复。开发环境允许这样做，是因为 Redis 当前只保存可重建的行情副本；生产环境的持久化、容量和高可用策略须另外按恢复时间和回源能力验证。
+当前本机学习实例的启动参数为 `--save "" --appendonly no`，即关闭 RDB 和 AOF。Redis 重启后行情 Key 和锁 Key 都不从磁盘恢复；后续 HTTP 请求读取不到缓存，会沿原有 Longbridge 网关重新获取并写入。Redis 暂时不可用时，Java 的故障冷却跳过 Redis，走按环境选择的 SDK／CLI 客户端的进程内缓存或受限回源。MySQL 中的用户、空间和研究事实不依赖 Redis 恢复。开发环境允许这样做，是因为 Redis 当前只保存可重建的行情副本；生产环境的持久化、容量和高可用策略须另外按恢复时间和回源能力验证。
 
 ## 10. TTL 与内存淘汰：两种不同的删除原因
 

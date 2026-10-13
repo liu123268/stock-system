@@ -10,6 +10,7 @@ import com.stock.system.stock.service.StockResearchService;
 import com.stock.system.stock.service.StockCandlestickService;
 import com.stock.system.stock.service.StockIntradayService;
 import com.stock.system.stock.service.StockResearchLifecycleService;
+import com.stock.system.stock.service.StockResearchSourceService;
 import com.stock.system.stock.vo.AddWorkspaceStockResponseVO;
 import com.stock.system.stock.vo.WorkspaceStockListResponseVO;
 import com.stock.system.stock.vo.StockCandlestickSeriesVO;
@@ -18,6 +19,7 @@ import com.stock.system.stock.vo.UpdateAttentionLevelResponseVO;
 import com.stock.system.stock.vo.EndedWorkspaceStockResponseVO;
 import com.stock.system.stock.vo.ResearchCycleStateResponseVO;
 import com.stock.system.stock.vo.ResearchTimelinePageResponseVO;
+import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO;
 import com.stock.system.stock.vo.StockOpinionResponseVO;
 import com.stock.system.stock.vo.WorkspaceStockResearchResponseVO;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,17 +46,20 @@ public class WorkspaceStockController {
     private final StockCandlestickService stockCandlestickService;
     private final StockIntradayService stockIntradayService;
     private final StockResearchLifecycleService lifecycleService;
+    private final StockResearchSourceService sourceService;
 
     public WorkspaceStockController(
             StockResearchService stockResearchService,
             StockCandlestickService stockCandlestickService,
             StockIntradayService stockIntradayService,
-            StockResearchLifecycleService lifecycleService
+            StockResearchLifecycleService lifecycleService,
+            StockResearchSourceService sourceService
     ) {
         this.stockResearchService = stockResearchService;
         this.stockCandlestickService = stockCandlestickService;
         this.stockIntradayService = stockIntradayService;
         this.lifecycleService = lifecycleService;
+        this.sourceService = sourceService;
     }
 
     @PostMapping
@@ -105,6 +110,29 @@ public class WorkspaceStockController {
         return Result.success(lifecycleService.timeline(
                 currentUser.userId(), workspaceId, workspaceStockId,
                 author, stance, type, cursor));
+    }
+
+    @GetMapping("/{workspaceStockId}/research/cycles/{researchCycleId}/sources")
+    public Result<ResearchCycleSourcesResponseVO> researchSources(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId,
+            @PathVariable Long researchCycleId
+    ) {
+        return Result.success(sourceService.readCycle(
+                currentUser.userId(), workspaceId, workspaceStockId, researchCycleId));
+    }
+
+    @GetMapping("/{workspaceStockId}/research/cycles/{researchCycleId}/opinions/{opinionId}")
+    public Result<ResearchCycleSourcesResponseVO.OpinionSource> researchOpinionSource(
+            @AuthenticationPrincipal LoginUser currentUser,
+            @PathVariable Long workspaceId,
+            @PathVariable Long workspaceStockId,
+            @PathVariable Long researchCycleId,
+            @PathVariable Long opinionId
+    ) {
+        return Result.success(sourceService.readOpinion(
+                currentUser.userId(), workspaceId, workspaceStockId, researchCycleId, opinionId));
     }
 
     @PostMapping("/{workspaceStockId}/end")

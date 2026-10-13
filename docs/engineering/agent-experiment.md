@@ -81,7 +81,7 @@ String answer = chatClient.prompt()
         .content();
 ```
 
-`prompt()` 组织本次请求，`system()` 放回答要求，`user()` 放问题与资料，`call().content()` 沿同步路径取得文字结果。业务要先确定有权资料、再调用、最后检查结果；这段调用不会自己查观点或建立 RAG。正式观点读取入口见 [timeline](../../src/main/java/com/stock/system/stock/service/StockResearchLifecycleService.java)，其周期、分页与撤回边界仍沿规格验证。
+`prompt()` 组织本次请求，`system()` 放回答要求，`user()` 放问题与资料，`call().content()` 沿同步路径取得文字结果。`chatClient` 由已配置模型的 Spring AI Builder 创建，`question` 来自当前提问，`material` 来自授权内资料 Service；不会自动读 MySQL。业务要先确定有权资料、再调用、最后检查结果；这段示意不代表正式生成接口已接入，也不会自行建立 RAG。正式输入复用 [周期资料 Service](../../src/main/java/com/stock/system/stock/service/StockResearchSourceService.java)，完整／超限与撤回边界沿规格验收；SQL 接线属于工程实现，不作为当前 Agent 教学主课。
 
 复习按“要解决的问题 → 输入资料从哪来 → 谁执行哪一步 → 输出怎样核对”回忆，再到正式功能里亲手改一处；当前观看进度不作为个人掌握证据，教学交接见 [状态](../project/status.md#求职专题学习交接)。依据：[ChatClient](https://docs.spring.io/spring-ai/reference/api/chatclient.html)、[Memory](https://docs.spring.io/spring-ai/reference/api/chat-memory.html)、[Advisor](https://docs.spring.io/spring-ai/reference/api/advisors.html)、[RAG](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)。
 
@@ -126,6 +126,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-agent-experiment
 
 2026-10-12 已把验证过的兼容修改落到正式项目，版本与采用状态只见 [技术栈](../architecture/technology-stack.md#1-后端与数据)，实际验证只见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。业务 JSON 由 Jackson 3 处理，安全／Flyway 和 MockMvc 测试导包跟随 Boot 4；Mockito 替身改用 Spring 的 MockitoBean／MockitoSpyBean。旧 `findAndRegisterModules` 改为 JsonMapper builder 的模块发现；Mapper 新重载用明确参数类型避免测试编译歧义，原业务断言保留。
 
-默认 `spring.ai.model.chat=none`，所以原系统启动不依赖模型密钥。当前主工程只接入框架，生成接口与用户页面仍待实现；启用模型客户端不会自动让它读取 MySQL 或产生研究回答，也不等于预算、授权和会话机制已经完成。[ResearchAiConfiguration](../../src/main/java/com/stock/system/agent/ResearchAiConfiguration.java) 在启用 DeepSeek 时提供零重试的 RetryTemplate，避免框架在失败后隐式补发。首次请求次数与重试次数的区别、实测故障及修复只见 [BUG-011](bugs/BUG-011-spring-ai-retry-count.md)。
+默认 `spring.ai.model.chat=none`，所以原系统启动不依赖模型密钥。主工程已增加下方第 6 节的固定资料梳理核心，公共生成接口与用户页面仍待实现；启用模型客户端不会自动读取 MySQL，也不等于预算和会话机制已经完成。[ResearchAiConfiguration](../../src/main/java/com/stock/system/agent/ResearchAiConfiguration.java) 在启用 DeepSeek 时提供零重试的 RetryTemplate，避免框架在失败后隐式补发。首次请求次数与重试次数的区别、实测故障及修复只见 [BUG-011](bugs/BUG-011-spring-ai-retry-count.md)。
 
 框架回归位于正式 `src/test` 的 [SpringAiCompatibilityTest](../../src/test/java/com/stock/system/agent/SpringAiCompatibilityTest.java)，回环替身只检查 HTTP 适配、工具配对、结构转换和实际请求次数；手造向量只检查检索组件过滤／删除，不证明中文报告质量。这些是项目测试，不恢复独立教学工程。学习继续沿正式研究梳理的数据路径，版本迁移由 AI 处理，不要求学生先记完库方法。
+
+## 5. 正式业务学习：按周期读取资料
+
+当前源码入口为 [StockResearchSourceService.readCycle](../../src/main/java/com/stock/system/stock/service/StockResearchSourceService.java)，由 [WorkspaceStockController](../../src/main/java/com/stock/system/stock/controller/WorkspaceStockController.java) 调用，返回 [ResearchCycleSourcesResponseVO](../../src/main/java/com/stock/system/stock/vo/ResearchCycleSourcesResponseVO.java)。这个方法是项目自己定义的业务方法，不是 Spring AI API：输入当前用户、空间、空间股票与周期，输出实际读取范围和有效观点原文；暂不调用模型。
+
+`userId` 从认证对象取，不能由请求者填写；`workspaceStockId` 是空间股票关系记录的 ID，不是股票代码或全局 stock.id。WorkspaceService.detail 先检查有效账号和成员关系，解决谁能读该空间；ResearchCycleMapper.selectInWorkspaceStock 再用空间／股票／周期三个条件检查资料归属，解决能读哪个对象。只有成员检查仍可能让用户拿另一个空间的周期 ID 查资料，所以两者必须同时成立。业务异常会中止后续查询。
+
+现有 timeline 每批展示 20 条并允许跨周期，服务于页面浏览；新 readCycle 直接按选定周期统计和查询，服务于资料准备。范围内返回完整正文，超限返回 LIMIT_EXCEEDED 和空正文，不能把页面加载的一批称作整个周期。`readAt`、有效条数、实际读取条数和字符数由 Java／数据库确定；字符限制不等于精确 Token 数。查看原文使用 readOpinion 的新请求，重新校验访问和撤回状态。
+
+StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围和越权；`@Test` 标识一项检查，MockMvc 执行真实 Controller／认证／Service 链路而不额外启动 Web 端口，数据库快照通过测试事务回滚清理。它证明程序边界，不证明模型能正确理解资料，也不证明学生已经会独立写代码。本节按主题提供代码与原理入口，带学围绕完整问题、本人修改和结果验证展开，方式见 [学习方法](../project/roadmap.md#怎样学与完成标准)，具体单元与待巩固点只见 [学习交接](../project/status.md#求职专题学习交接)。模型消息、引用检查及来源重校验已在下方核心接入，子范围和跨连接并发证据仍待补齐；资料首段的历史验证见 [任务第 10 节](../specs/004-research-agent/tasks.md#10-ag-code-003周期资料读取首段2026-10-12)。
+
+## 6. 正式业务学习：从资料到研究梳理结果
+
+主流程看 [ResearchSummaryService.summarize](../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java)，实际模型调用看 [ResearchSummaryModel.generate](../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java)。原来资料 Service 返回有效观点即结束；现在生成核心在它后面组织消息、调用模型、校验结果，并用 revalidate 重新检查当前访问和原来源。公共生成接口、报价、会话和费用门控尚未接入，默认模型关闭。
+
+[ResearchSummaryPrompt](../../src/main/java/com/stock/system/agent/service/ResearchSummaryPrompt.java) 将回答要求放入 system，将本次股票／周期、来源编号、成员显示信息及有效观点放入 user；作者别名 M1／M2 在 Java 内映射，模型不取得账号 ID 或权限参数。只有实际读出的白名单资料进入消息，ChatClient 不自动查数据库。ANSWER_RULE 是本轮本人提出的表达要求经 AI 反馈后的代码落点，提示词版本便于追踪后续比较。
+
+`call().chatResponse()` 同步返回模型文字、结束原因及用量；之后解析为 [ResearchSummary](../../src/main/java/com/stock/system/agent/dto/ResearchSummary.java)。保留元信息是为了识别截断并承接后续用量核对，文字可以解析为对象仍需业务校验。本单元先理解这条主链路，结构化结果各字段和独立修改在后续单元展开。
+
+[ResearchSummaryValidator](../../src/main/java/com/stock/system/agent/service/ResearchSummaryValidator.java) 能拒绝不存在的来源、用别人的记录描述成员、缺少最新观点或用单条记录冒充前后变化。它不能只靠 ID 证明句子的事实意义；即使引用真实，“认为订单可能增长”被写成“订单已经增长”仍然是质量问题，需要对照原文、提示约束与固定问题集核对。时间按任务使用：普通概述可以省日期，比较变化必须保留先后关系，底层输入仍保留真实日期。
+
+生成期间新增观点可返回带读取时间的旧快照并标记有新资料；撤回或权限失效必须阻止交付依赖它的答案，不能只禁用原文按钮。数据库读取与模型网络调用分开，模型耗时期间不占用业务事务。实际组件／数据库验证见 [任务第 11 节](../specs/004-research-agent/tasks.md#11-研究梳理生成核心与首次带学2026-10-13)，内存 HTTP 替身只证明程序链路，不证明真实模型质量；本人结果仍由 status 单独记录。

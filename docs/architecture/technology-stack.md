@@ -18,15 +18,18 @@
 | Java               | 17                   | 已使用             | 后端运行版本，现有测试基于 JDK 17                                      |
 | Spring Boot        | 4.1.1                | 已使用（本地源码） | 完成升级前／副本／正式工程回归及 test JAR HTTP 验证；云端仍为旧发布 |
 | Spring MVC         | Spring Boot 管理     | 已使用             | REST Controller 和统一 JSON API                                        |
-| Spring Security    | Spring Boot 管理     | 已使用             | 无状态认证过滤链、受保护接口和统一 401                                 |
+| Servlet / 内嵌 Tomcat | Spring Boot 管理 | 已使用 | WebMVC starter 带入 Servlet 容器；请求经过过滤器链与 DispatcherServlet，JWT Filter 使用 Jakarta Servlet API |
+| Spring Security    | Spring Boot 管理     | 已使用             | 无状态认证过滤链、角色入口与统一 401／403                              |
 | JWT / JJWT         | 0.12.3               | 已使用             | 24 小时访问 Token，包含用户 ID、用户名和凭据版本；改密后校验版本使旧 Token 失效 |
 | BCrypt             | Spring Security 提供 | 已使用             | 密码摘要和匹配                                                         |
 | Jakarta Validation | Spring Boot 管理     | 已使用             | 注册、登录请求参数校验                                                 |
 | MyBatis-Plus       | 3.5.17，Boot 4 starter | 已使用             | BaseMapper 持久化；当前尚无自定义 SQL XML                              |
+| JDBC / DataSource / HikariCP | Spring Boot 管理 | 已使用 | Mapper 与 JdbcTemplate 经 JDBC 访问数据库；Web 主应用由连接池提供连接，生产池配置见 `application-prod.properties`；目录命令另用 DriverManagerDataSource，不能把全部入口视为池化 |
 | MySQL              | dev 8.0.34；prod 8.4 系列 | 已使用             | 业务关系与约束；云端环境快照见 [部署说明](../engineering/deployment.md#2-当前云端部署)，各库迁移状态见 [状态](../project/status.md) |
 | Flyway             | Spring Boot 管理     | 已使用             | 版本化迁移；环境应用版本只在 [状态](../project/status.md) 保存                          |
 | Maven              | 系统 Maven           | 已使用             | 依赖、测试和构建                                                       |
 | Jackson            | 3.1.5（业务 JSON） | 已使用 | Boot 4 管理；JWT 库内部兼容依赖不作为业务 ObjectMapper 使用 |
+| SLF4J / Logback | Spring Boot 管理 | 已使用 | LoggerFactory 作为日志 API，Boot logging starter 提供 Logback；全局异常、行情与 Redis 降级已有日志，不等于结构化追踪平台已完成 |
 | JUnit Jupiter／Mockito | 6.0.3／5.23.0，Boot BOM 管理 | 已使用 | 保留 Jupiter 测试 API，测试替身改用 MockitoBean／MockitoSpyBean |
 
 ## 2. 前端
@@ -73,7 +76,7 @@
 
 ### 3.2 V2 Agent 技术规划基线
 
-2026-10-08：按用户要求复核后采用以下讨论与接入规划；2026-10-09 独立模型实验已执行，2026-10-12 框架进入主工程，正式研究业务增量尚未接入。产品产出和全局边界只维护在 [V2 需求](../product/requirements-v2.md#3-正式讨论采用的规划基线)，岗位证据与难度判断见 [市场对标](../project/java-agent-market-benchmark.md)，先后顺序见 [路线第 6 阶段](../project/roadmap.md#阶段-6java-agent-增量)。
+2026-10-08：按用户要求复核后采用以下讨论与接入规划；2026-10-09 独立模型实验已执行，2026-10-12 框架与正式周期资料读取首段进入主工程，研究生成、会话、工具和页面尚未接入。产品产出和全局边界只维护在 [V2 需求](../product/requirements-v2.md#3-正式讨论采用的规划基线)，岗位证据与难度判断见 [市场对标](../project/java-agent-market-benchmark.md)，先后顺序见 [路线第 6 阶段](../project/roadmap.md#阶段-6java-agent-增量)。
 
 架构沿用 [模块化单体](decisions/ADR-001-modular-monolith.md)：在现有后端增加 Agent 业务包与受限工具适配层，调用公开 Java Service；Vue 沿用当前登录和空间上下文。数据库、行情网关与 Redis 缓存仍由各自业务模块管理。原有技术的复用不代表对应 Agent 能力已经实现。
 
@@ -82,7 +85,7 @@
 | Java 与服务端 | Java 17／Boot 4.1.1，已在本地源码升级 | 已核对安全、Mapper、JSON／时间、Flyway、行情传输回归与关闭模型的 API；具体证据沿 AG-CODE-002，云端发布另验 |
 | AI 框架 | Spring AI 2.0.1 已接入，默认 `spring.ai.model.chat=none`；直接 Java HTTP API 保留为能力实验路径 | 无密钥可运行原功能；正式 DeepSeek 失败零重试由 Agent 配置控制。框架不代替授权、会话、引用或预算；LangChain4j 仍为候选 |
 | 模型与输出 | 用户已选 DeepSeek；`deepseek-flash` 已在独立 Java 自造样本验证，正式业务效果尚未验证，见 [首轮模型与费用](#35-首轮模型与费用安排) | 用相同问题核对正确性、时延与费用；JSON／DTO 校验只证明结构，不自动证明内容正确。密钥仅在服务端配置 |
-| 工具与上下文 | 只读工具适配层、参数契约、会话范围和有界执行，计划 | 从现有研究／行情 Service 和待接的财务 Service 取数据；用户身份与可访问范围由 Java 确定，模型不能自行扩大。时间线需分批读取并报告截断范围，数值计算由 Java 完成 |
+| 工具与上下文 | 正式周期资料／原文读取首段已实现；工具适配、会话范围和有界执行仍计划 | 资料 Service 直接按选定周期读取并报告完整／超限；成员／日期子范围及交付前重校验仍待完成。工具从业务 Service 取数据，用户身份与可访问范围由 Java 确定，模型不能自行扩大；数值计算由 Java 完成 |
 | 会话存储 | MySQL 为会话／消息持久化首选；Redis 可用于可丢失的短期状态或限流，Agent 部分尚未实现 | 个人对话保存策略采用已确认阶段需求；每次调用仍校验当前授权，上下文裁剪、清空实现与运行明细保留期限待落实。保存会话与保存独立生成报告分开讨论，不机械建立两份状态存储 |
 | 页面与响应 | 当前 Vue／TypeScript，加 SSE，计划 | 先同步得到真实结果，再以 fetch 流或支持认证头的客户端处理 Bearer 鉴权、中断与取消；原生 EventSource 不支持任意认证头。长任务恢复或 MQ 按实际需要评估 |
 | 观测与可靠性 | 基本调用记录与 Micrometer 观测，计划；OpenTelemetry／观测平台按需要接入 | 记录版本、工具、状态、耗时和用量；控制输入、总超时、有限重试与并发。提示词／工具数据可能敏感，默认记录必要摘要，不导出密钥 |
@@ -131,7 +134,7 @@ MCP 负责统一工具发现和调用，不提供数据许可或实时性保证�
 
 2026-10-08 最后复核：以下是基于实际代码、官方 API 与 [岗位／面经／作者复盘](../project/java-agent-market-benchmark.md) 的规划。代码可确认已有研究、成员权限、行情和持久化基础；当时真实模型质量、Agent 运行及升级兼容均未验证。不能承诺绝对不会失败，通过最早小实验和退出路径控制投入；后续已验证状态见本节的任务证据链接。
 
-本次发现的两个数据边界必须进入详细规格：现有 [研究时间线](../../src/main/java/com/stock/system/stock/service/StockResearchLifecycleService.java) 跨周期分页，每页 20 条，没有周期 ID 过滤，需要新增／提取受限周期读取方法或有界读取后筛选，并返回实际覆盖与截断；结束周期未保存结束价快照，不能直接承诺精确结束期涨跌或投资收益。财务／订单类观察条件不由现有行情自动验证，缺资料则说明无法核对。
+研究资料的两个数据边界仍须区分：现有 [研究时间线](../../src/main/java/com/stock/system/stock/service/StockResearchLifecycleService.java) 跨周期分页，每页 20 条；2026-10-12 已增加按周期直接查询的资料 Service，返回完整／超限范围，成员／日期缩小范围与交付前重校验仍待接入，证据见 [任务第 10 节](../specs/004-research-agent/tasks.md#10-ag-code-003周期资料读取首段2026-10-12)。结束周期未保存结束价快照，不能直接承诺精确结束期涨跌或投资收益。财务／订单类观察条件不由现有行情自动验证，缺资料则说明无法核对。
 
 | 最早验证 | 最小实验与可检查结果 | 条件不成立时的处理 |
 | --- | --- | --- |
@@ -144,13 +147,13 @@ MCP 负责统一工具发现和调用，不提供数据许可或实时性保证�
 
 首轮小实验及退出方法见 [SPEC-004 设计草案](../specs/004-research-agent/design.md#7-最早实验与退出路径)，具体问题和证据准入见 [任务计划](../specs/004-research-agent/tasks.md#2-小实验固定问题与质量核对)。输入、调用、并发与预算保护初值只维护在 [设计第 5 节](../specs/004-research-agent/design.md#5-调用费用和失败限制)；独立串行实验已执行，正式业务资料上限、并发等效果待接入实测。替身资料、真实模型、正式 Service 和实时行情分别验证，不互相替代；真实资料发送范围接入前落实。
 
-最小实验通过后再扩固定问题集和真实模型回归。权限、工具参数、来源 ID 等程序边界必须由 Java 校验；阅读代码或跑替身测试不能替代真实模型验证。独立 Java HTTP 与单工具已完成真实自造样本及人工核对，配置和运行见 [实验说明](../engineering/agent-experiment.md)，效果、实际用量、费用上界与局限只见 [任务证据](../specs/004-research-agent/tasks.md#7-真实模型实验与修正验收2026-10-09)。正式业务接入、框架兼容与供应商精确账单尚未验证。
+最小实验通过后再扩固定问题集和真实模型回归。权限、工具参数、来源 ID 等程序边界必须由 Java 校验；阅读代码或跑替身测试不能替代真实模型验证。独立 Java HTTP 与单工具已完成真实自造样本及人工核对，配置和运行见 [实验说明](../engineering/agent-experiment.md)，效果、实际用量、费用上界与局限只见 [任务证据](../specs/004-research-agent/tasks.md#7-真实模型实验与修正验收2026-10-09)。2026-10-12 主框架兼容和资料读取首段已有正式回归证据；真实业务生成、完整 Agent 与供应商精确账单仍未验证。
 
 #### 原始 Agent 目标覆盖与验收
 
-2026-10-09 对照原始清单第十一～二十一项复核。下表维护能力与任务的对应关系，正式需求和证据分别见 product／specs，不以“已写入规划”或某一个小实验通过代替全项验收。原始第十一～十九项的核心目标均保留；第二十项明确后学，第二十一项保持 Java 主语言及基础 Python 能力。
+2026-10-09 对照原始清单第十一～二十一项复核。下表只维护原始目标、技术机制与任务的对应关系；教学范围、深度、顺序和个人完成标准只见 [V2 学习地图](../project/roadmap.md#v2-功能与学习地图)，正式需求和功能证据分别见 product／specs，不以“已写入规划”或某个实验通过代替全项验收。原始第十一～十九项的核心目标均保留；第二十项明确后学，第二十一项保持 Java 主语言及基础 Python 能力。
 
-| 原始条目／知识组 | 需要知道的问题 | 实践与验收落点 |
+| 原始条目／知识组 | 对应技术机制 | 实践与证据落点 |
 | --- | --- | --- |
 | 十一：LLM 应用与 Context Engineering | 概念级生成原理、Transformer／Attention 的作用、Token／窗口、Embedding、RAG 与微调区别；消息／System Prompt、参数、JSON Schema 与输出校验；何时取历史、检索或调用工具；模型切换与路由基础 | 能结合本项目解释原理与局限，不要求模型训练、数学推导或框架内核。AG-CODE-001 仅在限定样本通过。正式上下文、结构化输出、SSE、调用限制与用量沿 004／005／007；理解模型替换与压缩，不起步建设多模型自动路由或自动付费摘要 |
 | 十二：Tool Calling 与 Agent | Tool Schema、Java 执行与回传、Agent Loop、ReAct、任务拆解、Workflow 区别、状态及停止／失败行为 | AG-CODE-003／005／005F；实际 Service 与多工具组合、错误回传和有界循环须验收，不由固定摘要代替。能解释一次问题怎样查证、继续补查与结束 |
@@ -166,7 +169,7 @@ MCP 负责统一工具发现和调用，不提供数据许可或实时性保证�
 
 原始第一～十项的 Java 基础、一次 SQL 优化、Redis 深度、真实异步 MQ 场景、测试、交付和分布式基础继续沿既有路线，不由上述 Agent 表取代，也不因暂未使用而删除。RAG 资料导入／重建可作为真实异步场景的候选，先比较耗时、失败恢复、受控线程池／任务表与一种 MQ 的成本；尚未选择或接入 MQ，不能把它默认为 RAG 必需依赖或已完成学习成果。
 
-学习顺序：一次调用与输入输出→一个真实工具→工具循环及追问→会话／流式／回归→业务 RAG 与 MCP；RAG 关键条件的 AG-CODE-001R 预检提前，与财务和兼容性验证独立安排。安全和基本验证贯穿每一步；学习通过复述、关键代码练习和排错检查，不由功能完成替代。原始完整目标保留在 [技术参考](../project/technology-reference.md#用户原始文字)。
+学习顺序、阶段深度与本人产出沿 [V2 地图](../project/roadmap.md#v2-功能与学习地图)，目标岗位的语言／框架／资格差距沿 [岗位分流](../project/roadmap.md#岗位分流与学习优先级)。原始完整目标保留在 [技术参考](../project/technology-reference.md#用户原始文字)；本表不另设课表或个人掌握记录。
 
 RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)、[资料读取与分块管线](https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html) 和 [Embedding API](https://docs.spring.io/spring-ai/reference/api/embeddings.html)。回答模型和文本向量模型职责不同；现有 DeepSeek 真实回答实验没有验证向量化能力，Embedding 服务或本地模型、中文检索质量及成本需独立确认。分别对照检索及回答，不能将默认 similaritySearch 调用或空检索后的流畅回答当作通过。MCP 发现／调用与 Java 实现路径依据 [MCP 官方架构](https://modelcontextprotocol.io/docs/learn/architecture) 和 [Spring AI MCP](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html)。当前 RAG／MCP 尚未接入，官方组件存在不证明本项目实际兼容。
 

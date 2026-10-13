@@ -35,8 +35,9 @@ stock-system/
 - [本地开发与启动](docs/engineering/development.md)
 - [部署与上线检查](docs/engineering/deployment.md)
 - [V1产品需求](docs/product/requirements-v1.md)
-- [V2 Agent方向与待确认规格](docs/product/requirements-v2.md)
-- [当前阶段需求规格](docs/specs/002-stock-research/requirements.md)
+- [V2 Agent需求与边界](docs/product/requirements-v2.md)
+- [股票与研究需求规格](docs/specs/002-stock-research/requirements.md)
+- [研究Agent需求规格](docs/specs/004-research-agent/requirements.md)
 - [V1数据模型](docs/architecture/data-model.md)
 
 项目仍处于开发阶段。当前不执行真实交易，也不构成投资建议。

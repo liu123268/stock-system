@@ -133,7 +133,11 @@
 
 ### 完整回答
 
-> 四种事务隔离级别从低到高是：`read uncommitted`（读未提交），可能发生脏读、不可重复读和幻读；`read committed`（读已提交），避免脏读；`repeatable read`（可重复读），避免脏读和普通快照读中的不可重复读，MySQL/InnoDB 通常默认使用该级别，并结合 MVCC 与锁处理并发读取；`serializable`（串行化）隔离最强，但等待和并发成本也最高。隔离级别属于数据库连接或事务的运行设置，不写在建表语句中。项目的 `@Transactional` 没有显式指定 `isolation`，因此使用 `Isolation.DEFAULT`，即继承当前 MySQL 连接的隔离级别；实际值应使用 `select @@session.transaction_isolation` 核对。
+> 四种事务隔离级别从低到高是：`read uncommitted`（读未提交），可能发生脏读、不可重复读和幻读；`read committed`（读已提交），避免脏读；`repeatable read`（可重复读），避免脏读和普通快照读中的不可重复读，MySQL/InnoDB 通常默认使用该级别，并结合 MVCC 与锁处理并发读取；`serializable`（串行化）隔离最强，但等待和并发成本也最高。隔离级别属于数据库连接或事务的运行设置，不写在建表语句中。
+
+> 项目要按实际方法区分：邀请加入等既有写业务未显式指定 `isolation`，使用 `Isolation.DEFAULT`，即继承当前连接的隔离级别，实际值用 `select @@session.transaction_isolation` 核对；新增周期资料与原文读取显式指定 `Isolation.REPEATABLE_READ`，让短只读事务中的权限、归属、统计和正文读取使用同一快照。模型调用应在资料读取事务返回后进行；短事务快照不能代替生成交付前对当前权限和来源的重新校验，后者仍待接入。
+
+项目位置见 [邀请业务](../../../src/main/java/com/stock/system/workspace/service/WorkspaceInvitationService.java) 与 [资料 Service](../../../src/main/java/com/stock/system/stock/service/StockResearchSourceService.java)，读取和待验边界见 [AG-CODE-003](../../specs/004-research-agent/tasks.md#10-ag-code-003周期资料读取首段2026-10-12)。
 
 ### 可能追问
 

@@ -10,6 +10,7 @@ AI 自动选择匹配行，多场景取并集；先定位相关章节，再读�
 | --- | --- |
 | 所有任务：教学方式、保护改动、规则记忆 | [AGENTS.md](../../AGENTS.md) |
 | 接续开发或专题学习、进度、阻塞、下一步 | [status.md](status.md)；再定位当前规格任务或已链接的专题材料 |
+| Java／Agent 教学地图、岗位分流、范围／深度／顺序和完成标准 | [roadmap.md](roadmap.md) 的教学范围与 V2 地图；岗位依据见求职对标，实际采用与个人结果分别核对技术栈和 status |
 | 需求讨论、功能实施、开发节奏 | [workflow.md](workflow.md) 的需求与范围；对应 `specs` 中本次用户故事的 requirements、design、tasks |
 | 技术选型、依赖、中间件、性能、Agent、学习能力缺漏、简历深度 | [workflow.md](workflow.md) 的技术选型、[technology-stack.md](../architecture/technology-stack.md) 对应项、[technology-reference.md](technology-reference.md) 对应原始条目；整体路线评估才完整对照原始清单 |
 | V1 范围、全局产品规则 | [requirements-v1.md](../product/requirements-v1.md)；阶段细则在 `specs/<阶段>/requirements.md` |

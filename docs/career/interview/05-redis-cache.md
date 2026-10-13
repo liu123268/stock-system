@@ -46,7 +46,7 @@
 
 - 穿透：行情入口先验证参数和本地可信股票目录，任意不存在的代码不会直接访问 Longbridge；但大量合法冷 Key 和真实股票持续返回空结果仍可能回源，项目没有使用布隆过滤器，也没有缓存空 List/Map。
 - 击穿：同一 JVM 用 `CompletableFuture` 合并同 Key 请求，连接同一 Redis 的进程再用限时协调锁减少重复加载；等待超时允许回源，所以不是严格只调用一次。
-- 雪崩：不同类型使用不同 TTL，写入时增加随机抖动；Redis 故障进入短暂冷却，Longbridge 客户端继续限制并发和调用间隔。项目尚未验证 Sentinel、Cluster、全局限流或完整熔断。
+- 雪崩：不同类型使用不同 TTL，写入时增加随机抖动；Redis 故障进入短暂冷却，所选 SDK／CLI 客户端继续保护并发和调用间隔，具体机制见 [ADR-002](../../architecture/decisions/ADR-002-longbridge-cli-sidecar.md)。项目尚未验证 Sentinel、Cluster、全局限流或完整熔断。
 
 ### 可能追问
 

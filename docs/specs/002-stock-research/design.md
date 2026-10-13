@@ -71,17 +71,17 @@ MarketDataProvider
 
 ### 4.0 外部行情调用与密钥边界
 
-真实行情供应商只允许作为 Spring Boot 服务端的上游。Vue/React 前端只能调用本项目的 Spring Boot API，不得直接调用供应商，也不得接收、保存或暴露 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等凭据。当前服务端通过官方 CLI sidecar 调用 Longbridge，校验返回的股票身份、价格、行情时间、来源和状态，再结合 MySQL 标准身份与缓存向前端提供受项目权限和数据规则约束的结果；Redis 装饰层已经编码，实际缓存行为和未完成边界见 4.6。WebSocket/SSE 仍是达到动态推送条件后才实施的传输层。
+真实行情供应商只允许作为 Spring Boot 服务端的上游。Vue 前端只能调用本项目的 Spring Boot API，不得直接调用供应商，也不得接收、保存或暴露 `APP_SECRET`、`ACCESS_TOKEN`、App Key 等凭据。当前服务端的统一上游接口在 dev 使用官方 SDK、prod 保留 CLI sidecar，环境选择见 4.5；返回的股票身份、价格、行情时间、来源和状态均须校验，再结合 MySQL 标准身份与缓存向前端提供受项目权限和数据规则约束的结果。Redis 实现与边界见 4.6。行情 WebSocket 仍按实际需求评估；Agent SSE 另由 SPEC-004 的流式任务维护，不与行情推送捆绑。
 
 ```text
-Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
+Vue ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
                     │
                     ↓
             Redis 共享行情缓存（启用时）
                     │ 未命中／故障降级
                     ↓
             进程内短缓存 / Longbridge 网关
-                    │ 官方 CLI `serve` / JSON-RPC
+                    │ dev：Java SDK；prod：CLI `serve` / JSON-RPC
                     ↓
                 Longbridge
 ```
@@ -263,7 +263,7 @@ Vue/React ←→ Spring Boot → MySQL（股票身份、权限与研究事实）
 
 ### 4.6 Redis 共享行情缓存与访问保护
 
-CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `LongbridgeJsonRpcClient` 的网关接口：缓存只存在一个 Java 进程内，另一实例无法复用。现在 `CachingLongbridgeMarketGateway` 通过 `@Primary` 成为四类网关接口的首选实现，把可重建的行情缓存放在 provider 与旧客户端之间；Controller、Vue 和研究事务不直接操作 Redis。新增依赖为 Spring Data Redis，连接客户端使用 Lettuce。关闭 Redis 时使用 `NoOpMarketSharedCache`，连接故障时进入冷却并回到原行情链路，均不切换 Mock。
+CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `LongbridgeJsonRpcClient` 的网关接口：缓存只存在一个 Java 进程内，另一实例无法复用。现在 `CachingLongbridgeMarketGateway` 通过 `@Primary` 成为四类网关接口的首选实现，把可重建的行情缓存放在 provider 与所选 SDK／CLI 客户端之间；Controller、Vue 和研究事务不直接操作 Redis。新增依赖为 Spring Data Redis，连接客户端使用 Lettuce。关闭 Redis 时使用 `NoOpMarketSharedCache`，连接故障时进入冷却并回到原行情链路，均不切换 Mock。
 
 ```text
 业务 Service 按接口校验身份与访问范围
@@ -271,9 +271,9 @@ CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `L
   → provider → CachingLongbridgeMarketGateway 生成 Key
       ├─ Redis 命中：JSON 还原为原始行情对象 → provider 映射项目响应
       └─ 未命中：合并同 JVM 请求 → 尝试 Redis 锁
-          ├─ 取得锁：再次查缓存；仍未命中才调用旧客户端
-          ├─ 锁被占用：短时等待共享结果；超时走旧客户端
-          └─ Redis 不可用：直接走旧客户端
+          ├─ 取得锁：再次查缓存；仍未命中才调用所选 SDK／CLI 客户端
+          ├─ 锁被占用：短时等待共享结果；超时走所选 SDK／CLI 客户端
+          └─ Redis 不可用：直接走所选 SDK／CLI 客户端
               → 所选 SDK／CLI 的进程内短缓存或受限 pull → 写 Redis（可用时）
 ```
 
@@ -288,9 +288,9 @@ CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `L
 | 当天分时 | 标准代码、股票市场时区下的当天日期 | 5 秒 |
 | 交易日历 | CN/HK 市场、日期 | 24 小时 |
 
-默认前缀为 `stock-system:market:v1`，写入 TTL 加 ±10% 随机抖动。报价按整批集合缓存，不是逐股票共享缓存：`[A,B]` 与 `[B,A]` 可命中同一 Key，但 `[A]` 与 `[A,B]` 不能共享这层结果，仍可能命中旧客户端的逐股票缓存。缓存值使用统一信封显式保存 `source=LONGBRIDGE_OPENAPI` 和实际 `value`；报价、K 线和分时点继续保留供应商时间与首次取得数据的 `retrievedAt`，缓存命中不刷新该时间。读取到旧格式、未知来源或空值时删除该键并重新回源，避免把未知缓存内容当作 Longbridge 行情使用。
+默认前缀为 `stock-system:market:v1`，写入 TTL 加 ±10% 随机抖动。报价按整批集合缓存，不是逐股票共享缓存：`[A,B]` 与 `[B,A]` 可命中同一 Key，但 `[A]` 与 `[A,B]` 不能共享这层结果，仍可能命中所选 SDK／CLI 客户端的逐股票缓存。缓存值使用统一信封显式保存 `source=LONGBRIDGE_OPENAPI` 和实际 `value`；报价、K 线和分时点继续保留供应商时间与首次取得数据的 `retrievedAt`，缓存命中不刷新该时间。读取到旧格式、未知来源或空值时删除该键并重新回源，避免把未知缓存内容当作 Longbridge 行情使用。
 
-同 JVM 的 `CompletableFuture` 让正在加载同一 Key 的请求等待同一个结果；跨实例锁用 Redis `SET NX` 加随机 owner，默认租期 8 秒，释放用 Lua 原子比较 owner 后删除，防止误删别人续接的锁。锁竞争者每 40ms 查共享结果，默认最多等待 800ms；超时后不持锁调用旧客户端，因此它是限时等待加可用性降级，不保证所有并发场景只回源一次，也不是全局限流器。竞争与超时验证见 tasks 中 CODE-206E 的分层证据；真实双连接测试不等于多个真实 sidecar 获准并行部署。
+同 JVM 的 `CompletableFuture` 让正在加载同一 Key 的请求等待同一个结果；跨实例锁用 Redis `SET NX` 加随机 owner，默认租期 8 秒，释放用 Lua 原子比较 owner 后删除，防止误删别人续接的锁。锁竞争者每 40ms 查共享结果，默认最多等待 800ms；超时后不持锁调用所选 SDK／CLI 客户端，因此它是限时等待加可用性降级，不保证所有并发场景只回源一次，也不是全局限流器。竞争与超时验证见 tasks 中 CODE-206E 的分层证据；真实双连接测试不等于多个真实 sidecar 获准并行部署。
 
 `RedisMarketSharedCache` 在连接／命令异常后默认冷却 30 秒，期间跳过 Redis，回到原有进程内缓存与受限 pull；日志只记录异常类型，不记录可能含凭据的原始异常信息。无法反序列化的 JSON 会删除后重取，但尚未校验反序列化成功后的字段语义。空 List/Map 和抛出的上游异常不写入共享缓存，日历 `false` 是合法休市结果，可以缓存。这些保护不替代已有参数、目录、成员和空间股票校验，也不能解除单账号单行情连接与供应商额度。
 
@@ -298,7 +298,7 @@ CODE-206E 已于 2026-09-18 完成整体验收。原来 provider 直接依赖 `L
 
 本机开发拓扑是 Windows 若依 Redis `127.0.0.1:6379` 与 Ubuntu WSL2 Redis `127.0.0.1:6380` 并存，stock-system 只连接后者；这是为避免本机两个项目互相抢端口的开发隔离，不是生产架构要求。WSL 实例使用 `/tmp`，关闭 RDB 与 AOF，重启后缓存为空但可从 Longbridge 重建；生产 Redis 的持久化、容量上限、备份和淘汰策略必须按部署可靠性单独决定。
 
-历史批次的未收盘长缓存问题已按上述排他边界收敛，缓存来源也已由统一信封显式保留。命中、未命中、合并和加载目前主要靠 DEBUG 日志，且“loaded from upstream”可能只是调用到旧客户端缓存，不能据此冒充真实外部请求次数或性能结论。最终锁竞争、真实页面命中／未命中和 Redis 故障降级证据见 [CODE-206E 最终验收](tasks.md#code-206e-最终验收证据2026-09-18)，运行与配置方式见 [开发环境](../../engineering/development.md#10-redis-本地学习环境)。
+历史批次的未收盘长缓存问题已按上述排他边界收敛，缓存来源也已由统一信封显式保留。命中、未命中、合并和加载目前主要靠 DEBUG 日志，且“loaded from upstream”可能只是调用到所选 SDK／CLI 客户端缓存，不能据此冒充真实外部请求次数或性能结论。最终锁竞争、真实页面命中／未命中和 Redis 故障降级证据见 [CODE-206E 最终验收](tasks.md#code-206e-最终验收证据2026-09-18)，运行与配置方式见 [开发环境](../../engineering/development.md#10-redis-本地学习环境)。
 
 ## 5. 首批 API
 

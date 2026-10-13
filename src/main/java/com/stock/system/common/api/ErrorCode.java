@@ -46,6 +46,7 @@ public enum ErrorCode {
             "所选日期不是该市场的交易日"),
     STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "股票不存在或不在当前行情范围"),
     WORKSPACE_STOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "当前空间中不存在这只共享股票"),
+    RESEARCH_CYCLE_NOT_FOUND(HttpStatus.NOT_FOUND, "当前空间股票中不存在该研究周期"),
     ACTIVE_RESEARCH_CYCLE_NOT_FOUND(HttpStatus.CONFLICT, "这只股票当前没有活动研究周期"),
     RESEARCH_CYCLE_CHANGED(HttpStatus.CONFLICT, "研究周期已经变化，请刷新后重试"),
     STOCK_OPINION_NOT_FOUND(HttpStatus.NOT_FOUND, "观点不存在"),
@@ -56,6 +57,11 @@ public enum ErrorCode {
     STOCK_NOT_AVAILABLE(HttpStatus.CONFLICT, "该股票当前不能开始新的研究周期"),
     STOCK_STATUS_UNAVAILABLE(HttpStatus.CONFLICT, "该股票交易状态暂时无法核实，不能开始新的研究周期"),
     CONCURRENT_OPERATION_CONFLICT(HttpStatus.CONFLICT, "并发操作冲突，请刷新后重试"),
+    RESEARCH_AGENT_DISABLED(HttpStatus.SERVICE_UNAVAILABLE, "研究助手尚未启用"),
+    RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED(HttpStatus.UNPROCESSABLE_ENTITY, "研究资料超出本次范围上限，请缩小范围"),
+    RESEARCH_AGENT_SOURCES_CHANGED(HttpStatus.CONFLICT, "本次使用的研究资料已经失效或变化，请重新梳理"),
+    RESEARCH_AGENT_INVALID_RESULT(HttpStatus.BAD_GATEWAY, "研究助手未返回可核对的完整结果"),
+    RESEARCH_AGENT_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "研究助手暂时无法完成梳理，请稍后重试"),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "服务器暂时无法处理请求");
 
     private final HttpStatus httpStatus;

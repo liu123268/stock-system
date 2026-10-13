@@ -11,6 +11,20 @@ import org.apache.ibatis.annotations.Select;
 public interface ResearchCycleMapper extends BaseMapper<ResearchCycle> {
 
     @Select("""
+            select rc.*
+            from research_cycle rc
+            join workspace_stock ws on ws.id = rc.workspace_stock_id
+            where ws.workspace_id = #{workspaceId}
+              and ws.id = #{workspaceStockId}
+              and rc.id = #{researchCycleId}
+            """)
+    ResearchCycle selectInWorkspaceStock(
+            @Param("workspaceId") Long workspaceId,
+            @Param("workspaceStockId") Long workspaceStockId,
+            @Param("researchCycleId") Long researchCycleId
+    );
+
+    @Select("""
             SELECT rc.*
             FROM research_cycle rc
             JOIN workspace_stock ws ON ws.id = rc.workspace_stock_id
