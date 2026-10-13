@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import StockStatusNotice from '@/components/stock/StockStatusNotice.vue'
+import ResearchAgentPanel from '@/components/stock/ResearchAgentPanel.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
@@ -25,6 +26,8 @@ const workspaceId = computed(() => Number(route.params.workspaceId))
 const workspaceStockId = computed(() => Number(route.params.workspaceStockId))
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
 const currentCycle = computed(() => stockStore.researchDetail?.currentCycle)
+const assistantCycleId = ref<number | null>(null)
+watch([workspaceId, workspaceStockId], () => { assistantCycleId.value = null })
 const market = ref<WorkspaceStockMarketDetailResponseVO | null>(null)
 const marketLoading = ref(false)
 const marketError = ref('')
@@ -917,6 +920,10 @@ onBeforeUnmount(() => {
               }}
               · {{ cycle.attentionLevel === 'FOCUS' ? '重点关注' : '普通关注' }}
             </h3>
+            <button class="ui-button" type="button" :aria-expanded="assistantCycleId === cycle.id"
+              @click="assistantCycleId = assistantCycleId === cycle.id ? null : cycle.id">
+              {{ assistantCycleId === cycle.id ? '收起研究助手' : '研究助手' }}
+            </button>
           </div>
           <dl>
             <div>
@@ -933,6 +940,9 @@ onBeforeUnmount(() => {
             </div>
           </dl>
         </header>
+
+        <ResearchAgentPanel v-if="assistantCycleId === cycle.id" :key="`${workspaceId}:${workspaceStockId}:${cycle.id}`"
+          :target="{ workspaceId, stockId: workspaceStockId, cycleId: cycle.id }" />
 
         <div class="timeline">
           <section

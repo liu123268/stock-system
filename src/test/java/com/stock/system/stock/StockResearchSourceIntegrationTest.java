@@ -4,6 +4,7 @@ import com.stock.system.auth.dto.LoginRequestDTO;
 import com.stock.system.auth.dto.RegisterRequestDTO;
 import com.stock.system.auth.service.AuthService;
 import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
+import com.stock.system.stock.dto.ResearchSourceFilter;
 import com.stock.system.stock.entity.StockOpinion;
 import com.stock.system.stock.mapper.StockOpinionMapper;
 import com.stock.system.stock.service.StockResearchLifecycleService;
@@ -18,16 +19,19 @@ import com.stock.system.workspace.mapper.WorkspaceMemberMapper;
 import com.stock.system.workspace.service.WorkspaceMemberService;
 import com.stock.system.workspace.service.WorkspaceService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.transaction.AfterTransaction;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.LocalDateTime;
 
@@ -62,6 +66,9 @@ class StockResearchSourceIntegrationTest extends MySqlIntegrationTest {
     private String strangerToken;
     private long ownerId;
     private long memberId;
+    private long strangerId;
+    private Long catalogStockId;
+    private boolean createdCatalogStock;
     private long workspaceId;
     private long stockId;
     private long cycleId;
@@ -71,18 +78,22 @@ class StockResearchSourceIntegrationTest extends MySqlIntegrationTest {
     @BeforeEach
     void createRollbackOnlyResearch() {
         ownerToken = register("source_owner");
-        memberToken = register("source_member");
-        strangerToken = register("source_stranger");
         ownerId = userService.findByUsername("source_owner").getId();
+        memberToken = register("source_member");
         memberId = userService.findByUsername("source_member").getId();
+        strangerToken = register("source_stranger");
+        strangerId = userService.findByUsername("source_stranger").getId();
         workspaceId = workspaceService.create(ownerId, "周期资料测试空间").workspaceId();
         WorkspaceMember member = new WorkspaceMember();
         member.setWorkspaceId(workspaceId);
         member.setUserId(memberId);
         member.setStatus("ACTIVE");
         memberMapper.insert(member);
+        createdCatalogStock = jdbcTemplate.queryForObject("select count(*) from stock where code = ?",
+                Long.class, "00700.HK") == 0;
         var added = researchService.add(ownerId, workspaceId, stockRequest("00700.HK"));
         stockId = added.workspaceStockId();
+        catalogStockId = jdbcTemplate.queryForObject("select stock_id from workspace_stock where id = ?", Long.class, stockId);
         cycleId = added.researchCycleId();
         initialId = jdbcTemplate.queryForObject(
                 "select id from stock_opinion where research_cycle_id = ?", Long.class, cycleId);
@@ -278,6 +289,137 @@ class StockResearchSourceIntegrationTest extends MySqlIntegrationTest {
         }
         assertThat(sourceService.revalidate(memberId, workspaceId, stockId, cycleId, snapshot)
                 .newOpinionsAvailable()).isTrue();
+    }
+
+    @Test
+    void memberAndInclusiveCalendarDatesDefineTheActualReturnedScope() throws Exception {
+        long first = append("UPDATE", "NEUTRAL", "成员当天观点", null, baseTime.plusSeconds(1));
+        long last = append("UPDATE", "BEARISH", "当天末尾观点", null,
+                baseTime.toLocalDate().atTime(23, 59, 59));
+        append("UPDATE", "BULLISH", "次日不在范围", null, baseTime.toLocalDate().plusDays(1).atStartOfDay());
+        mockMvc.perform(get(BASE + "/sources", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("authorUserId", Long.toString(memberId))
+                        .param("dateFrom", baseTime.toLocalDate().toString())
+                        .param("dateTo", baseTime.toLocalDate().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scope.validOpinionCount").value(2))
+                .andExpect(jsonPath("$.data.scope.filter.authorUserId").value(memberId))
+                .andExpect(jsonPath("$.data.scope.filter.dateFrom").value(baseTime.toLocalDate().toString()))
+                .andExpect(jsonPath("$.data.opinions[0].id").value(first))
+                .andExpect(jsonPath("$.data.opinions[1].id").value(last));
+    }
+
+    @Test
+    void invalidOrForeignAuthorAndInvalidDateRangeAreRejected() throws Exception {
+        for (long author : new long[]{-1L, userService.findByUsername("source_stranger").getId()}) {
+            mockMvc.perform(get(BASE + "/sources", workspaceId, stockId, cycleId)
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .param("authorUserId", Long.toString(author)))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(get(BASE + "/sources", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("dateFrom", "2026-10-14").param("dateTo", "2026-10-13"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get(BASE + "/sources", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + ownerToken).param("dateFrom", "bad-date"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shrinkingExcessiveCycleToOneAuthorReturnsCompleteMaterials() throws Exception {
+        for (int index = 0; index < 100; index++) {
+            append("UPDATE", "NEUTRAL", "另一成员观点", null, baseTime);
+        }
+        sources(ownerToken, workspaceId, stockId, cycleId)
+                .andExpect(jsonPath("$.data.scope.coverage").value("LIMIT_EXCEEDED"));
+        mockMvc.perform(get(BASE + "/sources", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("authorUserId", Long.toString(ownerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scope.coverage").value("COMPLETE"))
+                .andExpect(jsonPath("$.data.scope.validOpinionCount").value(1))
+                .andExpect(jsonPath("$.data.opinions[0].id").value(initialId));
+    }
+
+    @Test
+    void revalidationOnlyFlagsNewMaterialWithinTheSelectedScope() {
+        long selected = append("UPDATE", "NEUTRAL", "选定成员原文", null, baseTime);
+        var filter = new ResearchSourceFilter(memberId, baseTime.toLocalDate(), baseTime.toLocalDate());
+        var snapshot = sourceService.readCycle(ownerId, workspaceId, stockId, cycleId, filter);
+        append("UPDATE", "NEUTRAL", "日期范围外的新观点", null, baseTime.plusDays(1));
+        assertThat(sourceService.revalidate(ownerId, workspaceId, stockId, cycleId, snapshot)
+                .newOpinionsAvailable()).isFalse();
+        append("UPDATE", "BULLISH", "范围内新观点", null, baseTime.plusSeconds(1));
+        assertThat(sourceService.revalidate(ownerId, workspaceId, stockId, cycleId, snapshot)
+                .newOpinionsAvailable()).isTrue();
+        lifecycleService.withdrawOpinion(memberId, workspaceId, stockId, selected);
+        assertThatThrownBy(() -> sourceService.revalidate(ownerId, workspaceId, stockId, cycleId, snapshot))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> assertThat(failure.getErrorCode())
+                        .isEqualTo(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED));
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NEVER)
+    void contextProvidesServerQuoteAndSourcesWithOriginalAuthorizationBoundaries() throws Exception {
+        mockMvc.perform(get(BASE + "/agent/context", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.materials.researchCycleId").value(cycleId))
+                .andExpect(jsonPath("$.data.quote.status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.quote.currency").value("HKD"))
+                .andExpect(jsonPath("$.data.quote.simulated").value(true));
+        mockMvc.perform(get(BASE + "/agent/context", workspaceId, stockId, cycleId))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(BASE + "/agent/context", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + strangerToken))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get(BASE + "/agent/context", workspaceId, stockId, cycleId + 1)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NEVER)
+    void excessiveContextReturnsRangeAndQuoteWithoutTruncatedOpinionBodies() throws Exception {
+        for (int index = 0; index < 100; index++) {
+            append("UPDATE", "NEUTRAL", "超限观点", null, baseTime);
+        }
+        mockMvc.perform(get(BASE + "/agent/context", workspaceId, stockId, cycleId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.materials.scope.coverage").value("LIMIT_EXCEEDED"))
+                .andExpect(jsonPath("$.data.materials.opinions").isEmpty())
+                .andExpect(jsonPath("$.data.quote.status").value("AVAILABLE"));
+    }
+
+    @AfterEach
+    void cleanOnlyCommittedContextFixtures() {
+        if (TestTransaction.isActive()) return;
+        if (cycleId != 0) {
+            jdbcTemplate.update("delete from research_attention_change where research_cycle_id = ?", cycleId);
+            jdbcTemplate.update("delete from stock_opinion where research_cycle_id = ?", cycleId);
+            jdbcTemplate.update("delete from research_cycle where id = ?", cycleId);
+        }
+        if (stockId != 0) jdbcTemplate.update("delete from workspace_stock where id = ?", stockId);
+        if (workspaceId != 0) {
+            jdbcTemplate.update("delete from workspace_invitation where workspace_id = ?", workspaceId);
+            jdbcTemplate.update("delete from workspace_member where workspace_id = ?", workspaceId);
+            jdbcTemplate.update("delete from workspace where id = ?", workspaceId);
+        }
+        for (long user : new long[]{ownerId, memberId, strangerId}) {
+            if (user != 0) jdbcTemplate.update("delete from app_user where id = ?", user);
+        }
+        if (createdCatalogStock && catalogStockId != null) {
+            jdbcTemplate.update("delete from stock where id = ? and not exists"
+                    + " (select 1 from workspace_stock where stock_id = ?)", catalogStockId, catalogStockId);
+        }
+        confirmsRollbackRemovedFixtures();
+        if (createdCatalogStock && catalogStockId != null) {
+            assertThat(jdbcTemplate.queryForObject("select count(*) from stock where id = ?",
+                    Long.class, catalogStockId)).isZero();
+        }
     }
 
     @AfterTransaction

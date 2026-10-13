@@ -95,3 +95,22 @@ public LoginHelper loginHelper(PasswordEncoder encoder) {
 Spring 从容器中解析 `PasswordEncoder` 并传给方法参数；方法直接使用该引用，不再调用另一个工厂方法。这种写法在普通组件类或关闭配置类方法代理时也可使用。依据：[Bean 方法参数与依赖](https://docs.spring.io/spring-framework/reference/core/beans/java/bean-annotation.html#beans-java-dependencies)。
 
 排错先区分阶段：普通 Java 编译检查类型与语法；Spring 装配检查必需依赖是否可获得。当前 Service 的编码器 Bean 若缺失，会阻止其非懒加载装配，尚未到执行登录 SQL 的阶段。业务层自行创建编码器则会绕开本次容器提供的配置／测试替身；`@Bean` 工厂方法中的 `new` 是向容器提供对象，二者要按对象最后由谁管理分别判断。
+
+## 5. 默认单例与请求数据
+
+Spring 默认作用域为 `singleton`：同一个容器中，同一个 Bean 定义对应一个共享实例。当前 AuthService 和密码编码器未指定其他作用域，多个请求会复用这些组件；单例不表示整个 JVM 中某个类只能存在一个对象，也不表示每次 HTTP 请求都会重新创建组件。依据：[Bean 作用域与单例边界](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html)。
+
+单例不会自动把方法调用串行化，多个请求可以同时进入同一个 Service。项目 [AuthService.login](../../src/main/java/com/stock/system/auth/service/AuthService.java) 使用方法局部变量 `AppUser user = userService.findByUsername(username)` 保存本次查询结果：每次调用有自己的局部变量引用，另一调用不会通过给自己的变量赋值来覆盖它。局部变量不保证其指向的任意可变对象都线程安全；共享依赖、缓存等对象仍需按自身并发规则使用。
+
+如果把本次用户改存为单例 Service 的 `private AppUser currentUser` 字段，会让多个请求写同一个位置。以下为未落地的教学反例，假设查询均成功：
+
+```java
+private AppUser currentUser;
+
+public Long queryUserId(String username) {
+    this.currentUser = userService.findByUsername(username);
+    return this.currentUser.getId();
+}
+```
+
+请求 A 写入用户甲后暂停，请求 B 写入用户乙，A 恢复读取字段时就可能拿到乙的 ID；返回前清空字段不能阻止之前的覆盖，还可能影响另一个调用。正式登录方法没有这个共享用户字段。请求数据优先使用参数、局部变量和返回值传递；确需共享的状态另行设计并发与身份隔离。`final` 只限制字段引用重新赋值，不自动保证所引用对象线程安全。

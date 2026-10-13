@@ -138,11 +138,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-agent-experiment
 
 现有 timeline 每批展示 20 条并允许跨周期，服务于页面浏览；新 readCycle 直接按选定周期统计和查询，服务于资料准备。范围内返回完整正文，超限返回 LIMIT_EXCEEDED 和空正文，不能把页面加载的一批称作整个周期。`readAt`、有效条数、实际读取条数和字符数由 Java／数据库确定；字符限制不等于精确 Token 数。查看原文使用 readOpinion 的新请求，重新校验访问和撤回状态。
 
-StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围和越权；`@Test` 标识一项检查，MockMvc 执行真实 Controller／认证／Service 链路而不额外启动 Web 端口，数据库快照通过测试事务回滚清理。它证明程序边界，不证明模型能正确理解资料，也不证明学生已经会独立写代码。本节按主题提供代码与原理入口，带学围绕完整问题、本人修改和结果验证展开，方式见 [学习方法](../project/roadmap.md#怎样学与完成标准)，具体单元与待巩固点只见 [学习交接](../project/status.md#求职专题学习交接)。模型消息、引用检查及来源重校验已在下方核心接入，子范围和跨连接并发证据仍待补齐；资料首段的历史验证见 [任务第 10 节](../specs/004-research-agent/tasks.md#10-ag-code-003周期资料读取首段2026-10-12)。
+StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围和越权；`@Test` 标识一项检查，MockMvc 执行真实 Controller／认证／Service 链路而不额外启动 Web 端口，事务 fixtures 回滚；跨连接与无外层事务的上下文案例按本轮 ID 精确清理。它证明程序边界，不证明模型能正确理解资料，也不证明学生已经会独立写代码。子范围与并发现已验收：日期／成员条件保存在 Scope.filter，统计和正文仍用同一 RR 快照，交付校验另起新事务。方式见 [学习方法](../project/roadmap.md#怎样学与完成标准)，个人结果只见 [学习交接](../project/status.md#求职专题学习交接)，最新工程证据见 [任务第 12 节](../specs/004-research-agent/tasks.md#12-ag-code-003范围行情与上下文接入2026-10-13)。
 
 ## 6. 正式业务学习：从资料到研究梳理结果
 
-主流程看 [ResearchSummaryService.summarize](../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java)，实际模型调用看 [ResearchSummaryModel.generate](../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java)。原来资料 Service 返回有效观点即结束；现在生成核心在它后面组织消息、调用模型、校验结果，并用 revalidate 重新检查当前访问和原来源。公共生成接口、报价、会话和费用门控尚未接入，默认模型关闭。
+生成核心看 [ResearchSummaryService](../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java)，实际模型调用看 [ResearchSummaryModel.generate](../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java)。原来资料 Service 返回有效观点即结束；现在核心组织消息、调用模型、校验结果，再用 revalidate 核对当前访问和原来源。004 已把它接到个人 HTTP 流程与页面，默认真实模型仍关闭。
 
 [ResearchSummaryPrompt](../../src/main/java/com/stock/system/agent/service/ResearchSummaryPrompt.java) 将回答要求放入 system，将本次股票／周期、来源编号、成员显示信息及有效观点放入 user；作者别名 M1／M2 在 Java 内映射，模型不取得账号 ID 或权限参数。只有实际读出的白名单资料进入消息，ChatClient 不自动查数据库。ANSWER_RULE 是本轮本人提出的表达要求经 AI 反馈后的代码落点，提示词版本便于追踪后续比较。
 
@@ -150,4 +150,10 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 
 [ResearchSummaryValidator](../../src/main/java/com/stock/system/agent/service/ResearchSummaryValidator.java) 能拒绝不存在的来源、用别人的记录描述成员、缺少最新观点或用单条记录冒充前后变化。它不能只靠 ID 证明句子的事实意义；即使引用真实，“认为订单可能增长”被写成“订单已经增长”仍然是质量问题，需要对照原文、提示约束与固定问题集核对。时间按任务使用：普通概述可以省日期，比较变化必须保留先后关系，底层输入仍保留真实日期。
 
-生成期间新增观点可返回带读取时间的旧快照并标记有新资料；撤回或权限失效必须阻止交付依赖它的答案，不能只禁用原文按钮。数据库读取与模型网络调用分开，模型耗时期间不占用业务事务。实际组件／数据库验证见 [任务第 11 节](../specs/004-research-agent/tasks.md#11-研究梳理生成核心与首次带学2026-10-13)，内存 HTTP 替身只证明程序链路，不证明真实模型质量；本人结果仍由 status 单独记录。
+生成期间范围内新增观点可返回带读取时间的旧快照并标记有新资料；撤回或权限失效必须阻止交付依赖它的答案，不能只禁用原文按钮。数据库读取与模型／行情网络调用分开，网络耗时期间不占用业务事务。[行情适配](../../src/main/java/com/stock/system/agent/service/ResearchMarketDataService.java) 复用既有可信股票身份与供应商，价格和日 K 名义价差由 Java 绑定或计算，不由模型猜测；失败说明缺口，最新价不充当历史周期结束价。实际验证见任务第 11～13 节；受控 HTTP／行情只证明程序链路，不证明真实模型质量，本人结果由 status 单独记录。
+
+### 从生成核心到个人页面
+
+页面按钮经 [ResearchAgentController](../../src/main/java/com/stock/system/agent/controller/ResearchAgentController.java) 进入 [ResearchAgentService](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java)：当前账号与周期授权 → 读取有界资料 → requestId 去重与费用预留 → 调用上述生成核心 → 重查依赖并保存 → 页面展示。刷新只读取已保存结果，不重新调用模型。requestId 表示同一次动作，断线后查原运行状态；用户主动重新梳理才用新标识。
+
+[ResearchAgentRecordMapper](../../src/main/java/com/stock/system/agent/mapper/ResearchAgentRecordMapper.java) 负责短事务。等待模型时不持数据库锁，完成时只保存引用与当前版本仍有效的结果。清空增加版本，旧版本结果不能重新写回；个人正文可以删，已发生或未知的调用费用独立保留。对应表职责只见数据模型 3.13。页面组件通过具体 ID 与账号版本识别真正切换，不能仅因父页面重新创建了内容相同的对象就重置输入。

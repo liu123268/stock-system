@@ -1,5 +1,7 @@
 package com.stock.system.stock.vo;
 
+import com.stock.system.stock.dto.ResearchSourceFilter;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,8 +27,15 @@ public record ResearchCycleSourcesResponseVO(
             int readOpinionCount,
             Coverage coverage,
             int maxOpinionCount,
-            int maxTextCodePoints
-    ) {}
+            int maxTextCodePoints,
+            ResearchSourceFilter filter
+    ) {
+        public Scope(LocalDateTime readAt, long validOpinionCount, long textCodePointCount,
+                     int readOpinionCount, Coverage coverage, int maxOpinionCount, int maxTextCodePoints) {
+            this(readAt, validOpinionCount, textCodePointCount, readOpinionCount, coverage,
+                    maxOpinionCount, maxTextCodePoints, ResearchSourceFilter.fullCycle());
+        }
+    }
 
     /** 原文查看及后续引用映射使用；不是整个业务实体或最终模型请求。 */
     public record OpinionSource(

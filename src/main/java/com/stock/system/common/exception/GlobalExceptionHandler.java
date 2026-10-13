@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -35,6 +36,11 @@ public class GlobalExceptionHandler {
                 .orElse(ErrorCode.INVALID_REQUEST.message());
         Result<Void> result = new Result<>(ErrorCode.INVALID_REQUEST.name(), message, null);
         return ResponseEntity.badRequest().body(result);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Result<Void>> handleParameterTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        return ResponseEntity.badRequest().body(Result.error(ErrorCode.INVALID_REQUEST));
     }
 
     @ExceptionHandler(PessimisticLockingFailureException.class)

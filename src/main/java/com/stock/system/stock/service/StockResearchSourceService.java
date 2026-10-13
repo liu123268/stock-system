@@ -4,6 +4,7 @@ import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.entity.ResearchCycle;
 import com.stock.system.stock.entity.Stock;
+import com.stock.system.stock.dto.ResearchSourceFilter;
 import com.stock.system.stock.mapper.ResearchCycleMapper;
 import com.stock.system.stock.mapper.WorkspaceStockMapper;
 import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO;
@@ -19,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.DateTimeException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
@@ -52,26 +55,45 @@ public class StockResearchSourceService {
     public ResearchCycleSourcesResponseVO readCycle(
             Long userId, Long workspaceId, Long workspaceStockId, Long researchCycleId
     ) {
+        return readCycle(userId, workspaceId, workspaceStockId, researchCycleId, ResearchSourceFilter.fullCycle());
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ResearchCycleSourcesResponseVO readCycle(
+            Long userId, Long workspaceId, Long workspaceStockId, Long researchCycleId,
+            ResearchSourceFilter filter
+    ) {
         BoundCycle bound = requireCycle(userId, workspaceId, workspaceStockId, researchCycleId);
+        SourceQuery query = sourceQuery(workspaceId, workspaceStockId, researchCycleId, filter);
+        if (filter.authorUserId() != null) {
+            Long authorCount = jdbcTemplate.queryForObject("select count(*) " + SOURCE_FROM_SQL
+                            + " and opinion.author_user_id = ?", Long.class,
+                    workspaceId, workspaceStockId, researchCycleId, filter.authorUserId());
+            if (authorCount == null || authorCount == 0) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+        }
         SourceSize size = jdbcTemplate.queryForObject("""
                 select current_timestamp(6) read_at, count(*) valid_count,
                        coalesce(sum(char_length(opinion.reason)
                            + coalesce(char_length(opinion.observation_note), 0)), 0) text_count
-                """ + SOURCE_FROM_SQL, (row, index) -> new SourceSize(
+                """ + query.fromSql(), (row, index) -> new SourceSize(
                 row.getTimestamp("read_at").toLocalDateTime(),
                 row.getLong("valid_count"), row.getLong("text_count")),
-                workspaceId, workspaceStockId, researchCycleId);
+                query.parameters().toArray());
 
         boolean exceedsLimit = size.count() > MAX_OPINION_COUNT
                 || size.textCodePoints() > MAX_TEXT_CODE_POINTS;
+        List<Object> bodyParameters = new ArrayList<>(query.parameters());
+        bodyParameters.add(MAX_OPINION_COUNT);
         List<OpinionSource> opinions = exceedsLimit ? List.of() : jdbcTemplate.query(
-                SOURCE_SELECT_SQL + SOURCE_FROM_SQL
+                SOURCE_SELECT_SQL + query.fromSql()
                         + " order by opinion.created_at, opinion.id limit ?",
                 (row, index) -> toSource(row),
-                workspaceId, workspaceStockId, researchCycleId, MAX_OPINION_COUNT);
+                bodyParameters.toArray());
         Scope scope = new Scope(size.readAt(), size.count(), size.textCodePoints(), opinions.size(),
                 exceedsLimit ? Coverage.LIMIT_EXCEEDED : Coverage.COMPLETE,
-                MAX_OPINION_COUNT, MAX_TEXT_CODE_POINTS);
+                MAX_OPINION_COUNT, MAX_TEXT_CODE_POINTS, filter);
         ResearchCycle cycle = bound.cycle();
         return new ResearchCycleSourcesResponseVO(workspaceStockId, bound.stock().getCode(),
                 bound.stock().getName(), cycle.getId(), cycle.getStatus(), cycle.getStartedAt(),
@@ -104,21 +126,24 @@ public class StockResearchSourceService {
         requireCycle(userId, workspaceId, workspaceStockId, researchCycleId);
         if (expected == null || !Objects.equals(expected.workspaceStockId(), workspaceStockId)
                 || !Objects.equals(expected.researchCycleId(), researchCycleId)
+                || expected.scope() == null || expected.opinions() == null
+                || expected.opinions().size() > MAX_OPINION_COUNT
                 || expected.scope().coverage() != Coverage.COMPLETE) {
             throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
         }
         // 当前范围可能因新增观点超限，只统计数量；正文仅查原快照最多 100 条。
-        Long currentCount = jdbcTemplate.queryForObject("select count(*) " + SOURCE_FROM_SQL,
-                Long.class, workspaceId, workspaceStockId, researchCycleId);
+        SourceQuery query = sourceQuery(workspaceId, workspaceStockId, researchCycleId, expected.scope().filter());
+        Long currentCount = jdbcTemplate.queryForObject("select count(*) " + query.fromSql(),
+                Long.class, query.parameters().toArray());
         Map<Long, OpinionSource> expectedById = new HashMap<>();
         for (OpinionSource source : expected.opinions()) {
             expectedById.put(source.id(), source);
         }
         if (!expectedById.isEmpty()) {
             String placeholders = String.join(",", expectedById.keySet().stream().map(unused -> "?").toList());
-            List<Object> parameters = new java.util.ArrayList<>(List.of(workspaceId, workspaceStockId, researchCycleId));
+            List<Object> parameters = new ArrayList<>(query.parameters());
             parameters.addAll(expectedById.keySet());
-            List<OpinionSource> current = jdbcTemplate.query(SOURCE_SELECT_SQL + SOURCE_FROM_SQL
+            List<OpinionSource> current = jdbcTemplate.query(SOURCE_SELECT_SQL + query.fromSql()
                             + " and opinion.id in (" + placeholders + ")",
                     (row, index) -> toSource(row), parameters.toArray());
             if (current.size() != expectedById.size()
@@ -130,6 +155,43 @@ public class StockResearchSourceService {
     }
 
     public record SourceValidity(boolean newOpinionsAvailable) {}
+
+    /** 超限响应没有正文可重校验，但交付前仍需检查当前访问和对象归属。 */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public void verifyReadAccess(Long userId, Long workspaceId, Long stockId, Long cycleId) {
+        requireCycle(userId, workspaceId, stockId, cycleId);
+    }
+
+    private SourceQuery sourceQuery(Long workspaceId, Long stockId, Long cycleId, ResearchSourceFilter filter) {
+        if (filter == null || (filter.authorUserId() != null && filter.authorUserId() <= 0)
+                || (filter.dateFrom() != null && (filter.dateFrom().getYear() < 1000 || filter.dateFrom().getYear() > 9999))
+                || (filter.dateTo() != null && (filter.dateTo().getYear() < 1000 || filter.dateTo().getYear() > 9999))
+                || (filter.dateFrom() != null && filter.dateTo() != null
+                && filter.dateFrom().isAfter(filter.dateTo()))) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        StringBuilder sql = new StringBuilder(SOURCE_FROM_SQL);
+        List<Object> parameters = new ArrayList<>(List.of(workspaceId, stockId, cycleId));
+        if (filter.authorUserId() != null) {
+            sql.append(" and opinion.author_user_id = ?");
+            parameters.add(filter.authorUserId());
+        }
+        if (filter.dateFrom() != null) {
+            sql.append(" and opinion.created_at >= ?");
+            parameters.add(filter.dateFrom().atStartOfDay());
+        }
+        if (filter.dateTo() != null) {
+            try {
+                sql.append(" and opinion.created_at < ?");
+                parameters.add(filter.dateTo().plusDays(1).atStartOfDay());
+            } catch (DateTimeException exception) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+        }
+        return new SourceQuery(sql.toString(), List.copyOf(parameters));
+    }
+
+    private record SourceQuery(String fromSql, List<Object> parameters) {}
 
     private BoundCycle requireCycle(
             Long userId, Long workspaceId, Long workspaceStockId, Long researchCycleId

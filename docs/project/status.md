@@ -4,11 +4,11 @@
 
 ## 当前阶段与下一步
 
-2026-10-13 V2 正式接入：在已完成的框架和周期资料首段上增加研究梳理生成核心，接通授权资料、白名单消息、ChatClient、结构／引用检查及交付前来源重校验；51 项定向回归通过，真实数据库与内存模型替身的边界见 [任务第 11 节](../specs/004-research-agent/tasks.md#11-研究梳理生成核心与首次带学2026-10-13)。没有新增真实模型调用。默认模型仍关闭，HTTP 生成入口、报价适配、运行／费用账本、个人会话和页面尚未接入，003／004 保持未完成。下一步补日期／成员子范围与并发证据，再将生成核心、报价和最小会话／预算保护接到最早页面；财务／报告条件沿 001F／001R，V1 CODE-206I 独立保留，本轮未部署。
+2026-10-13 V2 已完成 AG-CODE-004 的本地程序闭环：周期内研究助手、固定生成 HTTP、个人恢复／清空、原文弹窗、幂等和独立费用账本。97 项后端、9 项前端定向检查和真实 Chrome／本地 HTTP 模型替身流程通过，证据见 [任务第 13 节](../specs/004-research-agent/tasks.md#13-ag-code-004个人页面与调用账本2026-10-13)。默认真实模型及正式页面预算仍关闭，未新增真实模型／行情请求；真实质量与供应商效果未据此验收。V13 只应用测试库，开发库未自动迁移；正常后端重启会按 Flyway 接新迁移。日 K 上限已与设计统一为 31 自然日。下一步 AG-CODE-005 受限工具追问及本页面真实质量核对，财务／报告条件沿 001F／001R；本人练习不阻塞开发，V1 CODE-206I 独立保留，本轮未部署。
 
 2026-10-07 版本调整：V1 即 Java 核心版，第一阶段单 Agent 移至 [V2](../product/requirements-v2.md)；当前 SPEC-004 主体与使用细则已确认，详细实现、来源覆盖及效果仍需验证。CODE-206G 目录覆盖／每日同步与 CODE-206H 生产部署验收已关闭，按 [V1 演示标准](../product/requirements-v1.md#6-整体演示标准) 的跨模块流程已通过。2026-10-08 新确认的 CODE-206J 每日交易状态核实已实施并完成本地／云端首次真实同步；供应商不返回状态的北交所记录仍显示待核实。V1 仍剩 CODE-206I 的真实 SDK Token 到期自动刷新证据；本地 SDK 网页已通过。下一步观察受 SDK 管理的真实到期刷新，不读取／手改 Token，也不以正常报价替代刷新证明。其他增强仍在候选清单，不自动进入 V2。
 
-首个场景及 P-001～P-007 已确认，范围见 [SPEC-004 需求](../specs/004-research-agent/requirements.md)。AG-CODE-001 自造样本真实模型实验已通过，证据见 [任务第 7 节](../specs/004-research-agent/tasks.md#7-真实模型实验与修正验收2026-10-09)；框架预检与接入分别见第 8／9 节。AG-CODE-001F 仅取得 A／港代表年度、半年度五项财务样本，币种／单位／利润口径、季度覆盖和生产路由仍待核对，证据见 [第 5 节](../specs/004-research-agent/tasks.md#5-独立财务源预检2026-10-09)。系统维护的报告库沿 [RAG 需求](../product/requirements-v2.md#33-必做阶段受控文档-rag)，001R／008／009 和正式生成、会话、页面仍待完成。
+首个场景及 P-001～P-007 已确认，范围见 [SPEC-004 需求](../specs/004-research-agent/requirements.md)。AG-CODE-001 自造样本真实模型实验已通过，证据见 [任务第 7 节](../specs/004-research-agent/tasks.md#7-真实模型实验与修正验收2026-10-09)；框架预检与接入分别见第 8／9 节。AG-CODE-001F 仅取得 A／港代表年度、半年度五项财务样本，币种／单位／利润口径、季度覆盖和生产路由仍待核对，证据见 [第 5 节](../specs/004-research-agent/tasks.md#5-独立财务源预检2026-10-09)。系统维护的报告库沿 [RAG 需求](../product/requirements-v2.md#33-必做阶段受控文档-rag)，001R／008／009、正式工具和真实质量仍待完成。
 
 认证、普通空间基础边界、超级管理员治理、空间改名、个人资料和邀请码防猜测完成至 [SPEC-001 CODE-010](../specs/001-workspace/tasks.md)。[SPEC-002](../specs/002-stock-research/tasks.md) 的研究生命周期审查缺口、Longbridge 状态准入、CODE-208 拼音搜索、CODE-209 时间线分批读取、CODE-210 空间概览动态、CODE-211A 未关注行情页、CODE-211B 研究详情行情和 CODE-212 共享列表研究摘要均已关闭。
 
@@ -33,12 +33,12 @@
 | Agent 当前学习字段 | 实际快照 |
 | --- | --- |
 | 单元与目标 | AG-01：一次带项目资料的模型调用；分清回答要求、问题／资料、发送与返回 |
-| 正式入口 | [ResearchSummaryService.summarize](../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java) 串起业务流程，[ResearchSummaryModel.generate](../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java) 执行 ChatClient；源码与复习入口见 [生成核心](../engineering/agent-experiment.md#6-正式业务学习从资料到研究梳理结果)。生成 HTTP 入口仍未实现 |
-| 本人动作 | 已提交一条自然语言回答要求，由 AI 审阅后落到 ResearchSummaryPrompt.ANSWER_RULE；已回答本案例的依据判断，继续对照主流程和 Prompt.build 看资料怎样进入请求 |
-| 本人产出／提示／验证 | 2026-10-13 本人提出“概括是谁、大概何时，时间不一定需要；资料不足说明缺什么及对回答的影响”。AI 补明普通概述可省日期，比较变化须保留先后，成员可能性不能当成事实。内存 HTTP 替身检查该规则确实进入 system。本次在已有示例与讲解后，本人正确指出把“可能增长”写成“已经增长”不成立，认为事实需要财报／预告或其他权威材料支持；记录为该案例的证据越界判断通过。尚无本人独立 Java 修改、真实模型质量比较或整体复述证据 |
-| 已讲与卡点 | System／User、Service 资料进入消息、ChatClient 同步响应已讲；本案例能区分成员预期和已核实事实。提示词约束不能自动取得缺失资料、输入组装与整体调用链仍待本人设计判断／复述，不扩大为整个 Agent 单元掌握 |
-| 下一动作 | 继续 AG-01：沿 readCycle → Prompt.build → Model.generate 看真实数据传递，理解 Input 的 system／user 发给模型、sources 留在 Java 做引用映射；针对“有效观点有两条，回答却只提一条”的问题，说明先检查哪些数据及怎样区分读取／组装遗漏与模型遗漏，再做同一功能的输入／质量对照。结构化输出在本主题后续展开，不转 SQL 课 |
-| 节奏 | 具体时间与分段只见 roadmap。51 项工程定向回归不代替个人掌握；默认模型关闭，本轮未发真实模型请求，页面及生成入口保护仍待接入 |
+| 正式入口 | [ResearchAgentService](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java) 接按钮、范围和个人运行，[ResearchSummaryService](../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java) 串起生成核心，[ResearchSummaryModel.generate](../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java) 执行 ChatClient；复习见 [生成核心与个人页面](../engineering/agent-experiment.md#6-正式业务学习从资料到研究梳理结果) |
+| 本人动作 | 已提交自然语言回答要求并回答本案例的依据判断和排查顺序。contains 填空取消，不记为本人完成；后续对照页面的实际结果参与输入规则／依据核对，工程继续 005，不安排前置答题 |
+| 本人产出／提示／验证 | 2026-10-13 本人提出简洁概括与资料缺口要求，由 AI 补明日期／事实边界后落入 ANSWER_RULE；内存 HTTP 替身检查该规则进入 system。在示例与讲解后，本人正确指出“可能增长”不能写成“已经增长”，实际事实需要对应权威材料；随后提出先检查 sources，再检查 input 是否给模型，最后检查 generated 是否漏处理。记录为这两个有背景案例的判断／排查顺序正确；尚无本人独立 Java 修改、真实模型质量比较或隔次复述证据 |
+| 已讲与卡点 | 当前主流程与 System／User 已讲，能够在给定场景下按资料读取、消息发送、模型返回定位问题；本人仍反馈看懂但难记、参数格式不清，并指出教学未与开发同步。AG-01 的本次主流程讲解到此，独立编码和真实质量对照仍待验证，不能标为掌握；辅助断言语法不设为开发关卡 |
+| 下一动作 | AI 接 005 的受限工具追问，先落实本页面真实模型质量核对与原实验／页面预算边界；学习承接 AG-01，以完整输入／输出及实际结果对照收口，正式代码练习随关键修改安排。单元测试系统教学仍保留在 Java 测试专题 |
+| 节奏 | 时间与分段只见 roadmap；本人练习待完成不阻塞工程，执行规则见 AGENTS。页面闭环与回归通过不代替个人掌握，AG-01 独立编码／真实质量对照仍待验证；默认模型关闭 |
 
 当前 MySQL 专题已完成第一轮教学：表关系与约束、主键／二级／联合／覆盖索引和回表、B+ 树与 `explain`、常用查询与游标分页、JDBC 批处理、事务与四种隔离级别、MVCC、`select ... for update`、记录锁／间隙锁／临键锁、悲观锁／乐观锁、死锁，以及 undo log／redo log／binlog。项目链路使用邀请加入、`workspace_member`、股票目录搜索、研究时间线和目录批量导入；复习答案见 [数据库与持久化面试问答](../career/interview/03-database-persistence.md)，结构与执行计划证据见 [数据模型](../architecture/data-model.md)。
 
@@ -54,16 +54,16 @@ Java 动手仍需补独立完成参数、字符串与返回值、对象、Servic
 
 | Java 当前学习字段 | 实际快照 |
 | --- | --- |
-| 专题与单元目标 | Spring 核心与 Web，范围沿 [路线第 3 块](roadmap.md#3-spring-核心与-web-开发)。当前用登录链路说明 Bean 注册、构造器注入及接口如何对应实际对象，承接已有 IoC／DI 入门 |
+| 专题与单元目标 | Spring 核心与 Web，范围沿 [路线第 3 块](roadmap.md#3-spring-核心与-web-开发)。当前进入 Bean 作用域：说明默认单例组件怎样被请求复用、为什么用户数据保存在方法局部变量；配置与对象传递交接保留 |
 | 正式入口 | [AuthController 构造器](../../src/main/java/com/stock/system/auth/controller/AuthController.java)、[AuthService 构造器](../../src/main/java/com/stock/system/auth/service/AuthService.java)、[PasswordConfig](../../src/main/java/com/stock/system/config/PasswordConfig.java)；用现有实现讲解，未修改业务源码；复习正文见 [Spring 教学](../engineering/spring.md) |
-| 已讲范围 | 构造器参数由容器提供；单构造器可省略 @Autowired；@Service／@Bean 注册与接口注入；必需依赖缺失的启动边界；IoC／DI／Bean 区分、@Configuration 与 @Bean 分工、默认配置类增强与普通调用的 A／B 对照、Bean 方法参数注入；另已补 getter、密码判断与短路，承接完整登录流程区分协作组件与查询结果对象，说明外部选择依赖与测试替换 |
-| 本人动作与卡点 | 2026-10-13 先前卡点是 PasswordConfig 中没有 AuthService，无法跟踪谁调用、哪一行接收／使用；已并列解释返回对象 → 构造器 → 字段 → matches。注解分工与配置增强曾反馈“感觉听懂但是还是难以理解”，对象传递与 A／B 对照保留回看。当前待本人判断更换配置编码器时，构造器保存传入对象与内部自行 new 的行为区别；尚无独立复述／验证，不把“继续”记为掌握 |
-| 下一动作 | 先审阅当前配置替换设计判断，按实际缺口回看对象创建 → 构造器接收 → 字段保存 → 业务方法调用及配置增强 A／B 对照。单例系统教学、生命周期及 Boot／Web 仍待后续，不提前推进；Agent AG-01 待做动作继续保留 |
+| 已讲范围 | 构造器参数由容器提供；单构造器可省略 @Autowired；@Service／@Bean 注册与接口注入；必需依赖缺失的启动边界；IoC／DI／Bean 区分、@Configuration 与 @Bean 分工、默认配置类增强与普通调用的 A／B 对照、Bean 方法参数注入；getter、密码判断与短路、完整登录职责及依赖替换；新增默认单例的容器／Bean 边界、并发调用、局部变量与共享字段的请求数据区别 |
+| 本人动作与卡点 | 配置类与对象传递曾反馈难以理解，保留回看；配置替换题曾遗漏原／改代码，这是题设缺失。默认强度 10 → 12 已作完整示范，未实际修改配置，未独立验收。当前待本人判断：在共享 currentUser 字段读取后、返回前置 null，能否避免两名用户并发时串数据；提供完整改后代码及查询成功的用户映射。无本人作答／运行证据，不标掌握 |
+| 下一动作 | 先审阅共享字段清空的设计判断，缺口定位到同一对象的字段与每次调用的局部变量；配置传递和增强 A／B 按具体疑问回看。之后补 prototype／request 作用域及注入边界，再讲生命周期与 Boot／Web；Agent AG-01 待做动作继续保留 |
 
 ## 未完成边界
 
 - V1 仍缺 CODE-206I 的真实 Token 自动刷新验收；网页、报价或 SDK 探测通过不能自动关闭这一项。整个 V1 暂不标全部完成。
-- Agent 归属 V2，首个场景与财报范围已确认，设计和分步任务见 SPEC-004；独立真实模型实验已通过自造样本、财务源预检已取得代表样本。主工程已增加固定资料梳理核心，公共生成接口、工具追问、会话、页面与 SSE 尚未接入，财务口径及生产路由仍有未验证项。
+- Agent 归属 V2；正式固定梳理、生成接口与个人页面已在受控模型／行情范围完成。真实质量、工具追问、财务口径／生产路由、RAG／MCP 与 SSE 仍分项验收；首轮真实自造样本与财务代表样本不替代这些边界。
 - 云端每日同步已验证首次真实提交、定时器安装及 2026-10-08 的首次每日定时执行成功；本地另已完成安装、正常提交与实际计划任务触发，证据见上方 tasks。连续多日稳定运行、关机／登录补跑的现场观察、主动告警、主机／整库恢复演练仍属于后续运维边界；隔离故障验收的上游为替身，未撤销真实生产授权。
 
 ## 环境快照

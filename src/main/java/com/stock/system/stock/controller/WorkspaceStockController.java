@@ -6,6 +6,7 @@ import com.stock.system.stock.dto.AddWorkspaceStockRequestDTO;
 import com.stock.system.stock.dto.UpdateAttentionLevelRequestDTO;
 import com.stock.system.stock.dto.CreateStockOpinionRequestDTO;
 import com.stock.system.stock.dto.ResearchCycleCommandRequestDTO;
+import com.stock.system.stock.dto.ResearchSourceFilter;
 import com.stock.system.stock.service.StockResearchService;
 import com.stock.system.stock.service.StockCandlestickService;
 import com.stock.system.stock.service.StockIntradayService;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.util.List;
 import java.time.Instant;
@@ -117,10 +119,14 @@ public class WorkspaceStockController {
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,
             @PathVariable Long workspaceStockId,
-            @PathVariable Long researchCycleId
+            @PathVariable Long researchCycleId,
+            @RequestParam(required = false) Long authorUserId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo
     ) {
         return Result.success(sourceService.readCycle(
-                currentUser.userId(), workspaceId, workspaceStockId, researchCycleId));
+                currentUser.userId(), workspaceId, workspaceStockId, researchCycleId,
+                new ResearchSourceFilter(authorUserId, dateFrom, dateTo)));
     }
 
     @GetMapping("/{workspaceStockId}/research/cycles/{researchCycleId}/opinions/{opinionId}")

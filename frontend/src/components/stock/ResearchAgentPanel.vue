@@ -1,0 +1,260 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { ApiError } from '@/api/http'
+import { handleWorkspaceApiError } from '@/utils/workspace-access'
+import { clearAgent, generateAgent, readAgentOriginal, readAgentRun, restoreAgent } from '@/api/agent'
+import type { AgentAnswer, AgentItem, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
+
+const props = defineProps<{ target: AgentTarget }>()
+const router = useRouter()
+const auth = useAuthStore()
+const loading = ref(true)
+const busy = ref(false)
+const clearing = ref(false)
+const enabled = ref(false)
+const error = ref('')
+const notices = ref('')
+const messages = ref<AgentRun[]>([])
+const hasEarlier = ref(false)
+const dateFrom = ref('')
+const dateTo = ref('')
+const clearConfirming = ref(false)
+const originalDialog = ref<HTMLDialogElement>()
+const original = ref<OpinionOriginal | null>(null)
+const originalLoading = ref(false)
+const originalError = ref('')
+let version = 0
+let originalVersion = 0
+let disposed = false
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+let sourceButton: HTMLElement | null = null
+const latest = computed(() => messages.value.find((item) => item.answer)?.answer)
+function capture() { return { version, session: auth.sessionVersion, target: { ...props.target } } }
+function current(request: ReturnType<typeof capture>) { return !disposed && version === request.version && auth.sessionVersion === request.session }
+function time(value: string | null) { return value ? value.replace('T', ' ').slice(0, 19) : '暂无时间' }
+function sections(answer: AgentAnswer) {
+  return [
+    { title: '观点变化', items: answer.summary.changes, empty: '本次资料未形成可对照的观点变化。' },
+    { title: '成员观点', items: answer.summary.members, empty: '本次范围内没有有效成员观点。' },
+    { title: '待核对事项', items: answer.summary.pendingItems, empty: '本次没有列出待核对事项。' },
+  ]
+}
+function refs(answer: AgentAnswer, item: AgentItem) { return answer.references.filter((source) => item.sourceIds.includes(source.sourceId)) }
+async function fail(cause: unknown, request: ReturnType<typeof capture>) {
+  if (!current(request)) return
+  if (cause instanceof ApiError && ['WORKSPACE_NOT_FOUND', 'WORKSPACE_MEMBERSHIP_INACTIVE', 'WORKSPACE_ACCESS_DENIED', 'UNAUTHORIZED'].includes(cause.code)) {
+    messages.value = []
+    original.value = null
+    originalDialog.value?.close()
+  }
+  if (await handleWorkspaceApiError(cause, router)) return
+  error.value = cause instanceof ApiError ? cause.message : '暂时无法连接。可以恢复运行状态；重试不会自动再次调用模型。'
+}
+function stopPoll() { clearTimeout(pollTimer); pollTimer = undefined }
+function schedulePoll(runId: number, request: ReturnType<typeof capture>) {
+  stopPoll()
+  pollTimer = setTimeout(async () => {
+    if (!current(request)) return
+    try {
+      const run = (await readAgentRun(request.target, runId)).data.data
+      if (!current(request)) return
+      if (run.status === 'RUNNING') schedulePoll(runId, request)
+      else { busy.value = false; accept(run); await load(false) }
+    } catch (cause) { busy.value = false; await fail(cause, request) }
+  }, 1500)
+}
+function accept(run: AgentRun) {
+  if (run.answer) {
+    messages.value = [run, ...messages.value.filter((message) => message.runId !== run.runId)]
+    notices.value = '本次结果已保存到你的个人记录。'
+  } else if (run.status !== 'RUNNING') error.value = run.message || '本次未完成梳理，已有有效结果仍然保留。'
+}
+async function load(reset = true, older = false) {
+  const request = capture()
+  loading.value = true
+  error.value = ''
+  try {
+    const before = older ? messages.value[messages.value.length - 1]?.runId : undefined
+    const session = (await restoreAgent(request.target, before)).data.data
+    if (!current(request)) return
+    enabled.value = session.enabled
+    messages.value = older ? [...messages.value, ...session.messages] : session.messages
+    hasEarlier.value = session.hasEarlierMessages
+    busy.value = !!session.activeRun
+    if (session.invalidated) notices.value = '部分结果依赖的观点已经撤回或变化，需要重新梳理。'
+    else if (reset) notices.value = ''
+    if (session.activeRun) schedulePoll(session.activeRun.runId, request)
+  } catch (cause) { await fail(cause, request) }
+  finally { if (current(request)) loading.value = false }
+}
+async function generate() {
+  if (busy.value || clearing.value || loading.value || !enabled.value) return
+  if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) {
+    error.value = '开始日期不能晚于结束日期。'; return
+  }
+  const request = capture()
+  busy.value = true
+  error.value = ''
+  notices.value = '正在核对本周期资料并整理观点，请稍候。'
+  try {
+    const run = (await generateAgent(request.target, crypto.randomUUID(), {
+      ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}),
+      ...(dateTo.value ? { dateTo: dateTo.value } : {}),
+    })).data.data
+    if (!current(request)) return
+    accept(run)
+    if (run.status === 'RUNNING') { schedulePoll(run.runId, request); return }
+    busy.value = false
+    await load(false)
+    if (run.message) error.value = run.message
+  } catch (cause) {
+    if (!current(request)) return
+    busy.value = false
+    await fail(cause, request)
+    // POST 断线后仅查个人状态，绝不偷偷重发付费请求。
+    if (!(cause instanceof ApiError)) await load(false)
+  }
+}
+async function clear() {
+  if (clearing.value) return
+  const request = capture()
+  clearing.value = true
+  try {
+    await clearAgent(request.target)
+    if (!current(request)) return
+    version++
+    originalVersion++
+    stopPoll()
+    messages.value = []
+    busy.value = false
+    hasEarlier.value = false
+    original.value = null
+    originalDialog.value?.close()
+    clearConfirming.value = false
+    notices.value = '已清空本周期的个人记录。'
+    error.value = ''
+  } catch (cause) { await fail(cause, request) }
+  finally { if (!disposed) clearing.value = false }
+}
+async function openOriginal(opinionId: number, event: MouseEvent) {
+  const request = capture()
+  const sequence = ++originalVersion
+  sourceButton = event.currentTarget as HTMLElement
+  original.value = null
+  originalError.value = ''
+  originalLoading.value = true
+  await nextTick()
+  originalDialog.value?.showModal()
+  try {
+    const content = (await readAgentOriginal(request.target, opinionId)).data.data
+    if (current(request) && sequence === originalVersion) original.value = content
+  } catch (cause) {
+    if (!current(request) || sequence !== originalVersion) return
+    originalError.value = cause instanceof ApiError ? cause.message : '原文暂时无法读取，请关闭后重试。'
+    if (cause instanceof ApiError && cause.code === 'STOCK_OPINION_NOT_FOUND') await load(false)
+    else await fail(cause, request)
+  } finally { if (current(request) && sequence === originalVersion) originalLoading.value = false }
+}
+function closeOriginal() {
+  originalVersion++
+  original.value = null
+  sourceButton?.focus({ preventScroll: true })
+}
+watch([() => props.target.workspaceId, () => props.target.stockId, () => props.target.cycleId, () => auth.sessionVersion], () => {
+  version++; originalVersion++; stopPoll(); messages.value = []; original.value = null
+  originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''
+  void load()
+})
+onMounted(() => void load())
+onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(); originalDialog.value?.close() })
+</script>
+
+<template>
+  <section class="agent-panel" aria-label="个人研究助手" :aria-busy="busy || loading">
+    <header class="agent-heading">
+      <div><h3>研究梳理</h3><p>整理本周期的成员观点，结果仅你可见。</p></div>
+      <button class="ui-button" type="button" :disabled="loading || clearing" @click="clearConfirming = !clearConfirming">清空个人记录</button>
+    </header>
+    <form class="agent-controls" @submit.prevent="generate">
+      <label>观点开始日期<input v-model="dateFrom" type="date" :disabled="busy || clearing" /></label>
+      <label>观点结束日期<input v-model="dateTo" type="date" :disabled="busy || clearing" /></label>
+      <button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled">{{ busy ? '正在梳理…' : latest ? '重新梳理' : '开始梳理' }}</button>
+    </form>
+    <p class="agent-note">日期留空时读取完整周期。成员的推测仍需权威资料核对。</p>
+    <div v-if="clearConfirming" class="agent-confirm">
+      <p>清空这个周期的个人结果？正在生成的迟到结果也不会重新保存。</p>
+      <button class="ui-button" type="button" :disabled="clearing" @click="clearConfirming = false">保留记录</button>
+      <button class="ui-button" type="button" :disabled="clearing" @click="clear">确认清空</button>
+    </div>
+    <p v-if="loading" role="status" class="agent-note">正在读取个人记录…</p>
+    <p v-else-if="!enabled" class="agent-note">研究助手尚未启用。启用服务端模型和预算配置后可生成；已有记录仍可查看。</p>
+    <p v-if="notices" role="status" class="agent-note">{{ notices }}</p>
+    <div v-if="error" class="agent-error" role="alert"><p>{{ error }}</p><button class="ui-button" type="button" :disabled="loading" @click="load(false)">恢复运行状态</button></div>
+    <p v-if="!loading && !messages.length && !busy" class="agent-empty">生成后会在这里保留概况、成员观点和待核对事项，返回页面可继续查看。</p>
+    <article v-for="run in messages" :key="run.runId" class="agent-answer" :data-run-id="run.runId">
+      <template v-if="run.answer">
+        <p class="agent-note">资料读取于 {{ time(run.answer.scope.readAt) }} · {{ run.answer.scope.readOpinionCount }} 条有效观点</p>
+        <p v-if="run.answer.scope.filter.dateFrom || run.answer.scope.filter.dateTo" class="agent-note">观点日期：{{ run.answer.scope.filter.dateFrom || '周期开始' }} 至 {{ run.answer.scope.filter.dateTo || '周期结束' }}</p>
+        <p class="agent-quote" v-if="run.answer.quote.status === 'AVAILABLE'">生成时报价：<strong>{{ run.answer.quote.price }} {{ run.answer.quote.currency }}</strong> · {{ time(run.answer.quote.quoteTime) }} · {{ run.answer.quote.source }}{{ run.answer.quote.simulated ? '（模拟）' : '' }}</p>
+        <p v-else class="agent-note">本次未取得可用报价，以下继续整理已有观点。</p>
+        <p v-if="run.answer.newOpinionsAvailable" class="agent-note">本周期已有新观点，可点击重新梳理。</p>
+        <h4>概况</h4><p class="agent-prose">{{ run.answer.summary.overview.text }}</p>
+        <div class="agent-references"><button v-for="source in refs(run.answer, run.answer.summary.overview)" :key="source.sourceId" class="ui-button source-link" type="button" @click="openOriginal(source.opinionId, $event)">查看 {{ source.authorName }} 的原文</button></div>
+        <section v-for="section in sections(run.answer)" :key="section.title">
+          <h4>{{ section.title }}</h4>
+          <p v-if="!section.items.length" class="agent-note">{{ section.empty }}</p>
+          <div v-for="(item, index) in section.items" :key="index" class="agent-item">
+            <p class="agent-prose">{{ item.text }}</p>
+            <div class="agent-references"><button v-for="source in refs(run.answer, item)" :key="source.sourceId" class="ui-button source-link" type="button" @click="openOriginal(source.opinionId, $event)">查看 {{ source.authorName }} 的原文 · {{ time(source.createdAt) }}</button></div>
+          </div>
+        </section>
+      </template>
+      <p v-else class="agent-note">{{ run.message || '该结果已失效，请重新梳理。' }}</p>
+    </article>
+    <button v-if="hasEarlier" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早的梳理</button>
+    <dialog ref="originalDialog" class="agent-original" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
+      <header><h3 id="agent-original-title">观点原文</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">关闭原文</button></header>
+      <p v-if="originalLoading" role="status">正在读取当前可见原文…</p>
+      <p v-else-if="originalError" role="alert">{{ originalError }}</p>
+      <template v-else-if="original">
+        <p class="agent-note">{{ original.authorNickname }} · {{ time(original.createdAt) }} · {{ { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '看空' }[original.stance] }}</p>
+        <h4>判断理由</h4><p class="agent-prose">{{ original.reason }}</p>
+        <template v-if="original.observationNote"><h4>观察条件</h4><p class="agent-prose">{{ original.observationNote }}</p></template>
+      </template>
+    </dialog>
+  </section>
+</template>
+
+<style scoped>
+.agent-panel { padding: 22px; border-bottom: 1px solid var(--color-border); min-width: 0; scroll-margin-top: 100px; }
+.agent-panel button { min-height: 44px; padding: 8px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-action); background: var(--color-surface); color: var(--color-ink); font-size: 12px; cursor: pointer; }
+.agent-panel button:disabled { opacity: 0.55; cursor: default; }
+.agent-controls button[type='submit'] { background: var(--color-ink); color: var(--color-surface); border-color: var(--color-ink); }
+.agent-heading, .agent-original header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.agent-heading h3, .agent-original h3 { margin: 0 0 6px; font-size: 18px; }
+.agent-heading p, .agent-note { color: var(--color-muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.agent-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 18px 0 8px; }
+.agent-controls label { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.agent-controls input { padding: 9px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); min-height: 40px; max-width: 100%; }
+.agent-confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; padding: 14px; background: var(--color-surface-secondary); }
+.agent-confirm p { flex-basis: 100%; font-size: 14px; }
+.agent-error { color: var(--color-danger); display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.agent-empty { padding: 22px 0; font-size: 14px; line-height: 1.8; color: var(--color-muted); }
+.agent-answer { padding: 22px 0; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.agent-answer h4, .agent-original h4 { margin: 22px 0 10px; font-size: 15px; font-weight: 600; }
+.agent-quote { margin: 8px 0; font-size: 14px; line-height: 1.8; }
+.agent-prose { max-width: 72ch; white-space: pre-wrap; line-height: 1.9; font-size: 14px; }
+.agent-item + .agent-item { margin-top: 14px; }
+.agent-references { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 5px; }
+.agent-panel .source-link { text-align: left; border-color: transparent; padding: 6px 0; color: var(--color-focus); border-radius: var(--radius-control); overflow-wrap: anywhere; }
+.agent-original { width: min(640px, calc(100% - 32px)); max-height: 80dvh; padding: 24px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; overflow-y: auto; }
+.agent-original::backdrop { background: rgb(25 21 16 / 42%); }
+@media (max-width: 480px) {
+  .agent-heading { flex-wrap: wrap; }
+  .agent-controls label { width: 100%; }
+  .agent-controls input { width: 100%; }
+  .agent-original { padding: 18px; }
+}
+</style>

@@ -31,12 +31,22 @@ public class ResearchSummaryModel {
             response = chatClient.prompt()
                     .system(input.system())
                     .user(input.user())
-                    .options(DeepSeekChatOptions.builder().disableThinking().maxTokens(2000)
+                    .options(DeepSeekChatOptions.builder().model("deepseek-flash").disableThinking().maxTokens(2000)
                             .responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build()))
                     .call().chatResponse();
         } catch (RuntimeException exception) {
+            if (exception instanceof BusinessException business) throw business;
             // 不把请求正文、密钥或上游错误作为业务错误返回。
             throw new BusinessException(ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
+        }
+        var execution = ResearchModelExecution.current();
+        if (response != null && execution != null) {
+            var usage = response.getMetadata().getUsage();
+            boolean reported = usage != null && usage.getPromptTokens() != null && usage.getCompletionTokens() != null
+                    && (usage.getPromptTokens() > 0 || usage.getCompletionTokens() > 0);
+            execution.usage(response.getMetadata().getModel(), reported ? usage.getPromptTokens() : null,
+                    reported ? usage.getCompletionTokens() : null);
+            execution.remainingMillis();
         }
         if (response == null || response.getResults().size() != 1 || response.getResult() == null
                 || !"stop".equalsIgnoreCase(response.getResult().getMetadata().getFinishReason())

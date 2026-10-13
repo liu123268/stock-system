@@ -2,6 +2,7 @@ package com.stock.system.agent;
 
 import com.stock.system.agent.service.ResearchSummaryModel;
 import com.stock.system.agent.service.ResearchSummaryPrompt;
+import com.stock.system.agent.service.ResearchModelExecution;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,39 @@ class ResearchSummaryModelTest {
                 .withPropertyValues("spring.ai.model.chat=deepseek", "spring.ai.deepseek.api-key=offline-test-key",
                 "spring.ai.deepseek.base-url=https://offline.invalid",
                 "spring.ai.deepseek.chat.model=deepseek-flash");
+    }
+
+    @Test
+    void fullRequestBodyLimitRejectsBeforeDispatch() {
+        var guarded = new ResearchAiConfiguration().researchModelRestClientBuilder();
+        var server = MockRestServiceServer.bindTo(guarded).build();
+        runner.withBean(RestClient.Builder.class, () -> guarded)
+                .withPropertyValues("spring.ai.model.chat=deepseek", "spring.ai.deepseek.api-key=offline-test-key",
+                        "spring.ai.deepseek.base-url=https://offline.invalid")
+                .run(context -> {
+                    try (var execution = new ResearchModelExecution()) {
+                        assertThatThrownBy(() -> context.getBean(ResearchSummaryModel.class).generate(
+                                new ResearchSummaryPrompt.Input("json", "中".repeat(30_000), List.of())))
+                                .isInstanceOfSatisfying(BusinessException.class, failure -> assertThat(failure.getErrorCode())
+                                        .isEqualTo(ErrorCode.RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED));
+                        assertThat(execution.dispatched).isFalse();
+                    }
+                });
+        server.verify();
+    }
+
+    @Test
+    void usageIsCapturedBeforeInvalidJsonIsRejected() throws Exception {
+        try (Provider provider = new Provider("bad-json")) {
+            enabled(provider).run(context -> {
+                try (var execution = new ResearchModelExecution()) {
+                    assertThatThrownBy(() -> context.getBean(ResearchSummaryModel.class)
+                            .generate(prompt.build(ResearchSummaryFixtures.sources()))).isInstanceOf(BusinessException.class);
+                    assertThat(execution.inputTokens).isEqualTo(100);
+                    assertThat(execution.outputTokens).isEqualTo(80);
+                }
+            });
+        }
     }
 
     private class Provider implements AutoCloseable {
