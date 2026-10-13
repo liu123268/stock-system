@@ -34,10 +34,10 @@
 | --- | --- |
 | 单元与目标 | AG-01：一次带项目资料的模型调用；分清回答要求、问题／资料、发送与返回 |
 | 正式入口 | [ResearchSummaryService.summarize](../../src/main/java/com/stock/system/agent/service/ResearchSummaryService.java) 串起业务流程，[ResearchSummaryModel.generate](../../src/main/java/com/stock/system/agent/service/ResearchSummaryModel.java) 执行 ChatClient；源码与复习入口见 [生成核心](../engineering/agent-experiment.md#6-正式业务学习从资料到研究梳理结果)。生成 HTTP 入口仍未实现 |
-| 本人动作 | 已提交一条自然语言回答要求，由 AI 审阅后落到 ResearchSummaryPrompt.ANSWER_RULE；接着阅读主流程并判断有引用的回答是否真的获得事实依据 |
-| 本人产出／提示／验证 | 2026-10-13 本人提出“概括是谁、大概何时，时间不一定需要；资料不足说明缺什么及对回答的影响”。AI 补明普通概述可省日期，比较变化须保留先后，成员可能性不能当成事实。内存 HTTP 替身检查该规则确实进入 system；有场景提示、由 AI 落代码，尚无本人独立 Java 修改、真实模型质量比较或整体复述证据 |
-| 已讲与卡点 | 本轮承接 System／User、资料从 Service 进入消息、ChatClient 同步响应；说明引用存在与语义支持的区别，源码已增加校验。讲过不标掌握，整体复述和结果判断待本人尝试 |
-| 下一动作 | 继续 AG-01：看上述两个正式方法，判断“真实引用却把成员预期写成已发生事实”的回答为何仍有问题；再参与同一功能的一项输入／质量对照。结构化输出在本主题后续展开，不转 SQL 课 |
+| 本人动作 | 已提交一条自然语言回答要求，由 AI 审阅后落到 ResearchSummaryPrompt.ANSWER_RULE；已回答本案例的依据判断，继续对照主流程和 Prompt.build 看资料怎样进入请求 |
+| 本人产出／提示／验证 | 2026-10-13 本人提出“概括是谁、大概何时，时间不一定需要；资料不足说明缺什么及对回答的影响”。AI 补明普通概述可省日期，比较变化须保留先后，成员可能性不能当成事实。内存 HTTP 替身检查该规则确实进入 system。本次在已有示例与讲解后，本人正确指出把“可能增长”写成“已经增长”不成立，认为事实需要财报／预告或其他权威材料支持；记录为该案例的证据越界判断通过。尚无本人独立 Java 修改、真实模型质量比较或整体复述证据 |
+| 已讲与卡点 | System／User、Service 资料进入消息、ChatClient 同步响应已讲；本案例能区分成员预期和已核实事实。提示词约束不能自动取得缺失资料、输入组装与整体调用链仍待本人设计判断／复述，不扩大为整个 Agent 单元掌握 |
+| 下一动作 | 继续 AG-01：沿 readCycle → Prompt.build → Model.generate 看真实数据传递，理解 Input 的 system／user 发给模型、sources 留在 Java 做引用映射；针对“有效观点有两条，回答却只提一条”的问题，说明先检查哪些数据及怎样区分读取／组装遗漏与模型遗漏，再做同一功能的输入／质量对照。结构化输出在本主题后续展开，不转 SQL 课 |
 | 节奏 | 具体时间与分段只见 roadmap。51 项工程定向回归不代替个人掌握；默认模型关闭，本轮未发真实模型请求，页面及生成入口保护仍待接入 |
 
 当前 MySQL 专题已完成第一轮教学：表关系与约束、主键／二级／联合／覆盖索引和回表、B+ 树与 `explain`、常用查询与游标分页、JDBC 批处理、事务与四种隔离级别、MVCC、`select ... for update`、记录锁／间隙锁／临键锁、悲观锁／乐观锁、死锁，以及 undo log／redo log／binlog。项目链路使用邀请加入、`workspace_member`、股票目录搜索、研究时间线和目录批量导入；复习答案见 [数据库与持久化面试问答](../career/interview/03-database-persistence.md)，结构与执行计划证据见 [数据模型](../architecture/data-model.md)。
@@ -55,10 +55,10 @@ Java 动手仍需补独立完成参数、字符串与返回值、对象、Servic
 | Java 当前学习字段 | 实际快照 |
 | --- | --- |
 | 专题与单元目标 | Spring 核心与 Web，范围沿 [路线第 3 块](roadmap.md#3-spring-核心与-web-开发)。当前用登录链路说明 Bean 注册、构造器注入及接口如何对应实际对象，承接已有 IoC／DI 入门 |
-| 正式入口 | [AuthController 构造器](../../src/main/java/com/stock/system/auth/controller/AuthController.java)、[AuthService 构造器](../../src/main/java/com/stock/system/auth/service/AuthService.java)、[PasswordConfig](../../src/main/java/com/stock/system/config/PasswordConfig.java)；用现有实现讲解，未修改业务源码 |
-| 已讲范围 | 构造器参数由容器提供；单构造器可省略 @Autowired；@Service 注册业务组件，@Bean 注册方法提供的对象；PasswordEncoder 接口注入实际 BCrypt 对象；缺少必需依赖会阻止当前非懒加载组件启动 |
-| 本人动作与卡点 | 2026-10-13 用户明确反馈尚不理解 @Bean 与 @Configuration 的关系、配置类的作用及何时使用；上轮自行创建 BCrypt 的设计题未作答，暂缓该题。当前围绕 PasswordConfig 补讲类级配置与方法级 Bean 定义，不能把上轮已讲内容记为已理解 |
-| 下一动作 | 先确认能分清配置类与方法返回的业务 Bean，理解 @Bean 不强制搭配 @Configuration、但所在类须被 Spring 加载；再回到构造器注入与原设计判断。单例、生命周期及 Boot／Web 仍待后续，不提前推进；Agent AG-01 待做动作继续保留 |
+| 正式入口 | [AuthController 构造器](../../src/main/java/com/stock/system/auth/controller/AuthController.java)、[AuthService 构造器](../../src/main/java/com/stock/system/auth/service/AuthService.java)、[PasswordConfig](../../src/main/java/com/stock/system/config/PasswordConfig.java)；用现有实现讲解，未修改业务源码；复习正文见 [Spring 教学](../engineering/spring.md) |
+| 已讲范围 | 构造器参数由容器提供；单构造器可省略 @Autowired；@Service／@Bean 注册与接口注入；必需依赖缺失的启动边界；IoC／DI／Bean 区分、@Configuration 与 @Bean 分工、默认配置类增强与普通调用的 A／B 对照、Bean 方法参数注入；另已补 getter、密码判断与短路，承接完整登录流程区分协作组件与查询结果对象，说明外部选择依赖与测试替换 |
+| 本人动作与卡点 | 2026-10-13 先前卡点是 PasswordConfig 中没有 AuthService，无法跟踪谁调用、哪一行接收／使用；已并列解释返回对象 → 构造器 → 字段 → matches。注解分工与配置增强曾反馈“感觉听懂但是还是难以理解”，对象传递与 A／B 对照保留回看。当前待本人判断更换配置编码器时，构造器保存传入对象与内部自行 new 的行为区别；尚无独立复述／验证，不把“继续”记为掌握 |
+| 下一动作 | 先审阅当前配置替换设计判断，按实际缺口回看对象创建 → 构造器接收 → 字段保存 → 业务方法调用及配置增强 A／B 对照。单例系统教学、生命周期及 Boot／Web 仍待后续，不提前推进；Agent AG-01 待做动作继续保留 |
 
 ## 未完成边界
 
