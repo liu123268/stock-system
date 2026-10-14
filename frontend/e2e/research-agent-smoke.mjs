@@ -7,7 +7,7 @@ import { chromium } from 'playwright-core'
 const frontend = process.env.FRONTEND_URL ?? 'http://localhost:18083'
 const backend = process.env.BACKEND_URL ?? 'http://localhost:18082'
 const fixture = 'http://127.0.0.1:18084'
-const output = resolve(process.env.AGENT_E2E_OUTPUT ?? '../target/agent-browser-20261014')
+const output = resolve(process.env.AGENT_E2E_OUTPUT ?? '../target/agent-recovery-browser-20261014')
 const runId = Date.now().toString(36)
 const names = [`ageo_${runId}`, `agem_${runId}`]
 const password = 'TestPass123'
@@ -142,6 +142,102 @@ try {
   await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
   await page.getByText('你的问题：请查询2026-09-01至2026-09-04的名义收盘价变化', { exact: true }).waitFor()
   checks.push('follow-up-restores-without-model-request')
+  // Chrome 丢掉服务端已经完成的 POST 回包，页面只能 GET 原编号恢复。
+  const messagesRoute = '**/agent/messages'
+  let lostQuestionId
+  const loseReply = async route => {
+    lostQuestionId = route.request().postDataJSON().requestId
+    await route.fetch()
+    await route.abort('failed')
+  }
+  const beforeLostReply = (await fixtureState()).calls
+  await page.route(messagesRoute, loseReply)
+  await questionInput.fill('回包丢失时的最新可用价是多少？')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  await page.getByText('你的问题：回包丢失时的最新可用价是多少？', { exact: true }).waitFor()
+  await page.unroute(messagesRoute, loseReply)
+  assert.equal((await fixtureState()).calls, beforeLostReply + 2)
+  assert.equal((await api(`${base}/requests/${lostQuestionId}`, owner.accessToken)).status, 'SUCCEEDED')
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('stock-system-agent-pending')), null)
+  checks.push('lost-success-response-restores-by-request-without-second-post')
+
+  // 失败没有写成功消息，也必须恢复准确终态并保留输入。
+  await fixtureState('invalid')
+  const beforeLostFailure = (await fixtureState()).calls
+  const priorAnswers = await page.locator('.agent-answer').count()
+  await page.route(messagesRoute, loseReply)
+  await questionInput.fill('失败回包丢失的自造问题')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  await page.getByRole('alert').getByText('研究助手未返回可核对的完整结果', { exact: true }).waitFor()
+  await page.unroute(messagesRoute, loseReply)
+  assert.equal((await fixtureState()).calls, beforeLostFailure + 1)
+  assert.equal(await page.locator('.agent-answer').count(), priorAnswers)
+  assert.equal(await questionInput.inputValue(), '失败回包丢失的自造问题')
+  assert.equal((await api(`${base}/requests/${lostQuestionId}`, owner.accessToken)).status, 'FAILED')
+  await page.locator('.agent-panel').screenshot({ path: `${output}/lost-failure-panel-320.png` })
+  checks.push('lost-failure-response-restores-terminal-error-and-keeps-draft')
+
+  // 请求未交给服务端时，用户再次提交仍用原编号，实际只执行一次。
+  await fixtureState('valid')
+  const summariesRoute = '**/agent/summaries'
+  let missingRequestId
+  const loseBeforeServer = async route => {
+    missingRequestId = route.request().postDataJSON().requestId
+    await route.abort('failed')
+  }
+  const beforeMissing = (await fixtureState()).calls
+  await page.route(summariesRoute, loseBeforeServer)
+  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  await page.getByRole('alert').getByText(/暂未找到本次任务/).waitFor()
+  assert.equal((await fixtureState()).calls, beforeMissing)
+  await page.unroute(summariesRoute, loseBeforeServer)
+  const retriedPost = page.waitForRequest(request => request.url().endsWith('/agent/summaries') && request.method() === 'POST')
+  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  assert.equal((await retriedPost).postDataJSON().requestId, missingRequestId)
+  await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') === null)
+  assert.equal((await fixtureState()).calls, beforeMissing + 1)
+  checks.push('missing-run-manual-submit-reuses-request-id')
+
+  // 两轮工具调用间刷新；新页面恢复 RUNNING 并只轮询本地状态。
+  await fixtureState('slow')
+  const beforeReload = (await fixtureState()).calls
+  await questionInput.fill('刷新中最新可用价是多少？')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') !== null)
+  for (let attempt = 0; attempt < 40 && (await fixtureState()).calls === beforeReload; attempt++)
+    await page.waitForTimeout(50)
+  assert.equal((await fixtureState()).calls, beforeReload + 1)
+  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.getByText('你的问题：刷新中最新可用价是多少？', { exact: true }).waitFor()
+  await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') === null)
+  assert.equal((await fixtureState()).calls, beforeReload + 2)
+  await page.locator('.agent-panel').screenshot({ path: `${output}/reload-restored-panel-320.png` })
+  checks.push('reload-during-question-restores-original-run-without-new-model-call')
+
+  // 本轮自造账号在模型第一轮期间失权；即使随后恢复 GET 被阻断也立即隐藏正文。
+  const beforeAccessLoss = (await fixtureState()).calls
+  const preventRestore = async route => {
+    if (route.request().method() === 'GET') await route.abort('failed')
+    else await route.continue()
+  }
+  await page.route('**/agent', preventRestore)
+  await questionInput.fill('查询中失权的最新可用价？')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  for (let attempt = 0; attempt < 40 && (await fixtureState()).calls === beforeAccessLoss; attempt++)
+    await page.waitForTimeout(50)
+  assert.equal((await fixtureState()).calls, beforeAccessLoss + 1)
+  sql(`update workspace_member set status='LEFT',last_inactive_at=current_timestamp(3) where workspace_id=${workspace} and user_id=${owner.userId}`)
+  await page.getByRole('alert').getByText('当前空间成员关系已失效', { exact: true }).waitFor()
+  assert.equal(await page.locator('.agent-answer').count(), 0)
+  assert.equal(await page.locator('.source-link').count(), 0)
+  assert.equal((await fixtureState()).calls, beforeAccessLoss + 1)
+  await page.locator('.agent-panel').screenshot({ path: `${output}/access-lost-panel-320.png` })
+  await page.unroute('**/agent', preventRestore)
+  sql(`update workspace_member set status='ACTIVE',last_inactive_at=null where workspace_id=${workspace} and user_id=${owner.userId}`)
+  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.locator('.agent-answer').first().waitFor()
+  checks.push('inflight-access-loss-clears-private-body-even-if-restore-disconnects')
+  await fixtureState('valid')
   const validCount = await page.locator('.agent-answer').count()
   await fixtureState('invalid')
   await page.getByRole('button', { name: '重新梳理', exact: true }).click()

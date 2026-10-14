@@ -53,6 +53,8 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
     @MockitoBean ResearchQuestionModel questionModel;
     @Autowired ObjectMapper json;
     String questionMode = "opinions";
+    Runnable afterFirstQuestionResponse = () -> {};
+    final List<List<Message>> questionInputs = new ArrayList<>();
     final AtomicInteger questionCalls = new AtomicInteger();
     final List<Long> userIds = new ArrayList<>();
     final AtomicInteger calls = new AtomicInteger();
@@ -113,11 +115,13 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
         }).when(model).generate(any());
         doAnswer(invocation -> {
             questionCalls.incrementAndGet();
+            questionInputs.add(List.copyOf(invocation.getArgument(0)));
             var execution = ResearchModelExecution.current();
             execution.dispatch();
             if (questionMode.equals("second-failure") && execution.modelCalls == 2)
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
             execution.usage("offline-question-test", 100, 80);
+            if (execution.modelCalls == 1) afterFirstQuestionResponse.run();
             if (execution.modelCalls == 1 || questionMode.equals("loop")) {
                 String name = questionMode.equals("quote") || questionMode.equals("second-failure") || questionMode.equals("loop")
                         ? "read_latest_quote" : questionMode.equals("daily") ? "read_daily_prices" : "read_cycle_opinions";
@@ -351,6 +355,84 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
         assertThat(run.status()).isEqualTo("SUCCEEDED");
         assertThat(run.answer().followUp().historyOmitted()).isTrue();
         assertThat(run.answer().references()).isEmpty();
+    }
+
+    @Test void requestLookupRecoversSuccessAndFailureWithoutAnotherModelCall() throws Exception {
+        var completed = generate();
+        mvc.perform(get(base() + "/requests/" + completed.requestId()).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.runId").value(completed.runId()))
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+        mode.set("invalid");
+        var failed = generate();
+        assertThat(agent.requestStatus(owner, failed.requestId()).status()).isEqualTo("FAILED");
+        assertThat(agent.requestStatus(owner, failed.requestId()).answer()).isNull();
+        assertThat(calls).hasValue(2);
+        mvc.perform(get(base() + "/requests/" + completed.requestId()).header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isNotFound());
+        mvc.perform(get(base() + "/requests/" + UUID.randomUUID()).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+        mvc.perform(get(base() + "/requests/bad").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get(base() + "/requests/" + completed.requestId())).andExpect(status().isUnauthorized());
+        assertThat(calls).hasValue(2);
+    }
+
+    @Test void withdrawalBetweenToolRoundsStopsBeforeAnotherModelCall() {
+        afterFirstQuestionResponse = () -> jdbc.update("update stock_opinion set withdrawn_at=current_timestamp(3),"
+                + " withdrawn_by_user_id=author_user_id where id=?", opinion);
+        var run = ask("成员观点的依据？");
+        assertThat(run.status()).isEqualTo("FAILED");
+        assertThat(run.errorCode()).isEqualTo("RESEARCH_AGENT_SOURCES_CHANGED");
+        assertThat(run.answer()).isNull();
+        assertThat(questionCalls).hasValue(1);
+        assertThat(agent.requestStatus(owner, run.requestId()).answer()).isNull();
+    }
+
+    @Test void losingAccessBetweenToolRoundsStopsWithoutPersistingAnAnswer() {
+        afterFirstQuestionResponse = () -> jdbc.update("update workspace_member set status='LEFT',"
+                + " last_inactive_at=current_timestamp(3) where workspace_id=? and user_id=?", owner.workspace(), owner.user());
+        var run = ask("现在最新可用价？");
+        assertThat(run.status()).isEqualTo("FAILED");
+        assertThat(run.errorCode()).isEqualTo("WORKSPACE_MEMBERSHIP_INACTIVE");
+        assertThat(run.answer()).isNull();
+        assertThat(questionCalls).hasValue(1);
+        assertThat(jdbc.queryForObject("select count(*) from agent_message where session_id in"
+                + " (select id from agent_session where workspace_id=?)", Long.class, owner.workspace())).isZero();
+        assertThat(jdbc.queryForObject("select status from agent_run where user_id=?", String.class, owner.user())).isEqualTo("FAILED");
+        assertThatThrownBy(() -> agent.restore(owner, null)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test void clearingDuringQuestionStopsFurtherToolsAndKeepsOnlyTheCallLedger() {
+        afterFirstQuestionResponse = () -> agent.clear(owner);
+        var run = ask("查当前观点");
+        assertThat(run.status()).isEqualTo("CLEARED");
+        assertThat(run.answer()).isNull();
+        assertThat(questionCalls).hasValue(1);
+        assertThat(agent.restore(owner, null).messages()).isEmpty();
+        assertThat(jdbc.queryForObject("select model_calls from agent_run where id=?", Integer.class, run.runId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id=?", BigDecimal.class, run.runId()))
+                .isEqualByComparingTo("0.00084");
+    }
+
+    @Test void historyKeepsAtMostSixWholeValidPairsAndTheCurrentQuestionIsLast() {
+        for (int i = 0; i < 7; i++) generate();
+        var run = ask("这是当前问题");
+        assertThat(run.status()).isEqualTo("SUCCEEDED");
+        assertThat(run.answer().followUp().historyOmitted()).isTrue();
+        var firstInput = questionInputs.get(0);
+        assertThat(firstInput.stream().filter(AssistantMessage.class::isInstance)).hasSize(6);
+        assertThat(firstInput.get(firstInput.size() - 1).getText()).isEqualTo("这是当前问题");
+        assertThat(json.writeValueAsBytes(firstInput).length).isLessThan(60 * 1024);
+    }
+
+    @Test void changingTheDateFilterDoesNotCarryAnotherRangesHistoryIntoTheModel() {
+        generate();
+        var today = java.time.LocalDate.now();
+        agent.summarize(owner, UUID.randomUUID().toString(), new ResearchSourceFilter(null, today, today));
+        var run = ask("按完整周期回答");
+        assertThat(run.status()).isEqualTo("SUCCEEDED");
+        assertThat(run.answer().followUp().historyOmitted()).isTrue();
+        assertThat(questionInputs.get(0).stream().filter(AssistantMessage.class::isInstance)).hasSize(1);
     }
 
     private com.stock.system.agent.vo.ResearchAgentResponseVO.Run ask(String question) {

@@ -4,16 +4,20 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ApiError } from '@/api/http'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
-import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentRun, restoreAgent } from '@/api/agent'
+import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentRequest, readAgentRun, restoreAgent } from '@/api/agent'
 import type { AgentAnswer, AgentEvidence, AgentItem, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
+import { readPendingAgent, writePendingAgent, removePendingAgent } from '@/utils/agent-pending'
+import type { PendingAgentRequest } from '@/utils/agent-pending'
 
 const props = defineProps<{ target: AgentTarget }>()
 const router = useRouter()
 const auth = useAuthStore()
+const accessErrors = ['WORKSPACE_NOT_FOUND', 'WORKSPACE_MEMBERSHIP_INACTIVE', 'WORKSPACE_ACCESS_DENIED', 'UNAUTHORIZED']
 const loading = ref(true)
 const busy = ref(false)
 const clearing = ref(false)
 const enabled = ref(false)
+const accessLost = ref(false)
 const error = ref('')
 const notices = ref('')
 const messages = ref<AgentRun[]>([])
@@ -27,6 +31,7 @@ const originalDialog = ref<HTMLDialogElement>()
 const original = ref<OpinionOriginal | null>(null)
 const originalLoading = ref(false)
 const originalError = ref('')
+const pending = ref<PendingAgentRequest | null>(null)
 let version = 0
 let originalVersion = 0
 let disposed = false
@@ -48,16 +53,30 @@ function marketRefs(answer: AgentAnswer, item: AgentItem) {
   return answer.followUp?.evidence.filter(source => item.sourceIds.includes(source.sourceId)) ?? []
 }
 function refs(answer: AgentAnswer, item: AgentItem) { return answer.references.filter((source) => item.sourceIds.includes(source.sourceId)) }
+function rememberRequest() {
+  const requestId = pending.value?.requestId ?? crypto.randomUUID()
+  pending.value = { requestId, target: { ...props.target }, userId: auth.currentUser?.userId ?? null }
+  writePendingAgent(pending.value)
+  return requestId
+}
+function forgetRequest(requestId: string) {
+  removePendingAgent(requestId)
+  if (pending.value?.requestId === requestId) pending.value = null
+}
 async function fail(cause: unknown, request: ReturnType<typeof capture>) {
   if (!current(request)) return
-  if (cause instanceof ApiError && ['WORKSPACE_NOT_FOUND', 'WORKSPACE_MEMBERSHIP_INACTIVE', 'WORKSPACE_ACCESS_DENIED', 'UNAUTHORIZED'].includes(cause.code)) {
-    messages.value = []
-    original.value = null
-    evidence.value = null
-    originalDialog.value?.close()
-  }
+  if (cause instanceof ApiError && accessErrors.includes(cause.code)) hidePrivateContent()
+  const failedVersion = version
   if (await handleWorkspaceApiError(cause, router)) return
+  if (disposed || version !== failedVersion || auth.sessionVersion !== request.session) return
   error.value = cause instanceof ApiError ? cause.message : '暂时无法连接。可以恢复运行状态；重试不会自动再次调用模型。'
+}
+function hidePrivateContent() {
+  version++; originalVersion++; stopPoll()
+  busy.value = false; loading.value = false; notices.value = ''
+  messages.value = []; original.value = null; evidence.value = null
+  originalDialog.value?.close(); enabled.value = false; accessLost.value = true
+  if (pending.value) forgetRequest(pending.value.requestId)
 }
 function stopPoll() { clearTimeout(pollTimer); pollTimer = undefined }
 function schedulePoll(runId: number, request: ReturnType<typeof capture>) {
@@ -68,18 +87,35 @@ function schedulePoll(runId: number, request: ReturnType<typeof capture>) {
       const run = (await readAgentRun(request.target, runId)).data.data
       if (!current(request)) return
       if (run.status === 'RUNNING') schedulePoll(runId, request)
-      else { busy.value = false; accept(run); await load(false) }
-    } catch (cause) { busy.value = false; await fail(cause, request) }
+      else {
+        busy.value = false; accept(run); forgetRequest(run.requestId)
+        if (accessLost.value) return
+        if (run.answer?.followUp?.question === question.value) question.value = ''
+        await load(false)
+        if (run.message && current(request)) error.value = run.message
+      }
+    } catch (cause) {
+      if (!current(request)) return
+      busy.value = false; await fail(cause, request)
+    }
   }, 1500)
 }
 function accept(run: AgentRun) {
+  // 进行中失权可能以 FAILED 运行回包抵达；即使后续 GET 断线也先清正文。
+  if (run.errorCode && accessErrors.includes(run.errorCode)) hidePrivateContent()
   if (run.answer) {
     messages.value = [run, ...messages.value.filter((message) => message.runId !== run.runId)]
     notices.value = '本次结果已保存到你的个人记录。'
-  } else if (run.status !== 'RUNNING') error.value = run.message || '本次未完成梳理，已有有效结果仍然保留。'
+  } else if (run.status !== 'RUNNING') {
+    if (run.status === 'INVALIDATED' || run.status === 'CLEARED')
+      messages.value = messages.value.map(item => item.runId === run.runId ? run : item)
+    notices.value = ''
+    error.value = run.message || '本次未完成梳理，已有有效结果仍然保留。'
+  }
 }
 async function load(reset = true, older = false) {
   const request = capture()
+  pending.value ??= readPendingAgent(request.target, auth.currentUser?.userId ?? null)
   loading.value = true
   error.value = ''
   try {
@@ -87,12 +123,34 @@ async function load(reset = true, older = false) {
     const session = (await restoreAgent(request.target, before)).data.data
     if (!current(request)) return
     enabled.value = session.enabled
+    accessLost.value = false
     messages.value = older ? [...messages.value, ...session.messages] : session.messages
     hasEarlier.value = session.hasEarlierMessages
     busy.value = !!session.activeRun
     if (session.invalidated) notices.value = '部分结果依赖的观点已经撤回或变化，需要重新梳理。'
     else if (reset) notices.value = ''
-    if (session.activeRun) schedulePoll(session.activeRun.runId, request)
+    if (!older && pending.value) {
+      const requestId = pending.value.requestId
+      try {
+        const run = (await readAgentRequest(request.target, requestId)).data.data
+        if (!current(request)) return
+        if (run.status === 'RUNNING') {
+          busy.value = true
+          notices.value = '本次任务仍在进行，正在恢复结果。'
+          schedulePoll(run.runId, request)
+        } else {
+          accept(run); forgetRequest(requestId)
+          if (run.answer?.followUp?.question === question.value) question.value = ''
+        }
+      } catch (cause) {
+        if (!current(request)) return
+        if (cause instanceof ApiError && cause.code === 'RESEARCH_AGENT_RUN_NOT_FOUND') {
+          notices.value = ''
+          error.value = '暂未找到本次任务，请稍后恢复，或再次发送同一问题。'
+        } else await fail(cause, request)
+      }
+    }
+    if (session.activeRun && current(request)) schedulePoll(session.activeRun.runId, request)
   } catch (cause) { await fail(cause, request) }
   finally { if (current(request)) loading.value = false }
 }
@@ -102,51 +160,63 @@ async function generate() {
     error.value = '开始日期不能晚于结束日期。'; return
   }
   const request = capture()
+  const requestId = rememberRequest()
   busy.value = true
   error.value = ''
   notices.value = '正在核对本周期资料并整理观点，请稍候。'
   try {
-    const run = (await generateAgent(request.target, crypto.randomUUID(), {
+    const run = (await generateAgent(request.target, requestId, {
       ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}),
       ...(dateTo.value ? { dateTo: dateTo.value } : {}),
     })).data.data
     if (!current(request)) return
     accept(run)
+    if (accessLost.value) return
     if (run.status === 'RUNNING') { schedulePoll(run.runId, request); return }
+    forgetRequest(requestId)
     busy.value = false
     await load(false)
-    if (run.message) error.value = run.message
+    if (run.message && current(request)) error.value = run.message
   } catch (cause) {
     if (!current(request)) return
     busy.value = false
     await fail(cause, request)
-    // POST 断线后仅查个人状态，绝不偷偷重发付费请求。
-    if (!(cause instanceof ApiError)) await load(false)
+    // POST 未返回运行结果时先查原编号，绝不偷偷重发付费请求。
+    if (pending.value && current(request)) {
+      await load(false)
+      if (current(request) && pending.value && !busy.value && cause instanceof ApiError) error.value = cause.message
+    }
   }
 }
 async function ask() {
   if (busy.value || clearing.value || loading.value || !enabled.value || !question.value.trim()) return
   if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) { error.value = '开始日期不能晚于结束日期。'; return }
   const request = capture()
+  const requestId = rememberRequest()
   busy.value = true
   error.value = ''
   notices.value = '正在根据问题核对所需资料，请稍候。'
   try {
-    const run = (await askAgent(request.target, crypto.randomUUID(), question.value, {
+    const run = (await askAgent(request.target, requestId, question.value, {
       ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}), ...(dateTo.value ? { dateTo: dateTo.value } : {}),
     })).data.data
     if (!current(request)) return
     accept(run)
+    if (accessLost.value) return
     if (run.status === 'RUNNING') { schedulePoll(run.runId, request); return }
+    forgetRequest(requestId)
     busy.value = false
-    if (run.answer) question.value = ''
+    if (run.answer?.followUp?.question === question.value) question.value = ''
     await load(false)
-    if (run.message) error.value = run.message
+    if (run.message && current(request)) error.value = run.message
   } catch (cause) {
     if (!current(request)) return
     busy.value = false
     await fail(cause, request)
-    if (!(cause instanceof ApiError)) await load(false)
+    if (pending.value && current(request)) {
+      await load(false)
+      if (current(request) && pending.value && !busy.value && cause instanceof ApiError) error.value = cause.message
+    }
   }
 }
 async function clear() {
@@ -165,6 +235,7 @@ async function clear() {
     original.value = null
     evidence.value = null
     question.value = ''
+    if (pending.value) forgetRequest(pending.value.requestId)
     originalDialog.value?.close()
     clearConfirming.value = false
     notices.value = '已清空本周期的个人记录。'
@@ -218,7 +289,10 @@ function closeOriginal() {
   evidence.value = null
   sourceButton?.focus({ preventScroll: true })
 }
-watch([() => props.target.workspaceId, () => props.target.stockId, () => props.target.cycleId, () => auth.sessionVersion], () => {
+watch([() => props.target.workspaceId, () => props.target.stockId, () => props.target.cycleId, () => auth.sessionVersion], (next, previous) => {
+  if (next[3] !== previous[3] && pending.value) forgetRequest(pending.value.requestId)
+  pending.value = null
+  accessLost.value = false
   version++; originalVersion++; stopPoll(); messages.value = []; original.value = null
   originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''; question.value = ''; evidence.value = null
   void load()
@@ -245,14 +319,14 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
       <button class="ui-button" type="button" :disabled="clearing" @click="clear">确认清空</button>
     </div>
     <p v-if="loading" role="status" class="agent-note">正在读取个人记录…</p>
-    <p v-else-if="!enabled" class="agent-note">研究助手尚未启用。启用服务端模型和预算配置后可生成；已有记录仍可查看。</p>
+    <p v-else-if="!enabled && !accessLost" class="agent-note">研究助手尚未启用。启用服务端模型和预算配置后可生成；已有记录仍可查看。</p>
     <p v-if="notices" role="status" class="agent-note">{{ notices }}</p>
     <div v-if="error" class="agent-error" role="alert"><p>{{ error }}</p><button class="ui-button" type="button" :disabled="loading" @click="load(false)">恢复运行状态</button></div>
     <form class="agent-question" @submit.prevent="ask">
       <label>继续提问<textarea v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || !enabled" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
       <div><span class="agent-note">可查询成员观点、最新可用报价和短期日 K；财报与公告尚未接入。</span><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
     </form>
-    <p v-if="!loading && !messages.length && !busy" class="agent-empty">生成后会在这里保留概况、成员观点和待核对事项，返回页面可继续查看。</p>
+    <p v-if="!loading && !messages.length && !busy && !accessLost" class="agent-empty">生成后会在这里保留概况、成员观点和待核对事项，返回页面可继续查看。</p>
     <article v-for="run in messages" :key="run.runId" class="agent-answer" :data-run-id="run.runId">
       <template v-if="run.answer?.summary">
         <p class="agent-note">资料读取于 {{ time(run.answer.scope.readAt) }} · {{ run.answer.scope.readOpinionCount }} 条有效观点</p>

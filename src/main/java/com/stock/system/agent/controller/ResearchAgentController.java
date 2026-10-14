@@ -46,6 +46,12 @@ public class ResearchAgentController {
         return Result.success(service.ask(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId),
                 request.requestId(), request.question(), new ResearchSourceFilter(request.authorUserId(), request.dateFrom(), request.dateTo())));
     }
+    @GetMapping("/requests/{requestId}")
+    public Result<Run> requestStatus(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
+                                    @PathVariable long workspaceStockId, @PathVariable long researchCycleId,
+                                    @PathVariable String requestId) {
+        return Result.success(service.requestStatus(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId), requestId));
+    }
     @DeleteMapping
     public Result<Void> clear(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
                              @PathVariable long workspaceStockId, @PathVariable long researchCycleId) {

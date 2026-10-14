@@ -49,6 +49,9 @@ export function askAgent(target: AgentTarget, requestId: string, question: strin
 export function readAgentRun(target: AgentTarget, runId: number) {
   return http.get<ApiResult<AgentRun>>(`${base(target)}/agent/runs/${runId}`)
 }
+export function readAgentRequest(target: AgentTarget, requestId: string) {
+  return http.get<ApiResult<AgentRun>>(`${base(target)}/agent/requests/${requestId}`)
+}
 export function clearAgent(target: AgentTarget) {
   return http.delete<ApiResult<null>>(`${base(target)}/agent`)
 }

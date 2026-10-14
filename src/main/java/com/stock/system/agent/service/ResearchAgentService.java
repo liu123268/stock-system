@@ -96,6 +96,15 @@ public class ResearchAgentService {
         return present(target, records.run(target, runId));
     }
 
+    /** POST 回包丢失时客户端只有 requestId；查原运行，不触发模型。 */
+    public Run requestStatus(Target target, String requestId) {
+        authorize(target);
+        var row = records.request(target.user(), normalize(requestId));
+        if (row == null) throw new BusinessException(ErrorCode.RESEARCH_AGENT_RUN_NOT_FOUND);
+        // requestId 属于当前用户还不够，status 再检查空间／股票／周期及当前依赖。
+        return status(target, row.id());
+    }
+
     public Run ask(Target target, String requestId, String question, ResearchSourceFilter filter) {
         authorize(target);
         if (question == null || question.isBlank() || question.codePointCount(0, question.length()) > 1000)

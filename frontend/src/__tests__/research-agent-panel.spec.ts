@@ -6,7 +6,7 @@ import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentRun } from '@/api/agent'
 
-const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), askAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
+const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), askAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
 vi.mock('@/api/agent', () => api)
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn<() => void>() }) }))
 vi.mock('@/utils/workspace-access', () => ({ handleWorkspaceApiError: vi.fn<() => Promise<boolean>>(async () => false) }))
@@ -33,7 +33,9 @@ function create() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  sessionStorage.clear()
   api.restoreAgent.mockResolvedValue(session())
+  api.readAgentRequest.mockRejectedValue(new ApiError('RESEARCH_AGENT_RUN_NOT_FOUND', '记录不存在', 404))
   api.clearAgent.mockResolvedValue({ data: { data: null } })
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); this.dispatchEvent(new Event('close')) }
@@ -131,5 +133,95 @@ describe('研究助手的个人记录与迟到响应', () => {
     expect(wrapper.find('dialog').text()).toContain('行情依据')
     await wrapper.find('dialog button').trigger('click')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('下一条问题')
+  })
+  it('POST 回包丢失后按原编号恢复已成功结果，整个过程没有第二次 POST', async () => {
+    api.generateAgent.mockRejectedValue(new Error('response lost'))
+    api.readAgentRequest.mockImplementation(async (_target, requestId) => ({ data: { data: { ...answer(), requestId } } }))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('form').trigger('submit'); await flushPromises()
+    expect(api.generateAgent).toHaveBeenCalledOnce()
+    expect(api.readAgentRequest).toHaveBeenCalledWith(target, api.generateAgent.mock.calls[0]![1])
+    expect(wrapper.find('.agent-answer').text()).toContain('成员猜测订单增长')
+    expect(sessionStorage.getItem('stock-system-agent-pending')).toBeNull()
+  })
+  it('未找到运行且再次发送时沿用原编号，避免原请求晚到造成两次生成', async () => {
+    api.askAgent.mockRejectedValue(new Error('network unavailable'))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('现在价格？')
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect(wrapper.text()).toContain('暂未找到本次任务')
+    expect(wrapper.text()).not.toContain('正在根据问题核对所需资料')
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect(api.askAgent).toHaveBeenCalledTimes(2)
+    expect(api.askAgent.mock.calls[1]![1]).toBe(api.askAgent.mock.calls[0]![1])
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('现在价格？')
+    expect(sessionStorage.getItem('stock-system-agent-pending')).not.toContain('现在价格')
+  })
+  it('刷新后的待确认编号可恢复失败终态并保留旧回答，不用 POST 重试', async () => {
+    const requestId = crypto.randomUUID()
+    sessionStorage.setItem('stock-system-agent-pending', JSON.stringify({ requestId, target, userId: null }))
+    api.restoreAgent.mockResolvedValue(session([answer()]))
+    api.readAgentRequest.mockResolvedValue({ data: { data: { ...answer(11), requestId, status: 'FAILED', answer: null, message: '本次资料已变化' } } })
+    const { wrapper } = create(); await flushPromises()
+    expect(wrapper.text()).toContain('本次资料已变化')
+    expect(wrapper.find('.agent-answer').text()).toContain('成员猜测订单增长')
+    expect(api.askAgent).not.toHaveBeenCalled()
+    expect(api.generateAgent).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem('stock-system-agent-pending')).toBeNull()
+  })
+  it('切换周期后迟到的状态查询失败不能解锁新周期正在进行的任务', async () => {
+    vi.useFakeTimers()
+    let reject!: (reason: unknown) => void
+    api.restoreAgent.mockResolvedValue({ data: { data: { ...session().data.data, activeRun: { ...answer(), status: 'RUNNING', answer: null } } } })
+    api.readAgentRun.mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail }))
+    const { wrapper } = create(); await flushPromises()
+    await vi.advanceTimersByTimeAsync(1500)
+    await wrapper.setProps({ target: { ...target, cycleId: 4 } }); await flushPromises()
+    reject(new Error('old request failed')); await flushPromises()
+    expect(wrapper.find('button[type=submit]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('暂时无法连接')
+  })
+  it('运行回包已确认失权时立即清除旧正文，即使随后恢复 GET 又断线', async () => {
+    api.restoreAgent.mockResolvedValueOnce(session([answer()])).mockRejectedValue(new Error('restore unavailable'))
+    api.askAgent.mockResolvedValue({ data: { data: { ...answer(11), status: 'FAILED', answer: null,
+      errorCode: 'WORKSPACE_MEMBERSHIP_INACTIVE', message: '成员关系已失效' } } })
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('查询当前观点')
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(0)
+    expect(wrapper.findAll('.source-link')).toHaveLength(0)
+    expect(wrapper.text()).toContain('成员关系已失效')
+    expect(wrapper.text()).not.toContain('研究助手尚未启用')
+    expect(wrapper.find('.agent-question button').attributes('disabled')).toBeDefined()
+  })
+  it('POST 后的恢复 GET 迟到时，旧运行错误不能覆盖新周期反馈', async () => {
+    let resolve!: (value: unknown) => void
+    api.restoreAgent.mockResolvedValueOnce(session())
+      .mockReturnValueOnce(new Promise(done => { resolve = done })).mockResolvedValue(session())
+    api.askAgent.mockResolvedValue({ data: { data: { ...answer(11), status: 'FAILED', answer: null, message: '旧周期错误' } } })
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('旧周期的问题')
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    await wrapper.setProps({ target: { ...target, cycleId: 4 } }); await flushPromises()
+    resolve(session()); await flushPromises()
+    expect(wrapper.text()).not.toContain('旧周期错误')
+  })
+  it('已收到失权回包后，更早发出的恢复 GET 不能再次恢复旧正文', async () => {
+    let finishQuestion!: (value: unknown) => void
+    let finishOldGet!: (value: unknown) => void
+    api.restoreAgent.mockResolvedValueOnce(session([answer()]))
+      .mockReturnValueOnce(new Promise(done => { finishOldGet = done }))
+    api.askAgent.mockReturnValue(new Promise(done => { finishQuestion = done }))
+    api.readAgentOriginal.mockRejectedValue(new ApiError('STOCK_OPINION_NOT_FOUND', '观点已撤回', 404))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('读取当前观点')
+    await wrapper.find('.agent-question').trigger('submit')
+    await wrapper.find('.source-link').trigger('click'); await flushPromises()
+    finishQuestion({ data: { data: { ...answer(11), status: 'FAILED', answer: null,
+      errorCode: 'WORKSPACE_MEMBERSHIP_INACTIVE', message: '成员关系已失效' } } }); await flushPromises()
+    finishOldGet(session([answer()])); await flushPromises()
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(0)
+    expect(wrapper.text()).toContain('成员关系已失效')
+    expect(wrapper.find('.agent-question button').attributes('disabled')).toBeDefined()
   })
 })
