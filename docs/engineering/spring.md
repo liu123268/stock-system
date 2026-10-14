@@ -114,3 +114,44 @@ public Long queryUserId(String username) {
 ```
 
 请求 A 写入用户甲后暂停，请求 B 写入用户乙，A 恢复读取字段时就可能拿到乙的 ID；返回前清空字段不能阻止之前的覆盖，还可能影响另一个调用。正式登录方法没有这个共享用户字段。请求数据优先使用参数、局部变量和返回值传递；确需共享的状态另行设计并发与身份隔离。`final` 只限制字段引用重新赋值，不自动保证所引用对象线程安全。
+
+读代码时先找声明所在的括号层级：直接在类体中声明的是字段，方法体内声明的是局部变量，方法／构造器参数列表中声明的是参数。变量名称相同不表示作用域相同；`private` 也不是识别字段的必要条件。
+
+| 代码与位置 | 读法 |
+| --- | --- |
+| 类体中的 `private AppUser currentUser;` | 声明一个属于对象的字段；这里只声明，尚未查询用户 |
+| 方法中的 `this.currentUser = userService.findByUsername(username);` | 查询并给已有字段赋值；`this` 指当前 Service 对象，不是新声明局部变量 |
+| 方法中的 `AppUser currentUser = userService.findByUsername(username);` | 声明本次调用的局部变量，再保存查询返回的引用；这是删除上述同名字段后的教学改写 |
+| 方法中的 `Long userId = currentUser.getId();` | 声明局部变量 userId，保存读取的 ID；读取来源是否共享，要继续看 currentUser 的声明位置 |
+
+记代码时以“声明位置 → 所属对象或调用 → 使用／赋值位置”为线索，不把 `this` 当成锁或把类型名当成创建对象的语句。
+
+## 6. prototype：获取对象与调用方法
+
+`prototype` 表示每次容器提供该 Bean 时创建一个新实例，包括一次直接 `getBean` 请求或一次普通依赖装配；不表示每次声明变量、调用业务方法或收到 HTTP 请求都会创建实例。以下为教学配置，正式 PasswordConfig 未修改：
+
+```java
+@Configuration
+public class PasswordConfig {
+    @Bean
+    @Scope("prototype")
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+```
+
+`Scope` 来自 `org.springframework.context.annotation.Scope`。下面的教学调用仅加载这份配置，容器类型为 `AnnotationConfigApplicationContext`；外层 try 负责结束时关闭容器：
+
+```java
+try (AnnotationConfigApplicationContext context =
+        new AnnotationConfigApplicationContext(PasswordConfig.class)) {
+    PasswordEncoder first = context.getBean(PasswordEncoder.class);
+    PasswordEncoder second = context.getBean(PasswordEncoder.class);
+    System.out.println(first == second);
+}
+```
+
+`getBean` 请求容器提供对象，`PasswordEncoder.class` 指定要查找的类型；`==` 在这里判断引用是否指向同一个对象。按作用域规则推演，prototype 下上述两次获取得到不同实例，输出 false；删除 @Scope、恢复默认 singleton 后输出 true。本节未运行此示例，不把推演写成验证结果。若第二行改为 `PasswordEncoder second = first`，只是让另一个变量指向已有实例，不增加容器获取请求。
+
+普通构造器注入将依赖解析发生在创建接收方时。单例 AuthService 将编码器保存到字段后，后续 `matches`／`encode` 是使用已有引用；即使假设该编码器配置为 prototype，也不会在每次密码操作时自动更换实例。本例不配置作用域代理或动态获取。依据：[prototype 与注入单例的边界](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-sing-prot)。`request` 则按单个 HTTP 请求限定实例范围，依赖 Web 容器，不能将 prototype 等同于 request。

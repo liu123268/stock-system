@@ -4,8 +4,8 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ApiError } from '@/api/http'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
-import { clearAgent, generateAgent, readAgentOriginal, readAgentRun, restoreAgent } from '@/api/agent'
-import type { AgentAnswer, AgentItem, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
+import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentRun, restoreAgent } from '@/api/agent'
+import type { AgentAnswer, AgentEvidence, AgentItem, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
 
 const props = defineProps<{ target: AgentTarget }>()
 const router = useRouter()
@@ -20,6 +20,8 @@ const messages = ref<AgentRun[]>([])
 const hasEarlier = ref(false)
 const dateFrom = ref('')
 const dateTo = ref('')
+const question = ref('')
+const evidence = ref<AgentEvidence | null>(null)
 const clearConfirming = ref(false)
 const originalDialog = ref<HTMLDialogElement>()
 const original = ref<OpinionOriginal | null>(null)
@@ -30,16 +32,20 @@ let originalVersion = 0
 let disposed = false
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let sourceButton: HTMLElement | null = null
-const latest = computed(() => messages.value.find((item) => item.answer)?.answer)
+const latest = computed(() => messages.value.find((item) => item.answer?.summary)?.answer)
 function capture() { return { version, session: auth.sessionVersion, target: { ...props.target } } }
 function current(request: ReturnType<typeof capture>) { return !disposed && version === request.version && auth.sessionVersion === request.session }
 function time(value: string | null) { return value ? value.replace('T', ' ').slice(0, 19) : '暂无时间' }
 function sections(answer: AgentAnswer) {
+  if (!answer.summary) return []
   return [
     { title: '观点变化', items: answer.summary.changes, empty: '本次资料未形成可对照的观点变化。' },
     { title: '成员观点', items: answer.summary.members, empty: '本次范围内没有有效成员观点。' },
     { title: '待核对事项', items: answer.summary.pendingItems, empty: '本次没有列出待核对事项。' },
   ]
+}
+function marketRefs(answer: AgentAnswer, item: AgentItem) {
+  return answer.followUp?.evidence.filter(source => item.sourceIds.includes(source.sourceId)) ?? []
 }
 function refs(answer: AgentAnswer, item: AgentItem) { return answer.references.filter((source) => item.sourceIds.includes(source.sourceId)) }
 async function fail(cause: unknown, request: ReturnType<typeof capture>) {
@@ -47,6 +53,7 @@ async function fail(cause: unknown, request: ReturnType<typeof capture>) {
   if (cause instanceof ApiError && ['WORKSPACE_NOT_FOUND', 'WORKSPACE_MEMBERSHIP_INACTIVE', 'WORKSPACE_ACCESS_DENIED', 'UNAUTHORIZED'].includes(cause.code)) {
     messages.value = []
     original.value = null
+    evidence.value = null
     originalDialog.value?.close()
   }
   if (await handleWorkspaceApiError(cause, router)) return
@@ -117,6 +124,31 @@ async function generate() {
     if (!(cause instanceof ApiError)) await load(false)
   }
 }
+async function ask() {
+  if (busy.value || clearing.value || loading.value || !enabled.value || !question.value.trim()) return
+  if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) { error.value = '开始日期不能晚于结束日期。'; return }
+  const request = capture()
+  busy.value = true
+  error.value = ''
+  notices.value = '正在根据问题核对所需资料，请稍候。'
+  try {
+    const run = (await askAgent(request.target, crypto.randomUUID(), question.value, {
+      ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}), ...(dateTo.value ? { dateTo: dateTo.value } : {}),
+    })).data.data
+    if (!current(request)) return
+    accept(run)
+    if (run.status === 'RUNNING') { schedulePoll(run.runId, request); return }
+    busy.value = false
+    if (run.answer) question.value = ''
+    await load(false)
+    if (run.message) error.value = run.message
+  } catch (cause) {
+    if (!current(request)) return
+    busy.value = false
+    await fail(cause, request)
+    if (!(cause instanceof ApiError)) await load(false)
+  }
+}
 async function clear() {
   if (clearing.value) return
   const request = capture()
@@ -131,6 +163,8 @@ async function clear() {
     busy.value = false
     hasEarlier.value = false
     original.value = null
+    evidence.value = null
+    question.value = ''
     originalDialog.value?.close()
     clearConfirming.value = false
     notices.value = '已清空本周期的个人记录。'
@@ -143,6 +177,7 @@ async function openOriginal(opinionId: number, event: MouseEvent) {
   const sequence = ++originalVersion
   sourceButton = event.currentTarget as HTMLElement
   original.value = null
+  evidence.value = null
   originalError.value = ''
   originalLoading.value = true
   await nextTick()
@@ -157,14 +192,35 @@ async function openOriginal(opinionId: number, event: MouseEvent) {
     else await fail(cause, request)
   } finally { if (current(request) && sequence === originalVersion) originalLoading.value = false }
 }
+async function openEvidence(runId: number, sourceId: string, event: MouseEvent) {
+  const request = capture()
+  const sequence = ++originalVersion
+  sourceButton = event.currentTarget as HTMLElement
+  original.value = null
+  evidence.value = null
+  originalError.value = ''
+  originalLoading.value = true
+  await nextTick()
+  originalDialog.value?.showModal()
+  try {
+    const run = (await readAgentRun(request.target, runId)).data.data
+    if (!current(request) || sequence !== originalVersion) return
+    const source = run.answer?.followUp?.evidence.find(item => item.sourceId === sourceId)
+    if (!source) { originalError.value = run.message || '这条依据已经失效，请重新查询。'; await load(false); return }
+    evidence.value = source
+  } catch (cause) {
+    if (current(request) && sequence === originalVersion) { originalError.value = cause instanceof ApiError ? cause.message : '依据暂时无法读取。'; await fail(cause, request) }
+  } finally { if (current(request) && sequence === originalVersion) originalLoading.value = false }
+}
 function closeOriginal() {
   originalVersion++
   original.value = null
+  evidence.value = null
   sourceButton?.focus({ preventScroll: true })
 }
 watch([() => props.target.workspaceId, () => props.target.stockId, () => props.target.cycleId, () => auth.sessionVersion], () => {
   version++; originalVersion++; stopPoll(); messages.value = []; original.value = null
-  originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''
+  originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''; question.value = ''; evidence.value = null
   void load()
 })
 onMounted(() => void load())
@@ -192,12 +248,16 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
     <p v-else-if="!enabled" class="agent-note">研究助手尚未启用。启用服务端模型和预算配置后可生成；已有记录仍可查看。</p>
     <p v-if="notices" role="status" class="agent-note">{{ notices }}</p>
     <div v-if="error" class="agent-error" role="alert"><p>{{ error }}</p><button class="ui-button" type="button" :disabled="loading" @click="load(false)">恢复运行状态</button></div>
+    <form class="agent-question" @submit.prevent="ask">
+      <label>继续提问<textarea v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || !enabled" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
+      <div><span class="agent-note">可查询成员观点、最新可用报价和短期日 K；财报与公告尚未接入。</span><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
+    </form>
     <p v-if="!loading && !messages.length && !busy" class="agent-empty">生成后会在这里保留概况、成员观点和待核对事项，返回页面可继续查看。</p>
     <article v-for="run in messages" :key="run.runId" class="agent-answer" :data-run-id="run.runId">
-      <template v-if="run.answer">
+      <template v-if="run.answer?.summary">
         <p class="agent-note">资料读取于 {{ time(run.answer.scope.readAt) }} · {{ run.answer.scope.readOpinionCount }} 条有效观点</p>
         <p v-if="run.answer.scope.filter.dateFrom || run.answer.scope.filter.dateTo" class="agent-note">观点日期：{{ run.answer.scope.filter.dateFrom || '周期开始' }} 至 {{ run.answer.scope.filter.dateTo || '周期结束' }}</p>
-        <p class="agent-quote" v-if="run.answer.quote.status === 'AVAILABLE'">生成时报价：<strong>{{ run.answer.quote.price }} {{ run.answer.quote.currency }}</strong> · {{ time(run.answer.quote.quoteTime) }} · {{ run.answer.quote.source }}{{ run.answer.quote.simulated ? '（模拟）' : '' }}</p>
+        <p class="agent-quote" v-if="run.answer.quote?.status === 'AVAILABLE'">生成时报价：<strong>{{ run.answer.quote.price }} {{ run.answer.quote.currency }}</strong> · {{ time(run.answer.quote.quoteTime) }} · {{ run.answer.quote.source }}{{ run.answer.quote.simulated ? '（模拟）' : '' }}</p>
         <p v-else class="agent-note">本次未取得可用报价，以下继续整理已有观点。</p>
         <p v-if="run.answer.newOpinionsAvailable" class="agent-note">本周期已有新观点，可点击重新梳理。</p>
         <h4>概况</h4><p class="agent-prose">{{ run.answer.summary.overview.text }}</p>
@@ -211,17 +271,42 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
           </div>
         </section>
       </template>
+      <template v-else-if="run.answer?.followUp">
+        <p class="agent-your-question">你的问题：{{ run.answer.followUp.question }}</p>
+        <p class="agent-note">回答生成于 {{ time(run.answer.generatedAt) }}</p>
+        <p v-if="run.answer.followUp.historyOmitted" class="agent-note">本轮只承接当前范围内部分有效历史，未携带全部记录。</p>
+        <p v-if="run.answer.newOpinionsAvailable" class="agent-note">回答读取之后已有新观点，可重新提问核对。</p>
+        <div v-for="(paragraph, index) in run.answer.followUp.reply.paragraphs" :key="index" class="agent-item">
+          <p class="agent-prose">{{ paragraph.text }}</p>
+          <div class="agent-references">
+            <button v-for="source in refs(run.answer, paragraph)" :key="source.sourceId" class="ui-button source-link" type="button" @click="openOriginal(source.opinionId, $event)">查看 {{ source.authorName }} 的原文</button>
+            <button v-for="source in marketRefs(run.answer, paragraph)" :key="source.sourceId" class="ui-button source-link" type="button" @click="openEvidence(run.runId, source.sourceId, $event)">查看{{ source.label }}依据</button>
+          </div>
+        </div>
+        <div v-if="run.answer.followUp.reply.missingInformation.length" class="agent-missing"><h4>还缺什么资料</h4><p v-for="(item, index) in run.answer.followUp.reply.missingInformation" :key="index" class="agent-note">{{ item }}</p></div>
+      </template>
       <p v-else class="agent-note">{{ run.message || '该结果已失效，请重新梳理。' }}</p>
     </article>
     <button v-if="hasEarlier" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早的梳理</button>
     <dialog ref="originalDialog" class="agent-original" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
-      <header><h3 id="agent-original-title">观点原文</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">关闭原文</button></header>
+      <header><h3 id="agent-original-title">{{ evidence ? '行情依据' : '观点原文' }}</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">关闭原文</button></header>
       <p v-if="originalLoading" role="status">正在读取当前可见原文…</p>
       <p v-else-if="originalError" role="alert">{{ originalError }}</p>
       <template v-else-if="original">
         <p class="agent-note">{{ original.authorNickname }} · {{ time(original.createdAt) }} · {{ { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '看空' }[original.stance] }}</p>
         <h4>判断理由</h4><p class="agent-prose">{{ original.reason }}</p>
         <template v-if="original.observationNote"><h4>观察条件</h4><p class="agent-prose">{{ original.observationNote }}</p></template>
+      </template>
+      <template v-else-if="evidence?.quote">
+        <h4>{{ evidence.label }}</h4><p class="agent-prose">{{ evidence.quote.price }} {{ evidence.quote.currency }} · {{ time(evidence.quote.quoteTime) }}</p>
+        <p class="agent-note">来源：{{ evidence.quote.source }}{{ evidence.quote.simulated ? '（模拟）' : '' }}。这是生成时取得的快照。</p>
+      </template>
+      <template v-else-if="evidence?.dailyPrices">
+        <h4>{{ evidence.label }}</h4>
+        <p class="agent-note">请求区间 {{ evidence.dailyPrices.requestedFrom }} 至 {{ evidence.dailyPrices.requestedTo }}；实际取得 {{ evidence.dailyPrices.actualFrom }} 至 {{ evidence.dailyPrices.actualTo }}。</p>
+        <p class="agent-prose">名义收盘价差：{{ evidence.dailyPrices.nominalPriceDifference ?? '无法计算' }} {{ evidence.dailyPrices.currency }}；名义变化：{{ evidence.dailyPrices.nominalPriceChangePercent === null ? '无法计算' : `${evidence.dailyPrices.nominalPriceChangePercent}%` }}。</p>
+        <p class="agent-note">{{ evidence.dailyPrices.coverageNote }} 来源：{{ evidence.dailyPrices.source }}{{ evidence.dailyPrices.simulated ? '（模拟）' : '' }}。</p>
+        <div class="agent-price-table"><table><thead><tr><th scope="col">日期</th><th scope="col">收盘价</th></tr></thead><tbody><tr v-for="point in evidence.dailyPrices.prices" :key="point.time"><td>{{ time(point.time).slice(0, 10) }}</td><td>{{ point.close }} {{ evidence.dailyPrices.currency }}</td></tr></tbody></table></div>
       </template>
     </dialog>
   </section>
@@ -232,6 +317,15 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
 .agent-panel button { min-height: 44px; padding: 8px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-action); background: var(--color-surface); color: var(--color-ink); font-size: 12px; cursor: pointer; }
 .agent-panel button:disabled { opacity: 0.55; cursor: default; }
 .agent-controls button[type='submit'] { background: var(--color-ink); color: var(--color-surface); border-color: var(--color-ink); }
+.agent-question { margin-top: 18px; padding: 18px 0; border-top: 1px solid var(--color-border); }
+.agent-question label { display: grid; gap: 8px; font-size: 14px; }
+.agent-question textarea { width: 100%; resize: vertical; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; line-height: 1.8; min-height: 100px; }
+.agent-question textarea::placeholder { color: var(--color-muted); }
+.agent-question > div { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 10px; }
+.agent-your-question { font-size: 15px; font-weight: 600; line-height: 1.8; white-space: pre-wrap; }
+.agent-price-table { margin-top: 16px; overflow-x: auto; }
+.agent-price-table table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.agent-price-table th, .agent-price-table td { padding: 8px; border-bottom: 1px solid var(--color-border); text-align: left; }
 .agent-heading, .agent-original header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .agent-heading h3, .agent-original h3 { margin: 0 0 6px; font-size: 18px; }
 .agent-heading p, .agent-note { color: var(--color-muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
@@ -255,6 +349,7 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
   .agent-heading { flex-wrap: wrap; }
   .agent-controls label { width: 100%; }
   .agent-controls input { width: 100%; }
+  .agent-question > div { align-items: flex-start; flex-direction: column; }
   .agent-original { padding: 18px; }
 }
 </style>

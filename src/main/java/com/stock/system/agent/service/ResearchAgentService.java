@@ -20,6 +20,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.List;
+import java.util.Objects;
+import java.util.Collections;
 
 @Service
 @Transactional(propagation = Propagation.NEVER)
@@ -28,13 +31,15 @@ public class ResearchAgentService {
     private final ResearchSummaryService summaries;
     private final ResearchAgentRecordMapper records;
     private final ObjectMapper json;
+    private final ResearchQuestionService questions;
 
     public ResearchAgentService(StockResearchSourceService sources, ResearchSummaryService summaries,
-                                ResearchAgentRecordMapper records, ObjectMapper json) {
+                                ResearchAgentRecordMapper records, ObjectMapper json, ResearchQuestionService questions) {
         this.sources = sources;
         this.summaries = summaries;
         this.records = records;
         this.json = json;
+        this.questions = questions;
     }
 
     public Session restore(Target target, Long beforeRunId) {
@@ -91,6 +96,49 @@ public class ResearchAgentService {
         return present(target, records.run(target, runId));
     }
 
+    public Run ask(Target target, String requestId, String question, ResearchSourceFilter filter) {
+        authorize(target);
+        if (question == null || question.isBlank() || question.codePointCount(0, question.length()) > 1000)
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        String normalized = normalize(requestId);
+        String hash = hash(target + ":question:" + question + ":" + json.writeValueAsString(filter));
+        RunRow existing = records.request(target.user(), normalized);
+        if (existing != null) return reuse(target, existing, hash);
+        if (!enabled() || !questions.enabled()) throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
+        try (var execution = new ResearchModelExecution(3)) {
+            var material = sources.readCycle(target.user(), target.workspace(), target.stock(), target.cycle(), filter);
+            if (material.scope().coverage() != ResearchCycleSourcesResponseVO.Coverage.COMPLETE)
+                throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED);
+            var history = new ArrayList<Answer>();
+            boolean omitted = false;
+            var session = records.session(target);
+            if (session != null) {
+                var oldRows = records.messages(session.id(), session.version(), null);
+                omitted = oldRows.size() > 6;
+                int bytes = 0;
+                for (var row : oldRows.stream().limit(6).toList()) {
+                    var old = present(target, row);
+                    if (old.answer() == null || !Objects.equals(old.answer().scope().filter(), filter)) { omitted = true; continue; }
+                    int size = json.writeValueAsBytes(old.answer()).length;
+                    if (bytes + size > 16 * 1024) { omitted = true; continue; }
+                    bytes += size; history.add(old.answer());
+                }
+                Collections.reverse(history);
+            }
+            var context = questions.prepare(target, material, List.copyOf(history), omitted);
+            execution.remainingMillis();
+            var started = records.begin(target, normalized, hash, ResearchAgentRecordMapper.QUESTION_RESERVE, ResearchQuestionService.VERSION);
+            if (!started.created()) return reuse(target, started.run(), hash);
+            Answer answer = null;
+            ErrorCode error = null;
+            try { answer = questions.answer(context, question, () -> records.ensureRunning(target, started.run())); }
+            catch (BusinessException failure) { error = failure.getErrorCode(); }
+            catch (RuntimeException failure) { error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
+            records.finish(target, started.run(), execution, context.dependencies(), answer, error, () -> questions.revalidate(context));
+            return present(target, records.run(target, started.run().id()));
+        }
+    }
+
     public void clear(Target target) {
         authorize(target);
         records.clear(target, () -> { authorize(target); return null; });
@@ -106,12 +154,13 @@ public class ResearchAgentService {
         String error = row.version() == row.currentVersion() ? row.errorCode() : ErrorCode.RESEARCH_AGENT_CLEARED.name();
         Answer answer = null;
         if (status.equals("SUCCEEDED") && row.answerJson() != null) {
-            var dependencies = json.readValue(row.dependenciesJson(), ResearchCycleSourcesResponseVO.class);
             try {
-                var validity = sources.revalidate(target.user(), target.workspace(), target.stock(), target.cycle(), dependencies);
+                boolean changed = false;
+                for (var dependency : dependencies(row.dependenciesJson())) changed |= sources.revalidate(target.user(), target.workspace(),
+                        target.stock(), target.cycle(), dependency).newOpinionsAvailable();
                 var stored = json.readValue(row.answerJson(), Answer.class);
                 answer = new Answer(stored.summary(), stored.scope(), stored.references(),
-                        stored.newOpinionsAvailable() || validity.newOpinionsAvailable(), stored.generatedAt(), stored.quote());
+                        stored.newOpinionsAvailable() || changed, stored.generatedAt(), stored.quote(), stored.followUp());
             } catch (BusinessException failure) {
                 // 原文撤回影响整个回答，不能只隐藏引用按钮。权限失效直接拒绝整个读取。
                 if (failure.getErrorCode() != ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED) throw failure;
@@ -124,6 +173,10 @@ public class ResearchAgentService {
     }
 
     private boolean enabled() { return summaries.enabled() && records.funded(); }
+    private List<ResearchCycleSourcesResponseVO> dependencies(String value) {
+        return json.readTree(value).has("snapshots") ? json.readValue(value, ResearchQuestionService.Dependencies.class).snapshots()
+                : List.of(json.readValue(value, ResearchCycleSourcesResponseVO.class));
+    }
     private void authorize(Target target) {
         sources.verifyReadAccess(target.user(), target.workspace(), target.stock(), target.cycle());
     }

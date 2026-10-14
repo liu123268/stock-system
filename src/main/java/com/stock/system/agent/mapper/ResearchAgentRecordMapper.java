@@ -27,6 +27,8 @@ import java.util.function.Supplier;
 public class ResearchAgentRecordMapper {
     // 2026-10-13 官方 Flash 高峰价输入 2／输出 8 元每百万；输入按更保守的 2M 上限预留。
     public static final BigDecimal RESERVE = new BigDecimal("4.01600000");
+    // Flash 1M 上下文按 1,048,576 Token 作上界，三次模型调用，各最多 2,000 输出。
+    public static final BigDecimal QUESTION_RESERVE = new BigDecimal("6.33945600");
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final ObjectMapper json;
@@ -85,6 +87,14 @@ public class ResearchAgentRecordMapper {
     }
 
     public Start begin(Target target, String requestId, String hash, boolean needsModel) {
+        return begin(target, requestId, hash, needsModel ? RESERVE : BigDecimal.ZERO);
+    }
+
+    public Start begin(Target target, String requestId, String hash, BigDecimal reserved) {
+        return begin(target, requestId, hash, reserved, ResearchSummaryPrompt.VERSION);
+    }
+
+    public Start begin(Target target, String requestId, String hash, BigDecimal reserved, String promptVersion) {
         return tx.execute(unused -> {
             lockBudget();
             // 已超过网络上限且未正常结束的旧运行只收敛状态，用量未知的占用继续保留。
@@ -98,10 +108,9 @@ public class ResearchAgentRecordMapper {
                     "select count(*) from agent_run where status = 'RUNNING'", Long.class) >= 2) {
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_BUSY);
             }
-            BigDecimal reserved = needsModel ? RESERVE : BigDecimal.ZERO;
             BigDecimal occupied = jdbc.queryForObject("select occupied_yuan from agent_budget where id = 1",
                     BigDecimal.class);
-            if (needsModel && occupied.add(reserved).compareTo(budget) > 0)
+            if (occupied.add(reserved).compareTo(budget) > 0)
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_BUDGET_EXCEEDED);
             jdbc.update("insert ignore into agent_session(user_id, workspace_id, workspace_stock_id, research_cycle_id)"
                             + " values (?, ?, ?, ?)", target.user(), target.workspace(), target.stock(), target.cycle());
@@ -110,7 +119,7 @@ public class ResearchAgentRecordMapper {
                     Long.class, session.id());
             long id = insertId("insert into agent_run(session_id, user_id, request_id, request_hash, context_version,"
                             + " status, prompt_version, reserved_yuan) values (?, ?, ?, ?, ?, 'RUNNING', ?, ?)",
-                    session.id(), target.user(), requestId, hash, version, ResearchSummaryPrompt.VERSION, reserved);
+                    session.id(), target.user(), requestId, hash, version, promptVersion, reserved);
             jdbc.update("update agent_budget set occupied_yuan = occupied_yuan + ? where id = 1", reserved);
             return new Start(run(target, id), true);
         });
@@ -118,7 +127,7 @@ public class ResearchAgentRecordMapper {
 
     /** 清空和完成均先锁预算再锁会话，保持一致锁顺序；供应商用量即使回答无效也结算。 */
     public void finish(Target target, RunRow run, ResearchModelExecution execution,
-                       ResearchCycleSourcesResponseVO dependencies, Answer answer, ErrorCode error,
+                       Object dependencies, Answer answer, ErrorCode error,
                        Supplier<?> finalAccessCheck) {
         tx.executeWithoutResult(unused -> {
             lockBudget();
@@ -138,10 +147,12 @@ public class ResearchAgentRecordMapper {
             }
             BigDecimal cost = settle(execution, run.reserved());
             jdbc.update("update agent_run set status = ?, error_code = ?, finished_at = current_timestamp(3),"
-                            + " dispatched = ?, model = ?, input_tokens = ?, output_tokens = ?, cost_upper_yuan = ? where id = ?",
+                            + " dispatched = ?, model = ?, input_tokens = ?, output_tokens = ?, cost_upper_yuan = ?,"
+                            + " model_calls = ?, tool_calls = ?, tool_trace_json = ? where id = ?",
                     status, finalError == null ? null : finalError.name(), execution.dispatched,
                     execution.model == null ? null : execution.model.substring(0, Math.min(100, execution.model.length())),
-                    safeTokens(execution.inputTokens), safeTokens(execution.outputTokens), cost, run.id());
+                    safeTokens(execution.inputTokens), safeTokens(execution.outputTokens), cost,
+                    execution.modelCalls, execution.toolCalls, json.writeValueAsString(execution.toolTrace), run.id());
             if (status.equals("SUCCEEDED")) {
                 jdbc.update("insert into agent_message(session_id, run_id, result_json, dependencies_json) values (?, ?, ?, ?)",
                         run.sessionId(), run.id(), json.writeValueAsString(answer), json.writeValueAsString(dependencies));
@@ -166,7 +177,7 @@ public class ResearchAgentRecordMapper {
     private BigDecimal settle(ResearchModelExecution execution, BigDecimal reserved) {
         BigDecimal cost;
         if (!execution.dispatched) cost = BigDecimal.ZERO;
-        else if (execution.inputTokens == null || execution.outputTokens == null
+        else if (!execution.usageKnown() || execution.inputTokens == null || execution.outputTokens == null
                 || execution.inputTokens < 0 || execution.outputTokens < 0) return null;
         else cost = BigDecimal.valueOf(execution.inputTokens).multiply(new BigDecimal("0.000002"))
                     .add(BigDecimal.valueOf(execution.outputTokens).multiply(new BigDecimal("0.000008")));
@@ -205,6 +216,12 @@ public class ResearchAgentRecordMapper {
 
     private LocalDateTime date(Timestamp at) { return at == null ? null : at.toLocalDateTime(); }
     public record Target(long user, long workspace, long stock, long cycle) {}
+
+    public void ensureRunning(Target target, RunRow expected) {
+        RunRow current = run(target, expected.id());
+        if (!current.status().equals("RUNNING") || current.currentVersion() != expected.version())
+            throw new BusinessException(ErrorCode.RESEARCH_AGENT_CLEARED);
+    }
     public record SessionRow(long id, long version) {}
     public record Start(RunRow run, boolean created) {}
     public record RunRow(long id, long sessionId, String requestId, String hash, long version, long currentVersion,

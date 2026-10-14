@@ -58,7 +58,7 @@ Agent 的能力来自模型、工具、上下文与执行程序的配合，框�
 
 ### 1.5 看到 RAG 后的复习提纲：理解什么、怎样用代码
 
-Java 的 `if`、`for`、`return` 是语言关键字；`ChatClient` 是框架类型，`prompt()`、`user()`、`call()`、`content()` 是库方法。前者结合正式业务的小方法练到能写，后者先认识用途、能读懂参数和返回值，再借助已核对示例与 IDE 补全使用；记不住拼写不等于不会，但只会说概念也不等于能实现。检查点是能根据需求选择步骤，读出输入与输出，亲手改一小块并解释结果。
+Java 的 `if`、`for`、`return` 是语言关键字；`ChatClient` 是框架类型，`prompt()`、`user()`、`call()`、`content()` 是库方法。前者的局部编码能力沿 Java 专题训练，后者先认识用途、读懂参数和返回值，再借助已核对示例与 IDE 使用；记不住拼写不等于不会，但只会说概念也不等于能应用。复习检查聚焦根据需求选择步骤、解释输入输出和核对变化结果；是否安排代码动作见 [教学方法](../project/teaching.md#学习目标与参与方式)。
 
 | 课程主题 | 核心职责与本项目场景 |
 | --- | --- |
@@ -83,7 +83,7 @@ String answer = chatClient.prompt()
 
 `prompt()` 组织本次请求，`system()` 放回答要求，`user()` 放问题与资料，`call().content()` 沿同步路径取得文字结果。`chatClient` 由已配置模型的 Spring AI Builder 创建，`question` 来自当前提问，`material` 来自授权内资料 Service；不会自动读 MySQL。业务要先确定有权资料、再调用、最后检查结果；这段示意不代表正式生成接口已接入，也不会自行建立 RAG。正式输入复用 [周期资料 Service](../../src/main/java/com/stock/system/stock/service/StockResearchSourceService.java)，完整／超限与撤回边界沿规格验收；SQL 接线属于工程实现，不作为当前 Agent 教学主课。
 
-复习按“要解决的问题 → 输入资料从哪来 → 谁执行哪一步 → 输出怎样核对”回忆，再到正式功能里亲手改一处；当前观看进度不作为个人掌握证据，教学交接见 [状态](../project/status.md#求职专题学习交接)。依据：[ChatClient](https://docs.spring.io/spring-ai/reference/api/chatclient.html)、[Memory](https://docs.spring.io/spring-ai/reference/api/chat-memory.html)、[Advisor](https://docs.spring.io/spring-ai/reference/api/advisors.html)、[RAG](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)。
+复习用“要解决的问题 → 输入资料从哪来 → 谁执行哪一步 → 输出怎样核对”重建链路，再分析资料或要求变化后的行为；当前观看进度不作为个人掌握证据，参与方式见 [教学方法](../project/teaching.md)，个人交接见 [状态](../project/status.md#求职专题学习交接)。依据：[ChatClient](https://docs.spring.io/spring-ai/reference/api/chatclient.html)、[Memory](https://docs.spring.io/spring-ai/reference/api/chat-memory.html)、[Advisor](https://docs.spring.io/spring-ai/reference/api/advisors.html)、[RAG](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)。
 
 ## 2. 在电脑上运行离线实验
 
@@ -126,7 +126,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-agent-experiment
 
 2026-10-12 已把验证过的兼容修改落到正式项目，版本与采用状态只见 [技术栈](../architecture/technology-stack.md#1-后端与数据)，实际验证只见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。业务 JSON 由 Jackson 3 处理，安全／Flyway 和 MockMvc 测试导包跟随 Boot 4；Mockito 替身改用 Spring 的 MockitoBean／MockitoSpyBean。旧 `findAndRegisterModules` 改为 JsonMapper builder 的模块发现；Mapper 新重载用明确参数类型避免测试编译歧义，原业务断言保留。
 
-默认 `spring.ai.model.chat=none`，所以原系统启动不依赖模型密钥。主工程已增加下方第 6 节的固定资料梳理核心，公共生成接口与用户页面仍待实现；启用模型客户端不会自动读取 MySQL，也不等于预算和会话机制已经完成。[ResearchAiConfiguration](../../src/main/java/com/stock/system/agent/ResearchAiConfiguration.java) 在启用 DeepSeek 时提供零重试的 RetryTemplate，避免框架在失败后隐式补发。首次请求次数与重试次数的区别、实测故障及修复只见 [BUG-011](bugs/BUG-011-spring-ai-retry-count.md)。
+默认 `spring.ai.model.chat=none`，所以原系统启动不依赖模型密钥。第 6 节的固定梳理已接个人 HTTP 和页面，第 7 节接受限工具追问；启用客户端仍不会自动读取 MySQL，资料与权限由业务 Service 提供。[ResearchAiConfiguration](../../src/main/java/com/stock/system/agent/ResearchAiConfiguration.java) 在启用 DeepSeek 时提供零重试的 RetryTemplate，避免框架在失败后隐式补发。首次请求次数与重试次数的区别、实测故障及修复只见 [BUG-011](bugs/BUG-011-spring-ai-retry-count.md)。
 
 框架回归位于正式 `src/test` 的 [SpringAiCompatibilityTest](../../src/test/java/com/stock/system/agent/SpringAiCompatibilityTest.java)，回环替身只检查 HTTP 适配、工具配对、结构转换和实际请求次数；手造向量只检查检索组件过滤／删除，不证明中文报告质量。这些是项目测试，不恢复独立教学工程。学习继续沿正式研究梳理的数据路径，版本迁移由 AI 处理，不要求学生先记完库方法。
 
@@ -138,7 +138,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-agent-experiment
 
 现有 timeline 每批展示 20 条并允许跨周期，服务于页面浏览；新 readCycle 直接按选定周期统计和查询，服务于资料准备。范围内返回完整正文，超限返回 LIMIT_EXCEEDED 和空正文，不能把页面加载的一批称作整个周期。`readAt`、有效条数、实际读取条数和字符数由 Java／数据库确定；字符限制不等于精确 Token 数。查看原文使用 readOpinion 的新请求，重新校验访问和撤回状态。
 
-StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围和越权；`@Test` 标识一项检查，MockMvc 执行真实 Controller／认证／Service 链路而不额外启动 Web 端口，事务 fixtures 回滚；跨连接与无外层事务的上下文案例按本轮 ID 精确清理。它证明程序边界，不证明模型能正确理解资料，也不证明学生已经会独立写代码。子范围与并发现已验收：日期／成员条件保存在 Scope.filter，统计和正文仍用同一 RR 快照，交付校验另起新事务。方式见 [学习方法](../project/roadmap.md#怎样学与完成标准)，个人结果只见 [学习交接](../project/status.md#求职专题学习交接)，最新工程证据见 [任务第 12 节](../specs/004-research-agent/tasks.md#12-ag-code-003范围行情与上下文接入2026-10-13)。
+StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围和越权；`@Test` 标识一项检查，MockMvc 执行真实 Controller／认证／Service 链路而不额外启动 Web 端口，事务 fixtures 回滚；跨连接与无外层事务的上下文案例按本轮 ID 精确清理。它证明程序边界，不证明模型能正确理解资料，也不证明学生已经会独立写代码。子范围与并发现已验收：日期／成员条件保存在 Scope.filter，统计和正文仍用同一 RR 快照，交付校验另起新事务。方式见 [教学方法](../project/teaching.md)，个人结果只见 [学习交接](../project/status.md#求职专题学习交接)，最新工程证据见 [任务第 12 节](../specs/004-research-agent/tasks.md#12-ag-code-003范围行情与上下文接入2026-10-13)。
 
 ## 6. 正式业务学习：从资料到研究梳理结果
 
@@ -157,3 +157,17 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 页面按钮经 [ResearchAgentController](../../src/main/java/com/stock/system/agent/controller/ResearchAgentController.java) 进入 [ResearchAgentService](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java)：当前账号与周期授权 → 读取有界资料 → requestId 去重与费用预留 → 调用上述生成核心 → 重查依赖并保存 → 页面展示。刷新只读取已保存结果，不重新调用模型。requestId 表示同一次动作，断线后查原运行状态；用户主动重新梳理才用新标识。
 
 [ResearchAgentRecordMapper](../../src/main/java/com/stock/system/agent/mapper/ResearchAgentRecordMapper.java) 负责短事务。等待模型时不持数据库锁，完成时只保存引用与当前版本仍有效的结果。清空增加版本，旧版本结果不能重新写回；个人正文可以删，已发生或未知的调用费用独立保留。对应表职责只见数据模型 3.13。页面组件通过具体 ID 与账号版本识别真正切换，不能仅因父页面重新创建了内容相同的对象就重置输入。
+
+## 7. 正式业务学习：一次工具追问怎样完成
+
+原来的“研究梳理”由 Java 先固定读观点和报价，再让模型整理。本次新增“继续提问”：模型根据问题提出允许的查询，Java 校验并执行，再把实际结果送回模型。工具调用多了一次取得资料的往返；模型不直接访问数据库，也不能自行选另一个用户、空间或股票。
+
+先沿“最新可用价是多少”看完整链路：页面把问题、当前周期和 requestId 交给 [ResearchAgentService.ask](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java)；Service 验证访问、读取范围、筛选有效历史、预留费用后，进入 [ResearchQuestionService.answer](../../src/main/java/com/stock/system/agent/service/ResearchQuestionService.java)。第一次 [ResearchQuestionModel.call](../../src/main/java/com/stock/system/agent/service/ResearchQuestionModel.java) 可以返回 `read_latest_quote` 请求，Java 的 `execute` 选择报价 Service，取得价格、币种、时间、来源和模拟标记，再以相同 call ID 组成 ToolResponseMessage。第二次模型请求读到这一结果，写出回答及引用；Java 校验引用、重查权限和来源后保存，页面显示并允许打开依据。这就是本轮真实样本的两次模型请求、一次工具执行。
+
+`read_latest_quote` 是项目定义的工具名，`answer`／`execute` 是项目方法；AssistantMessage／ToolResponseMessage 是 Spring AI 的消息类型，`for`／`switch` 是 Java 语法。无需先背下这些拼写；应能读出“模型提出查什么 → Java 决定能否执行 → 实际数据回传 → 模型回答 → Java 核对保存”。Spring AI 2 的 ChatModel 工具调用由调用方管理执行，我们用显式循环保留额度、权限和用量控制，依据见 [官方工具调用说明](https://docs.spring.io/spring-ai/reference/api/tools/chatmodel-tool-calling.html)。
+
+资料够用时模型可以直接回答。例如已有有效研究梳理，追问“订单已经增长了吗”，可以用原观点说明只是猜测，当前缺财报或权威披露；没有权威资料工具就不能补成已确认。价格问题则要求本次查报价，历史聊天里的数字只是旧快照。日 K 的实际区间和名义变化由 Java 计算，模型负责解释其口径；不能把未复权价差说成投资回报。
+
+排查承接原来的 sources → input → generated，再补工具轨迹：没有查到需要的资料，看模型是否提出正确工具；提出了却失败，看 Java 是否拒绝参数、范围或资料上限；工具确实返回了，回答仍错误，比较 ToolResponse 与最终段落。每问最多三次模型请求、两次工具尝试，错误也计次数；费用统计全部实际派发，有一次用量未知就保留预留。超时、清空或权限变化时不交付迟到答案。精确额度、数据依赖和接口契约只见 [设计](../specs/004-research-agent/design.md#4-首批工具适配)，不要求学习时记住保护数字。
+
+四个自造问题的真实模型核对见 [005 证据](../specs/004-research-agent/tasks.md#14-ag-code-005工具追问与真实样本核对2026-10-14)。它证明当次资料和工具链路可用；源码由 AI 实现，用户的独立理解、审查和迁移证据继续单独记录，不能由测试通过代填。

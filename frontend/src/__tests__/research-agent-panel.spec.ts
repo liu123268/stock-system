@@ -6,7 +6,7 @@ import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentRun } from '@/api/agent'
 
-const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
+const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), askAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
 vi.mock('@/api/agent', () => api)
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn<() => void>() }) }))
 vi.mock('@/utils/workspace-access', () => ({ handleWorkspaceApiError: vi.fn<() => Promise<boolean>>(async () => false) }))
@@ -98,5 +98,38 @@ describe('研究助手的个人记录与迟到响应', () => {
     expect(api.readAgentRun).toHaveBeenCalledOnce()
     expect(api.generateAgent).not.toHaveBeenCalled()
     expect(wrapper.find('button[type=submit]').attributes('disabled')).toBeDefined()
+  })
+  it('追问失败保留问题和有效旧答案，成功按段落展示与恢复', async () => {
+    api.restoreAgent.mockResolvedValue(session([answer()]))
+    api.askAgent.mockRejectedValueOnce(new ApiError('RESEARCH_AGENT_BUSY', '已有查询正在进行', 429))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('现在最新可用价是多少？')
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('现在最新可用价是多少？')
+    expect(wrapper.find('.agent-answer').text()).toContain('成员猜测订单增长')
+    const reply = answer(11)
+    reply.answer!.summary = null
+    reply.answer!.followUp = { question: '现在最新可用价是多少？', reply: { paragraphs: [{ text: '这是本次取得的模拟报价。', sourceIds: [] }], missingInformation: [] }, evidence: [], historyOmitted: false }
+    api.askAgent.mockResolvedValue({ data: { data: reply } })
+    api.restoreAgent.mockResolvedValue(session([reply, answer()]))
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(2)
+    expect(wrapper.findAll('.agent-answer')[0]!.text()).toContain('你的问题：现在最新可用价是多少？')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+  })
+  it('查看行情依据先核对运行权限，关闭后保留正在输入的问题', async () => {
+    const reply = answer(11)
+    const quote = reply.answer!.quote!
+    reply.answer!.summary = null
+    reply.answer!.followUp = { question: '价格？', reply: { paragraphs: [{ text: '报价依据', sourceIds: ['quote-1'] }], missingInformation: [] }, evidence: [{ sourceId: 'quote-1', type: 'QUOTE', label: '最新可用报价', quote, dailyPrices: null }], historyOmitted: false }
+    api.restoreAgent.mockResolvedValue(session([reply]))
+    api.readAgentRun.mockResolvedValue({ data: { data: reply } })
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('下一条问题')
+    await wrapper.find('.source-link').trigger('click'); await flushPromises()
+    expect(api.readAgentRun).toHaveBeenCalledWith(target, 11)
+    expect(wrapper.find('dialog').text()).toContain('行情依据')
+    await wrapper.find('dialog button').trigger('click')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('下一条问题')
   })
 })

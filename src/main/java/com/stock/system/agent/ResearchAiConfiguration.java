@@ -7,6 +7,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import com.stock.system.agent.service.ResearchModelExecution;
+import com.stock.system.agent.service.ResearchExperimentBudget;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import java.net.URI;
@@ -18,6 +21,7 @@ import org.springframework.core.retry.RetryTemplate;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "spring.ai.model.chat", havingValue = "deepseek")
 public class ResearchAiConfiguration {
+    @Autowired private ObjectProvider<ResearchExperimentBudget> experimentBudgets;
     @Bean
     @ConditionalOnMissingBean(RestClient.Builder.class)
     RestClient.Builder researchModelRestClientBuilder() {
@@ -33,7 +37,7 @@ public class ResearchAiConfiguration {
             var execution = ResearchModelExecution.current();
             if (execution != null) {
                 execution.remainingMillis();
-                execution.dispatched = true;
+                execution.dispatch(experimentBudgets == null ? null : experimentBudgets.getIfAvailable(), body.length);
             }
             return next.execute(request, body);
         });

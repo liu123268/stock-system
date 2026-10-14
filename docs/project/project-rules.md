@@ -8,7 +8,8 @@ AI 自动选择匹配行，多场景取并集；先定位相关章节，再读�
 
 | 触发场景／新增要求类型 | 唯一维护位置及读取范围 |
 | --- | --- |
-| 所有任务：教学方式、保护改动、规则记忆 | [AGENTS.md](../../AGENTS.md) |
+| 所有任务：教学解释口吻、保护改动、规则记忆 | [AGENTS.md](../../AGENTS.md) |
+| Java／Agent 教学、继续教学、复习、能力检查与教学安排调整 | [teaching.md](teaching.md)，必须读取；再承接 status 的对应专题与 roadmap 的对应目标，不展开整套知识库 |
 | 接续开发或专题学习、进度、阻塞、下一步 | [status.md](status.md)；再定位当前规格任务或已链接的专题材料 |
 | Java／Agent 教学地图、岗位分流、范围／深度／顺序和完成标准 | [roadmap.md](roadmap.md) 的教学范围与 V2 地图；岗位依据见求职对标，实际采用与个人结果分别核对技术栈和 status |
 | 需求讨论、功能实施、开发节奏 | [workflow.md](workflow.md) 的需求与范围；对应 `specs` 中本次用户故事的 requirements、design、tasks |

@@ -22,6 +22,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.ai.chat.messages.*;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -48,6 +50,10 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
     @Autowired ResearchAgentRecordMapper records;
     @Autowired MockMvc mvc;
     @MockitoBean ResearchSummaryModel model;
+    @MockitoBean ResearchQuestionModel questionModel;
+    @Autowired ObjectMapper json;
+    String questionMode = "opinions";
+    final AtomicInteger questionCalls = new AtomicInteger();
     final List<Long> userIds = new ArrayList<>();
     final AtomicInteger calls = new AtomicInteger();
     final AtomicReference<String> mode = new AtomicReference<>("valid");
@@ -89,7 +95,7 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
         doAnswer(invocation -> {
             calls.incrementAndGet();
             var execution = ResearchModelExecution.current();
-            execution.dispatched = true;
+            execution.dispatch();
             entered.countDown();
             if (mode.get().equals("blocked")) assertThat(release.await(8, TimeUnit.SECONDS)).isTrue();
             if (mode.get().equals("unknown")) throw new BusinessException(ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
@@ -105,6 +111,35 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
                     List.of(), members, List.of(new ResearchSummary.Item("缺少公告或财报，无法确认实际增长。", refs)));
             return new ResearchSummaryModel.Result(summary, "offline-agent-test", 100, 50);
         }).when(model).generate(any());
+        doAnswer(invocation -> {
+            questionCalls.incrementAndGet();
+            var execution = ResearchModelExecution.current();
+            execution.dispatch();
+            if (questionMode.equals("second-failure") && execution.modelCalls == 2)
+                throw new BusinessException(ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
+            execution.usage("offline-question-test", 100, 80);
+            if (execution.modelCalls == 1 || questionMode.equals("loop")) {
+                String name = questionMode.equals("quote") || questionMode.equals("second-failure") || questionMode.equals("loop")
+                        ? "read_latest_quote" : questionMode.equals("daily") ? "read_daily_prices" : "read_cycle_opinions";
+                String args = name.equals("read_cycle_opinions") ? "{}" : name.equals("read_daily_prices")
+                        ? "{\"dateFrom\":\"2026-09-01\",\"dateTo\":\"2026-09-04\"}" : "{}";
+                if (questionMode.equals("invalid-args")) args = "{\"workspaceId\":999,\"authorUserId\":999}";
+                return AssistantMessage.builder().toolCalls(List.of(new AssistantMessage.ToolCall("call-" + execution.modelCalls,
+                        "function", name, args))).build();
+            }
+            List<Message> messages = invocation.getArgument(0);
+            var response = messages.stream().filter(ToolResponseMessage.class::isInstance).map(ToolResponseMessage.class::cast)
+                    .reduce((first, second) -> second).orElseThrow().getResponses().get(0);
+            var data = json.readTree(response.responseData());
+            List<String> refs = questionMode.equals("invalid-args") ? List.of()
+                    : questionMode.equals("opinions") ? List.of(data.path("opinions").get(0).path("sourceId").asString())
+                    : List.of(data.path("sourceId").asString());
+            assertThat(response.responseData()).doesNotContain("authorUserId", "workspaceId");
+            if (questionMode.equals("invalid-args")) assertThat(data.path("errorCode").asString()).isEqualTo("INVALID_TOOL_ARGUMENTS");
+            return new AssistantMessage(json.writeValueAsString(new com.stock.system.agent.dto.ResearchReply(
+                    List.of(new ResearchSummary.Item("这是根据当前授权资料整理的回答。", refs)),
+                    List.of("未读取财报与公告，无法确认实际增长。"))));
+        }).when(questionModel).call(any(), any());
     }
 
     @Test void getDoesNotCreateAndGenerationRestoresPrivateResultWithIndependentLedger() throws Exception {
@@ -250,6 +285,76 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
                 }
             }
         }
+    }
+
+    @Test void questionReadsToolsPairsMessagesSumsUsageAndRestoresWithOldSummary() {
+        generate();
+        var run = ask("成员甲的判断有什么依据？");
+        assertThat(run.status()).isEqualTo("SUCCEEDED");
+        assertThat(run.answer().summary()).isNull();
+        assertThat(run.answer().followUp().question()).contains("判断");
+        assertThat(run.answer().references()).extracting(reference -> reference.opinionId()).contains(opinion);
+        assertThat(agent.restore(owner, null).messages()).hasSize(2);
+        assertThat(agent.restore(owner, null).messages().get(0).answer().followUp()).isNotNull();
+        var usage = jdbc.queryForMap("select model_calls, tool_calls, input_tokens, output_tokens from agent_run where id = ?", run.runId());
+        assertThat(((Number) usage.get("model_calls")).longValue()).isEqualTo(2);
+        assertThat(((Number) usage.get("tool_calls")).longValue()).isEqualTo(1);
+        assertThat(((Number) usage.get("input_tokens")).longValue()).isEqualTo(200);
+        assertThat(((Number) usage.get("output_tokens")).longValue()).isEqualTo(160);
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id = ?", BigDecimal.class, run.runId())).isEqualByComparingTo("0.00168");
+    }
+
+    @Test void currentQuoteAndDailyEvidenceAreJavaSnapshotsInsteadOfOpinionReferences() {
+        questionMode = "quote";
+        var quote = ask("最新可用价是多少？");
+        assertThat(quote.status()).isEqualTo("SUCCEEDED");
+        assertThat(quote.answer().followUp().evidence().get(0).type()).isEqualTo("QUOTE");
+        assertThat(quote.answer().followUp().evidence().get(0).quote().simulated()).isTrue();
+        questionMode = "daily";
+        var daily = ask("9月1日至4日的名义收盘价变化？");
+        assertThat(daily.status()).isEqualTo("SUCCEEDED");
+        assertThat(daily.answer().followUp().evidence().stream().filter(evidence -> evidence.type().equals("DAILY_PRICES"))).hasSize(1);
+    }
+
+    @Test void forbiddenToolArgumentsGetPairedErrorsWithoutReadingOtherObjects() {
+        questionMode = "invalid-args";
+        var run = ask("读取其他空间的资料？");
+        assertThat(run.status()).isEqualTo("SUCCEEDED");
+        assertThat(run.answer().references()).isEmpty();
+        assertThat(jdbc.queryForObject("select tool_trace_json from agent_run where id = ?", String.class, run.runId())).contains("ERROR");
+        assertThat(questionCalls).hasValue(2);
+    }
+
+    @Test void modelLoopStopsAtThreeCallsAndTwoToolsWithoutAHiddenFourthRequest() {
+        questionMode = "loop";
+        var run = ask("一直查询行情直到找到答案？");
+        assertThat(run.status()).isEqualTo("FAILED");
+        assertThat(run.errorCode()).isEqualTo("RESEARCH_AGENT_EXECUTION_LIMIT");
+        assertThat(questionCalls).hasValue(3);
+        assertThat(jdbc.queryForObject("select tool_calls from agent_run where id = ?", Integer.class, run.runId())).isEqualTo(2);
+    }
+
+    @Test void unknownSecondModelRequestCannotBeSettledUsingOnlyFirstRequestsTokens() {
+        generate(); questionMode = "second-failure";
+        var run = ask("最新价格？");
+        assertThat(run.status()).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id = ?", BigDecimal.class, run.runId())).isNull();
+        assertThat(jdbc.queryForObject("select reserved_yuan from agent_run where id = ?", BigDecimal.class, run.runId())).isEqualByComparingTo(ResearchAgentRecordMapper.QUESTION_RESERVE);
+        assertThat(agent.restore(owner, null).messages()).hasSize(1);
+    }
+
+    @Test void withdrawnHistoryCannotBeCarriedIntoNextQuestion() {
+        generate();
+        jdbc.update("update stock_opinion set withdrawn_at=current_timestamp(3), withdrawn_by_user_id=author_user_id where id=?", opinion);
+        questionMode = "quote";
+        var run = ask("最新报价？");
+        assertThat(run.status()).isEqualTo("SUCCEEDED");
+        assertThat(run.answer().followUp().historyOmitted()).isTrue();
+        assertThat(run.answer().references()).isEmpty();
+    }
+
+    private com.stock.system.agent.vo.ResearchAgentResponseVO.Run ask(String question) {
+        return agent.ask(owner, UUID.randomUUID().toString(), question, ResearchSourceFilter.fullCycle());
     }
 
     private com.stock.system.agent.vo.ResearchAgentResponseVO.Run generate() {

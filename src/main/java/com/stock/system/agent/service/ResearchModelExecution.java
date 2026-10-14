@@ -11,9 +11,22 @@ public final class ResearchModelExecution implements AutoCloseable {
     public String model;
     public Integer inputTokens;
     public Integer outputTokens;
+    public int modelCalls;
+    public int toolCalls;
+    private final int maxModelCalls;
+    private boolean waitingForUsage;
+    private boolean unknownUsage;
+    private ResearchExperimentBudget experimentBudget;
+    private String experimentRequestId;
+    public final java.util.List<ToolTrace> toolTrace = new java.util.ArrayList<>();
 
     public ResearchModelExecution() {
+        this(1);
+    }
+
+    public ResearchModelExecution(int maxModelCalls) {
         if (CURRENT.get() != null) throw new IllegalStateException("Nested research generation");
+        this.maxModelCalls = maxModelCalls;
         CURRENT.set(this);
     }
 
@@ -27,9 +40,34 @@ public final class ResearchModelExecution implements AutoCloseable {
 
     public void usage(String model, Integer input, Integer output) {
         this.model = model;
-        this.inputTokens = input;
-        this.outputTokens = output;
+        waitingForUsage = false;
+        if (input == null || output == null || input < 0 || output < 0) {
+            unknownUsage = true;
+            return;
+        }
+        this.inputTokens = Math.addExact(this.inputTokens == null ? 0 : this.inputTokens, input);
+        this.outputTokens = Math.addExact(this.outputTokens == null ? 0 : this.outputTokens, output);
+        if (experimentBudget != null) experimentBudget.settle(experimentRequestId, input, output);
     }
+
+    public void dispatch() {
+        dispatch(null, 0);
+    }
+
+    public void dispatch(ResearchExperimentBudget experimentBudget, int inputBytes) {
+        remainingMillis();
+        if (modelCalls >= maxModelCalls) throw new BusinessException(ErrorCode.RESEARCH_AGENT_EXECUTION_LIMIT);
+        if (waitingForUsage) unknownUsage = true;
+        this.experimentBudget = experimentBudget;
+        this.experimentRequestId = java.util.UUID.randomUUID().toString();
+        if (experimentBudget != null) experimentBudget.reserve(experimentRequestId, inputBytes);
+        modelCalls++;
+        dispatched = true;
+        waitingForUsage = true;
+    }
+
+    public boolean usageKnown() { return !unknownUsage && !waitingForUsage; }
+    public record ToolTrace(String name, String status, long elapsedMillis) {}
 
     @Override public void close() { CURRENT.remove(); }
 }

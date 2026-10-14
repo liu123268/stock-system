@@ -1,6 +1,7 @@
 package com.stock.system.agent.vo;
 
 import com.stock.system.agent.dto.ResearchSummary;
+import com.stock.system.agent.dto.ResearchReply;
 import com.stock.system.agent.service.ResearchMarketDataService;
 import com.stock.system.agent.service.ResearchSummaryService;
 import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO;
@@ -15,7 +16,11 @@ public final class ResearchAgentResponseVO {
                             LocalDateTime createdAt) {}
     public record Answer(ResearchSummary summary, ResearchCycleSourcesResponseVO.Scope scope,
                          List<Reference> references, boolean newOpinionsAvailable, LocalDateTime generatedAt,
-                         ResearchMarketDataService.Quote quote) {
+                         ResearchMarketDataService.Quote quote, FollowUp followUp) {
+        public Answer(ResearchSummary summary, ResearchCycleSourcesResponseVO.Scope scope, List<Reference> references,
+                      boolean newOpinionsAvailable, LocalDateTime generatedAt, ResearchMarketDataService.Quote quote) {
+            this(summary, scope, references, newOpinionsAvailable, generatedAt, quote, null);
+        }
         public static Answer from(ResearchSummaryService.Result result) {
             return new Answer(result.summary(), result.scope(), result.sources().stream().map(source ->
                     new Reference(source.sourceId(), source.opinion().id(), source.authorId(),
@@ -23,6 +28,9 @@ public final class ResearchAgentResponseVO {
                     result.newOpinionsAvailable(), result.generatedAt(), result.quote());
         }
     }
+    public record Evidence(String sourceId, String type, String label, ResearchMarketDataService.Quote quote,
+                           ResearchMarketDataService.DailyPrices dailyPrices) {}
+    public record FollowUp(String question, ResearchReply reply, List<Evidence> evidence, boolean historyOmitted) {}
     public record Run(Long runId, String requestId, String status, String errorCode, String message,
                       LocalDateTime startedAt, LocalDateTime finishedAt, Answer answer) {}
     public record Session(boolean enabled, long contextVersion, List<Run> messages, Run activeRun,

@@ -39,6 +39,13 @@ public class ResearchAgentController {
                              @PathVariable long runId) {
         return Result.success(service.status(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId), runId));
     }
+    @PostMapping("/messages")
+    public Result<Run> ask(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
+                          @PathVariable long workspaceStockId, @PathVariable long researchCycleId,
+                          @Valid @RequestBody QuestionRequest request) {
+        return Result.success(service.ask(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId),
+                request.requestId(), request.question(), new ResearchSourceFilter(request.authorUserId(), request.dateFrom(), request.dateTo())));
+    }
     @DeleteMapping
     public Result<Void> clear(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
                              @PathVariable long workspaceStockId, @PathVariable long researchCycleId) {
@@ -47,4 +54,7 @@ public class ResearchAgentController {
     }
     public record SummaryRequest(@NotBlank @Size(min = 36, max = 36) String requestId,
                                  Long authorUserId, LocalDate dateFrom, LocalDate dateTo) {}
+    public record QuestionRequest(@NotBlank @Size(min = 36, max = 36) String requestId,
+                                  @NotBlank @Size(max = 2000) String question,
+                                  Long authorUserId, LocalDate dateFrom, LocalDate dateTo) {}
 }

@@ -1,6 +1,6 @@
 # 测试与验收规则
 
-更新时间：2026-10-08
+更新时间：2026-10-14
 
 ## 1. 测试目标与选择
 
@@ -57,6 +57,14 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 复现时先只上传这一份脚本到部署目录 `.incoming/`，再执行 `python3 .incoming/verify-deployment-failures.py`；它验证 CLI 缺失／未授权／超时、共享 Redis 在测试后端重启后命中、Redis 不可达降级及退出 sidecar 重建。生产四容器 ID 前后必须相同。finally 按随机标识删除账号／空间／研究 fixture、Redis 测试键，按容器标签确认归属再删除测试容器，并核对剩余 0。这是正式镜像在部署依赖环境中的测试，不是操作真实生产供应商故障。
 
 [production-readonly-smoke.mjs](../../frontend/e2e/production-readonly-smoke.mjs) 在本机 `frontend` 目录用 `node e2e/production-readonly-smoke.mjs` 执行，默认公网地址在脚本中，可用 `PRODUCTION_URL` 指定 HTTPS 地址。真实 Chrome 保留严格证书校验，只访问公开页面、未登录认证接口和缺失静态资源，验证桌面／手机、401、404、HTTP 跳转、无明文子资源与页面错误；不注册账号或写业务数据。截图／JSON 默认在忽略的 `target/v1-production-readonly/`。用户自己正常登录的生产手工验收单独记录，不据此放宽自动化只能写测试库的规则。
+
+### 2.5 研究助手的受控与真实模型检查
+
+助手后端定向测试覆盖范围／撤回、固定输出、工具配对与次数、个人记录／幂等／费用。ResearchExperimentBudgetTest 使用临时 JSONL，核对原累计导入、文件锁及未知用量保留，不读取实际 Key、不修改真实实验账本。报告数量从本次完整 Maven 命令取，不把未运行的外部探测算通过。
+
+`frontend/e2e/research-agent-smoke.mjs` 配合回环 `agent-model-fixture.mjs` 使用真实 test HTTP／MySQL 和 Chrome，验证页面及原生工具循环；paidRequests 为 0。它仍执行第 4 节双路径探针和 catalog 检查、finally 按本轮 ID 清理，不证明真实模型或真实行情效果。
+
+`frontend/e2e/research-agent-real-probe.mjs` 是显式启用的付费检查，只有 `AGENT_REAL_MODEL_PROBE=true`、test／实际 catalog／前端代理确认、官方端点和共享账本探针全部满足才发送。仅新建自造观点、mock 行情和四类问题；临时后端须显式配置 `stock-system.agent.experiment-ledger`，复用原累计 10 元 JSONL／文件锁，不删除账本、不自动付费重试。Key 仅由本地忽略配置提供，不能将其值写入启动参数、结果或日志。该入口的数据外发与预算按实际授权核对，不由环境开关代替授权。每例保存结果和用量，结构成功后再对照原文／快照审查语义；任一失败先停并核对用量，finally 清理自造业务数据，保留真实已发生费用。实际授权、语义结果、视口和清理只见 [005 任务](../specs/004-research-agent/tasks.md#14-ag-code-005工具追问与真实样本核对2026-10-14)。
 
 ## 3. 前端测试
 

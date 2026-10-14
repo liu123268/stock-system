@@ -5,13 +5,22 @@ import type { StockStance } from './stock'
 export interface AgentTarget { workspaceId: number; stockId: number; cycleId: number }
 export interface AgentFilter { authorUserId?: number; dateFrom?: string; dateTo?: string }
 export interface AgentItem { text: string; sourceIds: string[] }
+export interface AgentQuote { status: 'AVAILABLE' | 'UNAVAILABLE'; price: number | null; currency: string; quoteTime: string | null; source: string | null; simulated: boolean }
+export interface AgentDailyPrices {
+  status: string; currency: string; requestedFrom: string; requestedTo: string; actualFrom: string | null; actualTo: string | null
+  source: string | null; simulated: boolean; adjustment: string; nominalPriceDifference: number | null
+  nominalPriceChangePercent: number | null; coverageNote: string
+  prices: { time: string; open: number; high: number; low: number; close: number; volume: number }[]
+}
+export interface AgentEvidence { sourceId: string; type: 'QUOTE' | 'DAILY_PRICES'; label: string; quote: AgentQuote | null; dailyPrices: AgentDailyPrices | null }
 export interface AgentAnswer {
-  summary: { overview: AgentItem; changes: AgentItem[]; members: (AgentItem & { authorId: string })[]; pendingItems: AgentItem[] }
+  summary: { overview: AgentItem; changes: AgentItem[]; members: (AgentItem & { authorId: string })[]; pendingItems: AgentItem[] } | null
   scope: { readAt: string; readOpinionCount: number; filter: AgentFilter }
   references: { sourceId: string; opinionId: number; authorId: string; authorName: string; createdAt: string }[]
   newOpinionsAvailable: boolean
   generatedAt: string
-  quote: { status: 'AVAILABLE' | 'UNAVAILABLE'; price: number | null; currency: string; quoteTime: string | null; source: string | null; simulated: boolean }
+  quote: AgentQuote | null
+  followUp?: { question: string; reply: { paragraphs: AgentItem[]; missingInformation: string[] }; evidence: AgentEvidence[]; historyOmitted: boolean } | null
 }
 export interface AgentRun {
   runId: number; requestId: string; status: string; errorCode: string | null; message: string | null
@@ -33,6 +42,9 @@ export function restoreAgent(target: AgentTarget, beforeRunId?: number) {
 }
 export function generateAgent(target: AgentTarget, requestId: string, filter: AgentFilter) {
   return http.post<ApiResult<AgentRun>>(`${base(target)}/agent/summaries`, { requestId, ...filter }, { timeout: 65_000 })
+}
+export function askAgent(target: AgentTarget, requestId: string, question: string, filter: AgentFilter) {
+  return http.post<ApiResult<AgentRun>>(`${base(target)}/agent/messages`, { requestId, question, ...filter }, { timeout: 65_000 })
 }
 export function readAgentRun(target: AgentTarget, runId: number) {
   return http.get<ApiResult<AgentRun>>(`${base(target)}/agent/runs/${runId}`)
