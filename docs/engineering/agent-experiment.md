@@ -179,3 +179,13 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 入口是 [ResearchAgentService.requestStatus](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java)：当前授权 → 当前账号的 requestId 查运行 → 再用完整研究对象查询 → 重验来源 → 返回状态／有效答案。客户端 [待确认标记](../../frontend/src/utils/agent-pending.ts) 只存当前标签页的编号、账号和对象，不存问题或凭据；它用于找任务，不能作为权限证明。历史正文仍由后端授权接口返回。
 
 来源变化的检查发生在模型往返之间和交付前。撤回使依赖回答失效；权限失效不再返回正文；清空增加版本，旧任务不能重新写回。它们停止下一步工作，已经发生的模型调用仍计费。临时断网、任务失败和资料失效分别判断，不能统一当作“重新发一次就好”。程序证据见 [006 任务](../specs/004-research-agent/tasks.md#15-ag-code-006记录变化与断线恢复2026-10-14)，这条链路与 HTTP、幂等、状态保存共同服务于可靠恢复。
+
+## 9. 财务读取准备：数字必须带口径
+
+成员说“订单可能增长”仍是观点；取得财报营收数字后，也只能核对对应营收，不能直接证明订单或其增长原因。财务判断需要金额、报告期间、币种、单位和指标定义共同成立。相同名字的“净利润”可能代表归母、合并或调整后口径；同为港币的两个展示金额，也可能经过未说明的汇率换算。
+
+候选读取链路是 [StockFinancialService.read](../../src/main/java/com/stock/system/stock/service/StockFinancialService.java) 核对当前访问及可信股票 → SDK／CLI 读取 → [解析器](../../src/main/java/com/stock/system/stock/financial/LongbridgeFinancialParser.java) 选必要科目和期间 → 再核对权限。用户指定 2024 年而来源没有时，返回这个缺口；不偷偷改答 2025 年，也不把未取得的数额写成 0。目前没有财务工具或页面入口，真实完成范围见 [财务源证据](../specs/004-research-agent/tasks.md#16-财务读取基础层与生产源核对2026-10-14)。
+
+关键代码是 [FinancialFacts.compare](../../src/main/java/com/stock/system/stock/financial/FinancialFacts.java)：先判断能不能比较，再用 BigDecimal 计算。例如两笔自造营收都是原报人民币元、同为全年，基期 100.25、本期 120.30，Java 可算出增加 20.05、同比 20%；任一币种转换或单位未知，就不给这个增长率。基期为零／负数时，即便口径正确，也只给绝对变化并说明原因。数字计算由 Java 做，模型后续负责解释，不能靠提示词让模型猜单位。
+
+本轮真实来源只有展示币种和数值，不能完整说明金额单位及利润／原报口径。因此当前结果是 PARTIAL，变化值为空；这表示取得了一部分资料、仍有明确缺口。报告期结束日 `fp_end` 也不是公告日。排查继续沿 sources → input → generated：如果 sources 已缺口径，首先修数据适配或来源，不把它当成模型漏读。无需先背 DTO 拼写；应能判断“这些数字是否回答了所问指标，是否具有相同口径”。

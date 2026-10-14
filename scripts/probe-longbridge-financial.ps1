@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Offline', 'Live', 'Diagnostic')]
+    [ValidateSet('Offline', 'Live', 'Diagnostic', 'Verify')]
     [string] $Mode = 'Offline',
     [string] $MavenRepository,
     [string] $JavaDirectory = $env:JAVA_HOME
@@ -38,7 +38,11 @@ try {
     if ($Mode -ne 'Offline') {
         $taskClientConfig = Join-Path $taskProjectRoot '.env.longbridge-local.properties'
         if (-not (Test-Path -LiteralPath $taskClientConfig)) { throw 'Local public-client configuration missing' }
-        $taskProbeMode = if ($Mode -eq 'Diagnostic') { '--diagnostic' } else { '--live' }
+        $taskProbeMode = switch ($Mode) {
+            'Diagnostic' { '--diagnostic' }
+            'Verify' { '--verify' }
+            default { '--live' }
+        }
         & $taskJavaExecutable '-Dfile.encoding=UTF-8' '--source' '17' '--class-path' ($taskClasspathEntries -join ';') $taskSource $taskProbeMode $taskClientConfig
     } else {
         & $taskJavaExecutable '-Dfile.encoding=UTF-8' '--source' '17' '--class-path' ($taskClasspathEntries -join ';') $taskSource '--offline'

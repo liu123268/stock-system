@@ -6,6 +6,7 @@ import com.longbridge.Config;
 import com.longbridge.OAuth;
 import com.longbridge.OAuthBuilder;
 import com.longbridge.OpenApiException;
+import com.longbridge.Language;
 import com.longbridge.fundamental.FinancialReportKind;
 import com.longbridge.fundamental.FinancialReportOptions;
 import com.longbridge.fundamental.FinancialReportPeriod;
@@ -35,10 +36,11 @@ public class LongbridgeFinancialProbe {
                 verifyParserOffline();
                 return;
             }
-            if (args.length != 2 || !("--live".equals(args[0]) || "--diagnostic".equals(args[0]))) {
-                throw new IllegalArgumentException("Use --offline or --live/--diagnostic <public-client-config>");
+            if (args.length != 2 || !("--live".equals(args[0]) || "--diagnostic".equals(args[0])
+                    || "--verify".equals(args[0]))) {
+                throw new IllegalArgumentException("Use --offline or --live/--diagnostic/--verify <public-client-config>");
             }
-            readLive(Path.of(args[1]), "--diagnostic".equals(args[0]));
+            readLive(Path.of(args[1]), "--diagnostic".equals(args[0]), "--verify".equals(args[0]));
         } catch (Exception | LinkageError failure) {
             // Provider exception messages, callback URLs and authorization data stay out of output.
             Throwable cause = failure;
@@ -48,7 +50,7 @@ public class LongbridgeFinancialProbe {
         }
     }
 
-    private static void readLive(Path publicConfig, boolean diagnostic) throws Exception {
+    private static void readLive(Path publicConfig, boolean diagnostic, boolean verify) throws Exception {
         Properties properties = new Properties();
         try (Reader reader = Files.newBufferedReader(publicConfig, StandardCharsets.UTF_8)) {
             properties.load(reader);
@@ -62,13 +64,15 @@ public class LongbridgeFinancialProbe {
         try (OAuth oauth = new OAuthBuilder(clientId).build(url -> {
             throw new IllegalStateException("Existing local OAuth authorization required");
         }).get(15, TimeUnit.SECONDS);
-             Config config = Config.fromOAuth(oauth).disablePrintQuotePackages();
+             Config config = Config.fromOAuth(oauth).language(Language.ZH_CN).disablePrintQuotePackages();
              FundamentalContext context = FundamentalContext.create(config)) {
             int available = 0;
             int attempts = 0;
             queryLoop:
             for (String symbol : diagnostic ? new String[]{SYMBOLS[0]} : SYMBOLS) {
-                for (FinancialReportPeriod period : diagnostic ? new FinancialReportPeriod[]{PERIODS[0]} : PERIODS) {
+                for (FinancialReportPeriod period : diagnostic ? new FinancialReportPeriod[]{PERIODS[0]}
+                        : verify ? new FinancialReportPeriod[]{FinancialReportPeriod.Annual,
+                                FinancialReportPeriod.QuarterlyFull} : PERIODS) {
                     if (attempts > 0) Thread.sleep(1500);
                     attempts++;
                     FinancialReportOptions options = new FinancialReportOptions();
@@ -149,13 +153,14 @@ public class LongbridgeFinancialProbe {
                             numericValueCount++;
                         } catch (NumberFormatException missingOrFormatted) { /* Not a verified numeric value. */ }
                     }
-                    String description = text(account, "field") + " " + text(account, "name");
-                    if (!description.toLowerCase(Locale.ROOT).matches(
-                            ".*(revenue|net.*profit|net.*income|total.*asset|total.*liabil|operating.*cash|营收|营业收入|净利润|总资产|资产总|负债总|总负债|经营活动).*")) continue;
+                    // An exact allowlist includes operating cash flow and excludes profit margins/ratios.
+                    if (!java.util.Set.of("OperatingRevenue", "NetProfit", "TotalAssets", "TotalLiability",
+                            "NetOperateCashFlow").contains(text(account, "field"))) continue;
                     JsonObject item = new JsonObject();
                     copy(account, item, "field", "name", "percent", "tip", "unit", "scale");
                     JsonArray values = new JsonArray();
-                    for (JsonElement valueElement : first(array(account, "values"), 2)) {
+                    // Quarter samples need five rows to observe the same quarter in the preceding year.
+                    for (JsonElement valueElement : first(array(account, "values"), 5)) {
                         if (!valueElement.isJsonObject()) continue;
                         JsonObject value = new JsonObject();
                         copy(valueElement.getAsJsonObject(), value, "period", "year", "fp_end", "value", "ratio", "yoy");
@@ -163,7 +168,6 @@ public class LongbridgeFinancialProbe {
                     }
                     item.add("values", values);
                     examples.add(item);
-                    if (examples.size() == 6) break;
                 }
                 statement.add("candidateFields", examples);
                 statements.add(statement);

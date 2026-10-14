@@ -2,6 +2,7 @@ package com.stock.system.stock.market;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.stock.system.stock.financial.FinancialPeriod;
 import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
@@ -21,6 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +30,36 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LongbridgeJsonRpcClientTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    @Test
+    void financialReadUsesFixedGetOnSameSidecarAndKeepsRawEnvelope() throws Exception {
+        FakeProcess fake = new FakeProcess(server -> {
+            JsonNode first = server.readRequest();
+            assertThat(first.path("method").asString()).isEqualTo("api.get");
+            assertThat(first.path("params").path("path").asString()).isEqualTo("/v1/quote/financial-reports");
+            assertThat(first.path("params").path("query").path("symbol").asString()).isEqualTo("700.HK");
+            assertThat(first.path("params").path("query").path("kind").asString()).isEqualTo("ALL");
+            assertThat(first.path("params").path("query").path("report").asString()).isEqualTo("qf");
+            server.respondResult(first.path("id").asLong(), "{\"code\":0,\"data\":{\"list\":{}}}");
+            server.respondForRequest(server.readRequest());
+        });
+        var opens = new AtomicInteger();
+        try (var client = client(() -> { opens.incrementAndGet(); return fake; }, Duration.ofSeconds(2))) {
+            var source = client.readFinancialReport("700.HK", FinancialPeriod.QUARTER);
+            assertThat(JSON.readTree(source.json()).path("code").asInt()).isZero();
+            assertThat(source.retrievedAt()).isNotNull();
+            client.getQuotes(List.of("600519.SH"));
+            assertThat(opens.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void financialReadRejectsUnsupportedSymbolBeforeStartingSidecar() {
+        try (var client = client(() -> { throw new AssertionError("Must not start"); }, Duration.ofSeconds(2))) {
+            assertThatThrownBy(() -> client.readFinancialReport("AAPL.US", FinancialPeriod.ANNUAL))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 
     @Test
     void keepsStatusWhenPriceFieldsAreMissingOrMalformed() throws Exception {
@@ -76,7 +108,7 @@ class LongbridgeJsonRpcClientTest {
     void sendsOneBatchAndUsesShortLivedCache() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
-            assertThat(request.path("method").asText()).isEqualTo("quote.quote");
+            assertThat(request.path("method").asString()).isEqualTo("quote.quote");
             assertThat(request.path("params").path("symbols")).hasSize(2);
             long id = request.path("id").asLong();
             server.respond(id, List.of(
@@ -97,11 +129,11 @@ class LongbridgeJsonRpcClientTest {
     void requestsCandlesticksWithExplicitPeriodAndUsesItsOwnCache() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
-            assertThat(request.path("method").asText()).isEqualTo("quote.candlesticks");
-            assertThat(request.path("params").path("symbol").asText()).isEqualTo("600519.SH");
-            assertThat(request.path("params").path("period").asText()).isEqualTo("week");
+            assertThat(request.path("method").asString()).isEqualTo("quote.candlesticks");
+            assertThat(request.path("params").path("symbol").asString()).isEqualTo("600519.SH");
+            assertThat(request.path("params").path("period").asString()).isEqualTo("week");
             assertThat(request.path("params").path("count").asInt()).isEqualTo(120);
-            assertThat(request.path("params").path("adjust").asText()).isEqualTo("none");
+            assertThat(request.path("params").path("adjust").asString()).isEqualTo("none");
             server.respond(request.path("id").asLong(), List.of(
                     candlestickJson("2026-09-04T07:00:00Z", "1290", "1305", "1280", "1298")
             ));
@@ -125,7 +157,7 @@ class LongbridgeJsonRpcClientTest {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
             server.respondError(
-                    request.path("id").asLong(), 7, "request failed", "301607");
+                    request.path("id").asLong(), "request failed", "301607");
         });
 
         try (LongbridgeJsonRpcClient client = client(() -> fakeProcess, Duration.ofSeconds(2))) {
@@ -141,7 +173,7 @@ class LongbridgeJsonRpcClientTest {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
             server.respondError(
-                    request.path("id").asLong(), 7,
+                    request.path("id").asLong(),
                     "out of minute candlestick limit begin date:2023-09-01", "301600");
         });
 
@@ -161,12 +193,12 @@ class LongbridgeJsonRpcClientTest {
     void requestsHistoricalCandlesticksByMarketDateForLeftEdgeLoading() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
-            assertThat(request.path("method").asText())
+            assertThat(request.path("method").asString())
                     .isEqualTo("quote.history_candlesticks_by_date");
-            assertThat(request.path("params").path("symbol").asText()).isEqualTo("NVDA.US");
-            assertThat(request.path("params").path("period").asText()).isEqualTo("1m");
-            assertThat(request.path("params").path("end").asText()).isEqualTo("2026-09-08");
-            assertThat(request.path("params").path("adjust").asText()).isEqualTo("none");
+            assertThat(request.path("params").path("symbol").asString()).isEqualTo("NVDA.US");
+            assertThat(request.path("params").path("period").asString()).isEqualTo("1m");
+            assertThat(request.path("params").path("end").asString()).isEqualTo("2026-09-08");
+            assertThat(request.path("params").path("adjust").asString()).isEqualTo("none");
             server.respond(request.path("id").asLong(), List.of(
                     candlestickJson("2026-09-08T19:58:00Z", "100", "101", "99", "100.5"),
                     candlestickJson("2026-09-08T20:01:00Z", "101", "102", "100", "101.5")
@@ -187,10 +219,10 @@ class LongbridgeJsonRpcClientTest {
     void requestsTodayIntradayAndUsesShortLivedCache() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
-            assertThat(request.path("method").asText()).isEqualTo("quote.intraday");
-            assertThat(request.path("params").path("symbol").asText()).isEqualTo("600519.SH");
+            assertThat(request.path("method").asString()).isEqualTo("quote.intraday");
+            assertThat(request.path("params").path("symbol").asString()).isEqualTo("600519.SH");
             server.respond(request.path("id").asLong(), List.of(
-                    intradayJson("2026-09-10T01:31:00Z", "1488.88", "1487.50")
+                    intradayJson()
             ));
         });
 
@@ -205,10 +237,10 @@ class LongbridgeJsonRpcClientTest {
     void requestsTradingDayByMarketAndCachesTheImmutableDateResult() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
-            assertThat(request.path("method").asText()).isEqualTo("quote.trading_days");
-            assertThat(request.path("params").path("market").asText()).isEqualTo("CN");
-            assertThat(request.path("params").path("start").asText()).isEqualTo("2026-09-10");
-            assertThat(request.path("params").path("end").asText()).isEqualTo("2026-09-10");
+            assertThat(request.path("method").asString()).isEqualTo("quote.trading_days");
+            assertThat(request.path("params").path("market").asString()).isEqualTo("CN");
+            assertThat(request.path("params").path("start").asString()).isEqualTo("2026-09-10");
+            assertThat(request.path("params").path("end").asString()).isEqualTo("2026-09-10");
             server.respondResult(request.path("id").asLong(),
                     "{\"trading_days\":[\"2026-09-10\"],\"half_trading_days\":[]}");
         });
@@ -225,7 +257,7 @@ class LongbridgeJsonRpcClientTest {
     void treatsHongKongHalfTradingDayAsTradingDay() throws Exception {
         FakeProcess fakeProcess = new FakeProcess(server -> {
             JsonNode request = server.readRequest();
-            assertThat(request.path("params").path("market").asText()).isEqualTo("HK");
+            assertThat(request.path("params").path("market").asString()).isEqualTo("HK");
             server.respondResult(request.path("id").asLong(),
                     "{\"trading_days\":[],\"half_trading_days\":[\"2026-12-24\"]}");
         });
@@ -282,10 +314,9 @@ class LongbridgeJsonRpcClientTest {
                 + "\",\"volume\":123456,\"turnover\":\"159753000\"}";
     }
 
-    private static String intradayJson(String timestamp, String price, String averagePrice) {
-        return "{\"timestamp\":\"" + timestamp + "\",\"price\":\"" + price
-                + "\",\"avg_price\":\"" + averagePrice
-                + "\",\"volume\":1234,\"turnover\":\"1836800\"}";
+    private static String intradayJson() {
+        return "{\"timestamp\":\"2026-09-10T01:31:00Z\",\"price\":\"1488.88\",\"avg_price\":\"1487.50\","
+                + "\"volume\":1234,\"turnover\":\"1836800\"}";
     }
 
     @FunctionalInterface
@@ -298,15 +329,14 @@ class LongbridgeJsonRpcClientTest {
         private final PipedInputStream serverInput;
         private final PipedInputStream processOutput = new PipedInputStream();
         private final PipedOutputStream serverOutput;
-        private final Thread serverThread;
         private volatile boolean alive = true;
-        private volatile int requestCount;
+        private final AtomicInteger requestCount = new AtomicInteger();
 
         private FakeProcess(ServerScript script) throws IOException {
             serverInput = new PipedInputStream(processInput);
             serverOutput = new PipedOutputStream(processOutput);
             Server server = new Server(serverInput, serverOutput, this);
-            serverThread = new Thread(() -> {
+            Thread serverThread = new Thread(() -> {
                 try {
                     script.run(server);
                 } catch (Exception ignored) {
@@ -383,7 +413,7 @@ class LongbridgeJsonRpcClientTest {
         }
 
         private int receivedRequestCount() {
-            return requestCount;
+            return requestCount.get();
         }
     }
 
@@ -403,7 +433,7 @@ class LongbridgeJsonRpcClientTest {
             if (line == null) {
                 throw new IOException("client input closed");
             }
-            owner.requestCount++;
+            owner.requestCount.incrementAndGet();
             return JSON.readTree(line);
         }
 
@@ -412,7 +442,7 @@ class LongbridgeJsonRpcClientTest {
         }
 
         private void respondForRequest(JsonNode request) throws IOException {
-            String symbol = request.path("params").path("symbols").path(0).asText();
+            String symbol = request.path("params").path("symbols").path(0).asString();
             if ("NVDA.US".equals(symbol)) {
                 respond(request.path("id").asLong(), symbol, "184.2500", "2026-09-09T07:01:00Z");
             } else {
@@ -436,12 +466,11 @@ class LongbridgeJsonRpcClientTest {
 
         private void respondError(
                 long id,
-                int rpcCode,
                 String message,
                 String providerCode
         ) throws IOException {
             String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id
-                    + ",\"error\":{\"code\":" + rpcCode + ",\"message\":\"" + message
+                    + ",\"error\":{\"code\":7,\"message\":\"" + message
                     + "\",\"data\":{\"code\":\"" + providerCode + "\"}}}\n";
             output.write(response.getBytes(StandardCharsets.UTF_8));
             output.flush();

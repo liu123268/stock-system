@@ -1,0 +1,574 @@
+[
+  {
+    "symbol": "600519.SH",
+    "report": "af",
+    "list": {
+      "IS": {
+        "indicators": [
+          {
+            "currency": "CNY",
+            "accounts": [
+              {
+                "field": "OperatingRevenue",
+                "name": "营业收入(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "168838102514.0000"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "170899152276.0000"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "147693604994.0000"
+                  }
+                ]
+              },
+              {
+                "field": "NetProfit",
+                "name": "净利润(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "82320067106.0000"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "86228146429.0000"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "74734071558.0000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "CF": {
+        "indicators": [
+          {
+            "currency": "CNY",
+            "accounts": [
+              {
+                "field": "NetOperateCashFlow",
+                "name": "经营现金流(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "61522204988.0000"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "92463692166.0000"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "66593247721.0000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "BS": {
+        "indicators": [
+          {
+            "currency": "CNY",
+            "accounts": [
+              {
+                "field": "TotalAssets",
+                "name": "总资产(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "303834844007.0000"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "298944579906.0000"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "272699660086.0000"
+                  }
+                ]
+              },
+              {
+                "field": "TotalLiability",
+                "name": "总负债(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "49875590103.0000"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "56933264788.0000"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "49043190787.0000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "symbol": "600519.SH",
+    "report": "qf",
+    "list": {
+      "IS": {
+        "indicators": [
+          {
+            "currency": "CNY",
+            "accounts": [
+              {
+                "field": "OperatingRevenue",
+                "name": "营业收入(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "36794008744.0000"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "53909252220.0000"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "40384394859.0000"
+                  }
+                ]
+              },
+              {
+                "field": "NetProfit",
+                "name": "净利润(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "17274367537.0000"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "27242512888.0000"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "17693320389.0000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "CF": {
+        "indicators": [
+          {
+            "currency": "CNY",
+            "accounts": [
+              {
+                "field": "NetOperateCashFlow",
+                "name": "经营现金流(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "43780858843.0000"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "26909891269.0000"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "23325402832.0000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "BS": {
+        "indicators": [
+          {
+            "currency": "CNY",
+            "accounts": [
+              {
+                "field": "TotalAssets",
+                "name": "总资产(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "309050784558.0000"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "319918844894.0000"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "303834844007.0000"
+                  }
+                ]
+              },
+              {
+                "field": "TotalLiability",
+                "name": "总负债(CNY)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "46954432386.0000"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "38782958464.0000"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "49875590103.0000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "symbol": "700.HK",
+    "report": "af",
+    "list": {
+      "IS": {
+        "indicators": [
+          {
+            "currency": "HKD",
+            "accounts": [
+              {
+                "field": "OperatingRevenue",
+                "name": "营业收入(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "821940973404.0143"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "714778357579.8526"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "668793727771.1529"
+                  }
+                ]
+              },
+              {
+                "field": "NetProfit",
+                "name": "净利润(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "245830288071.1623"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "210098764860.6448"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "126525189262.7951"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "CF": {
+        "indicators": [
+          {
+            "currency": "HKD",
+            "accounts": [
+              {
+                "field": "NetOperateCashFlow",
+                "name": "经营现金流(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "331340943687.3087"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "279868620521.8590"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "243748993708.7603"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "BS": {
+        "indicators": [
+          {
+            "currency": "HKD",
+            "accounts": [
+              {
+                "field": "TotalAssets",
+                "name": "总资产(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "2269216387856.6009"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "1895104098746.4027"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "1735183927532.4738"
+                  }
+                ]
+              },
+              {
+                "field": "TotalLiability",
+                "name": "总负债(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "FY 2025",
+                    "fp_end": "1767110400",
+                    "value": "888017578058.3716"
+                  },
+                  {
+                    "period": "FY 2024",
+                    "fp_end": "1735574400",
+                    "value": "773684538751.8835"
+                  },
+                  {
+                    "period": "FY 2023",
+                    "fp_end": "1703952000",
+                    "value": "774016659401.5042"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "symbol": "700.HK",
+    "report": "qf",
+    "list": {
+      "IS": {
+        "indicators": [
+          {
+            "currency": "HKD",
+            "accounts": [
+              {
+                "field": "OperatingRevenue",
+                "name": "营业收入(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "236534652147.9802"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "223314475042.0412"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "216318237851.5965"
+                  }
+                ]
+              },
+              {
+                "field": "NetProfit",
+                "name": "净利润(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "64707592268.1551"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "66034510168.1647"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "64838378859.1612"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "CF": {
+        "indicators": [
+          {
+            "currency": "HKD",
+            "accounts": [
+              {
+                "field": "NetOperateCashFlow",
+                "name": "经营现金流(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "60882103253.2658"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "115206025511.7425"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "73980968669.1167"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "BS": {
+        "indicators": [
+          {
+            "currency": "HKD",
+            "accounts": [
+              {
+                "field": "TotalAssets",
+                "name": "总资产(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "2494184186539.2273"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "2331821971904.9002"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "2269216387856.6009"
+                  }
+                ]
+              },
+              {
+                "field": "TotalLiability",
+                "name": "总负债(HKD)",
+                "percent": false,
+                "values": [
+                  {
+                    "period": "Q2 2026",
+                    "fp_end": "1782748800",
+                    "value": "1082134050047.8643"
+                  },
+                  {
+                    "period": "Q1 2026",
+                    "fp_end": "1774886400",
+                    "value": "954561450817.6284"
+                  },
+                  {
+                    "period": "Q4 2025",
+                    "fp_end": "1767110400",
+                    "value": "888017578058.3716"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+]

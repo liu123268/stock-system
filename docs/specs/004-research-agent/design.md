@@ -118,15 +118,19 @@ Java 校验字段类型／长度、合法引用、对象归属与当前访问；
 
 财务读取独立于报价故障，按股票业务 Service 组织，可复用短缓存；对“现在最新”保留获取时间与缓存来源，不悄悄用聊天旧数字。工具入口继续确认当前空间及股票权限。早期真实数据预检无需模型、数据库写入或额外行情连接，运行条件按测试规则核对；预检不通过先核对身份／权限／期间并评估官方公开披露或另一合法来源。新的付费服务、账号授权或全文解析另定，不把假数据替代真实数据来宣布财报完成，也不等全文路径验证才展示研究＋报价里程碑。
 
+2026-10-14 已准备候选基础层：[StockFinancialService](../../../src/main/java/com/stock/system/stock/service/StockFinancialService.java) 在读取前后核对空间访问与股票身份，外部请求不占数据库事务，也不调用报价 Service。[解析器](../../../src/main/java/com/stock/system/stock/financial/LongbridgeFinancialParser.java) 只保留五项白名单科目、一个目标期和同标签的上年可比期，可用期间最多返回 12 个；源 JSON 输入最多 2MB，各组／科目／历史值均有数量界限。首次接受已实测的 FY、H1 和日历季度 Q1～Q4 标签；与结束日不符、未来结束日和未知期间不参与选期。显式期间缺失返回 PERIOD_UNAVAILABLE，不逐科目退回旧期；空值／占位符不转为零，重复科目期间或异常响应返回来源错误。
+
+当前真实端点缺少足够的单位、原报币种／转换和利润定义契约，因此候选 DTO 为 PARTIAL：单位及利润口径标 UNKNOWN，币种基准标 PROVIDER_DISPLAY_UNVERIFIED，发布日期为空。[Java 比较](../../../src/main/java/com/stock/system/stock/financial/FinancialFacts.java) 只在原报币种、单位、利润口径与年度同期间均可核实时计算；当前源适配不会启用这一分支。自造已核实值只验证计算与拒算逻辑，不构成真实财务口径验收。此基础层尚无 Controller 或 Agent 工具入口、财务来源持久化或网页依据展示；001F／005F 仍未关闭。
+
 ### 4.3 接口与本地依赖核查
 
 2026-10-09 已离线检查 `openapi-sdk-4.5.0.jar`：有 `com.longbridge.fundamental.FundamentalContext`，实际签名为 `getFinancialReport(String, FinancialReportOptions)`。官方页面中的无 options Java 简例与当前依赖签名不同，实施以已用依赖的类型和编译结果为准，无需仅为方法存在而升级 SDK。
 
-本机 CLI 0.28.7 的 `financial-report --help`／`financial-statement --help` 和 schema 已检查，均非真实数据查询。financial-report 的 kind／latest 适用于 AP 路径，US 数据中心有不同路由；不能把账号地区和证券所属市场混为一谈。当前 financial-statement help 的 kind 默认是 IS，而网页示例称不传等于 ALL，实施必须显式传所需类型并核对结果。
+本机 CLI 0.28.7 的 `financial-report --help`／`financial-statement --help` 和 schema 已检查；2026-10-14 又实读财务指标端点，生产容器 CLI 0.28.5 的版本、help 与四组只读样本也已核对，覆盖只见 [任务第 16 节](tasks.md#16-财务读取基础层与生产源核对2026-10-14)。financial-report 的 kind／latest 有账号地区路由差异；不能把账号地区和证券所属市场混为一谈。financial-statement help 的 kind 默认是 IS，而网页示例称不传等于 ALL，实施必须显式传所需类型并核对结果；不能由 help 存在推断标的确有数据。
 
-开发侧拟复用 SDK 管理的 OAuth／Config 创建财务上下文，按现有会话关闭生命周期处理；生产侧拟在既有 CLI 管理器中封装财务读取。当前 [serve 文档](https://open.longbridge.com/zh-CN/docs/cli/serve) 与本机 `serve --help` 均列出 `api.get`／`api.post` 作为基本面等 REST 接口入口；财务适配只允许 Java 固定的只读端点与参数，不能把任意路径／URL／写接口透传给模型。常驻服务复用连接，一次性命令可能重复初始化；本轮独立探测只创建 FundamentalContext，未另建真实行情连接。SDK 样本读取已执行，生产财务端点路由／响应尚未验证，不能把 SDK 成功当作生产 CLI 已可用。
+开发侧候选适配使用 SDK 管理的既有 OAuth，惰性创建独立的 HTTP 财务会话并按生命周期关闭；不先创建 QuoteContext，也不等待报价成功。生产侧在既有 CLI 管理器中增加财务读取方法，复用同一 serve。按 [serve 文档](https://open.longbridge.com/zh-CN/docs/cli/serve)，只发送 `api.get`，path 固定为 `/v1/quote/financial-reports`，query 只有 Java 绑定的 symbol、ALL 和受限 report；任意路径／URL／写接口不暴露给调用者。两侧都有排队／超时和请求间隔，SDK 超时取消在途 future 并关闭该财务会话，不自动重试。生产真实证据来自容器内单次 HTTP 命令，候选 serve 方法的协议与复用通过假进程检查；尚未部署新适配，也未向现有生产 serve 注入请求，不能混为线上业务验收。
 
-独立入口为 [Java 探测程序](../../../scripts/LongbridgeFinancialProbe.java) 与 [PowerShell 启动脚本](../../../scripts/probe-longbridge-financial.ps1)，不启动 Spring／数据库／模型；默认 Offline，Live 固定读取两个标的的 Annual／SemiAnnual，Diagnostic 只读一个固定样本。脚本使用 JAVA_HOME 中的真实 JDK 和已有本地依赖；仅读取本地 public client 配置，授权缓存由 SDK 管理，交互授权需求会终止，不自动打开浏览器。真实请求之间间隔 1.5 秒为本次探测初值，遇限流停止，不自动重试；正式服务需按实际限流与并发设置统一的有界节流／缓存，不能把此初值当供应商保证。
+独立入口为 [Java 探测程序](../../../scripts/LongbridgeFinancialProbe.java) 与 [PowerShell 启动脚本](../../../scripts/probe-longbridge-financial.ps1)，不启动 Spring／数据库／模型；默认 Offline，Live 固定读取两个标的的 Annual／SemiAnnual，Verify 读取 Annual／QuarterlyFull，Diagnostic 只读一个固定样本。科目摘要使用相同的五字段白名单，最多五行历史用于观察季度上年同季；百分比和展示跳转对象排除。脚本使用 JAVA_HOME 中的真实 JDK 和已有本地依赖；仅读取本地 public client 配置，授权缓存由 SDK 管理，交互授权需求会终止，不自动打开浏览器。真实请求之间间隔 1.5 秒为本次探测初值，遇限流停止，不自动重试；不将此初值当供应商保证。
 
 真实响应的适配注意点：`FinancialReports.list` 是 JSON 字符串；样本中的 `periods` 是 `af`／`qf`／`cumul` 等展示选项，而实际财报期在科目 `values` 的 period／year／fp_end 中；`entry` 可能是嵌套的展示跳转对象，应排除于财务输入。实测同比数字按百分数展示，官方简例存在不同尺度，正式计算优先依据经核准的可比值，不能未经验证直接格式化 yoy。程序仅输出受限的科目元数据／数值摘要，单位和最新披露状态不自动标为已验证；具体实测与公告对照只见 tasks。
 

@@ -3,6 +3,8 @@ package com.stock.system.stock.market;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import com.stock.system.stock.financial.FinancialPeriod;
+import com.stock.system.stock.financial.FinancialSourceGateway;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -44,7 +47,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Component
 @ConditionalOnExpression("'${stock-system.market.mode:directory}' == 'longbridge' && '${stock-system.market.longbridge.transport:cli}' == 'cli'")
-class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseable {
+class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, FinancialSourceGateway, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LongbridgeJsonRpcClient.class);
     private static final String QUOTE_METHOD = "quote.quote";
@@ -151,6 +154,32 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
         this.candlestickCacheTtl = candlestickCacheTtl;
         this.minimumRequestIntervalNanos = minimumRequestInterval.toNanos();
         this.concurrentRequests = new Semaphore(maxConcurrentRequests, true);
+    }
+
+    @Override
+    public SourceReport readFinancialReport(String symbol, FinancialPeriod period) {
+        FinancialSourceGateway.validateSymbol(symbol);
+        if (period == null) throw new IllegalArgumentException("Financial series required");
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("path", "/v1/quote/financial-reports");
+        ObjectNode query = params.putObject("query");
+        query.put("symbol", symbol);
+        query.put("kind", "ALL");
+        query.put("report", period.sourceCode());
+        try {
+            // Reuse the existing sidecar and request bounds. No arbitrary REST path is exposed.
+            JsonNode result = executeRequest("api.get", params);
+            String response = objectMapper.writeValueAsString(result);
+            if (response.length() > 2_000_000) throw new SourceFailure(FailureReason.UNEXPECTED_RESPONSE);
+            return new SourceReport(response, Instant.now(), "LONGBRIDGE_FINANCIAL_REPORT");
+        } catch (LongbridgeUpstreamException failure) {
+            FailureReason reason = failure.hasProviderCode("429001") || failure.hasProviderCode("429002")
+                    ? FailureReason.RATE_LIMIT
+                    : failure.getCause() instanceof TimeoutException ? FailureReason.TIMEOUT
+                    : failure.hasProviderCode("401001") || failure.hasProviderCode("403001")
+                    ? FailureReason.ACCESS_DENIED : FailureReason.SOURCE_FAILURE;
+            throw new SourceFailure(reason);
+        }
     }
 
     @Override
@@ -354,7 +383,7 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
             throw new LongbridgeUpstreamException("Longbridge trading-day result has an unexpected shape");
         }
         for (JsonNode date : dates) {
-            if (expected.toString().equals(date.asText())) {
+            if (expected.toString().equals(date.asString())) {
                 return true;
             }
         }
@@ -435,6 +464,8 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
 
         synchronized (writeLock) {
             try {
+                // This client owns the shared writer; close() ends its lifetime, not an individual request.
+                @SuppressWarnings("resource")
                 BufferedWriter writer = ensureProcessInput();
                 writer.write(objectMapper.writeValueAsString(request));
                 writer.newLine();
@@ -508,7 +539,7 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
             JsonNode error = json.get("error");
             if (error != null && !error.isNull()) {
                 String code = providerErrorCode(error);
-                String providerMessage = error.path("message").asText("");
+                String providerMessage = error.path("message").asString("");
                 pending.completeExceptionally(new LongbridgeUpstreamException(
                         code, "Longbridge RPC request was rejected with code " + code,
                         providerMessage));
@@ -527,10 +558,10 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
 
     private void drainErrorStream(Process ownedProcess) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                ownedProcess.getErrorStream(), StandardCharsets.UTF_8))) {
-            while (reader.readLine() != null) {
-                // Intentionally do not copy upstream stderr into project logs: it may contain account details.
-            }
+                ownedProcess.getErrorStream(), StandardCharsets.UTF_8));
+             Writer discard = Writer.nullWriter()) {
+            // Drain stderr without copying possible account details into project logs.
+            reader.transferTo(discard);
         } catch (IOException ignored) {
             // Process exit closes this stream.
         }
@@ -544,9 +575,9 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
         Map<String, LongbridgeQuote> quotes = new LinkedHashMap<>();
         Instant retrievedAt = Instant.now();
         for (JsonNode item : quoteArray) {
-            String symbol = item.path("symbol").asText("").trim().toUpperCase();
-            String lastDone = item.path("last_done").asText("");
-            String timestamp = item.path("timestamp").asText("");
+            String symbol = item.path("symbol").asString("").trim().toUpperCase();
+            String lastDone = item.path("last_done").asString("");
+            String timestamp = item.path("timestamp").asString("");
             if (symbol.isEmpty()) {
                 continue;
             }
@@ -555,7 +586,7 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
                         symbol,
                         decimalOrNull(lastDone),
                         instantOrNull(timestamp),
-                        item.path("trade_status").asText(""),
+                        item.path("trade_status").asString(""),
                         retrievedAt
                 );
                 quotes.put(symbol, quote);
@@ -587,12 +618,12 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
             try {
                 Instant timestamp = parseTimestamp(item.hasNonNull("timestamp")
                         ? item.get("timestamp") : item.get("time"));
-                BigDecimal open = new BigDecimal(item.path("open").asText());
-                BigDecimal high = new BigDecimal(item.path("high").asText());
-                BigDecimal low = new BigDecimal(item.path("low").asText());
-                BigDecimal close = new BigDecimal(item.path("close").asText());
+                BigDecimal open = new BigDecimal(item.path("open").asString());
+                BigDecimal high = new BigDecimal(item.path("high").asString());
+                BigDecimal low = new BigDecimal(item.path("low").asString());
+                BigDecimal close = new BigDecimal(item.path("close").asString());
                 long volume = item.path("volume").asLong();
-                BigDecimal turnover = new BigDecimal(item.path("turnover").asText("0"));
+                BigDecimal turnover = new BigDecimal(item.path("turnover").asString("0"));
                 if (timestamp != null && open.signum() > 0 && high.compareTo(open.max(close)) >= 0
                         && low.compareTo(open.min(close)) <= 0 && low.signum() > 0
                         && volume >= 0 && turnover.signum() >= 0) {
@@ -620,13 +651,13 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
             try {
                 Instant timestamp = parseTimestamp(item.hasNonNull("timestamp")
                         ? item.get("timestamp") : item.get("time"));
-                BigDecimal price = new BigDecimal(item.path("price").asText());
+                BigDecimal price = new BigDecimal(item.path("price").asString());
                 JsonNode averageNode = item.hasNonNull("avg_price")
                         ? item.get("avg_price") : item.get("average_price");
                 BigDecimal average = averageNode == null
-                        ? price : new BigDecimal(averageNode.asText());
+                        ? price : new BigDecimal(averageNode.asString());
                 long volume = item.path("volume").asLong();
-                BigDecimal turnover = new BigDecimal(item.path("turnover").asText("0"));
+                BigDecimal turnover = new BigDecimal(item.path("turnover").asString("0"));
                 if (timestamp != null && price.signum() > 0 && average.signum() > 0
                         && volume >= 0 && turnover.signum() >= 0) {
                     points.add(new LongbridgeIntradayPoint(
@@ -648,7 +679,7 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
         if (node.isNumber()) {
             return Instant.ofEpochSecond(node.longValue());
         }
-        String value = node.asText("");
+        String value = node.asString("");
         if (value.matches("\\d+")) {
             return Instant.ofEpochSecond(Long.parseLong(value));
         }
@@ -658,13 +689,13 @@ class LongbridgeJsonRpcClient implements LongbridgeUpstreamGateway, AutoCloseabl
     private String providerErrorCode(JsonNode error) {
         JsonNode data = error.path("data");
         if (data.isObject() && data.hasNonNull("code")) {
-            return data.path("code").asText();
+            return data.path("code").asString();
         }
-        String message = error.path("message").asText("");
+        String message = error.path("message").asString("");
         if (message.contains("301607")) {
             return "301607";
         }
-        return error.path("code").asText("unknown");
+        return error.path("code").asString("unknown");
     }
 
     private void handleProcessExit(Process ownedProcess, Exception cause) {

@@ -1,6 +1,7 @@
 package com.stock.system.stock.market;
 
 import tools.jackson.databind.ObjectMapper;
+import com.stock.system.stock.financial.FinancialSourceGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.convert.ApplicationConversionService;
@@ -15,7 +16,7 @@ class LongbridgeTransportWiringTest {
             .withInitializer(context -> context.getBeanFactory()
                     .setConversionService(ApplicationConversionService.getSharedInstance()))
             .withBean(ObjectMapper.class, ObjectMapper::new)
-            .withUserConfiguration(LongbridgeJsonRpcClient.class, LongbridgeSdkClient.class,
+            .withUserConfiguration(LongbridgeJsonRpcClient.class, LongbridgeSdkClient.class, LongbridgeSdkFinancialClient.class,
                     CachingLongbridgeMarketGateway.class, NoOpMarketSharedCache.class)
             .withPropertyValues("stock-system.market.mode=longbridge", "stock-system.market.redis.enabled=false");
 
@@ -25,6 +26,7 @@ class LongbridgeTransportWiringTest {
             assertThat(context).hasSingleBean(LongbridgeSdkClient.class).doesNotHaveBean(LongbridgeJsonRpcClient.class);
             assertThat(context.getBean(LongbridgeUpstreamGateway.class)).isInstanceOf(LongbridgeSdkClient.class);
             assertThat(context.getBean(LongbridgeQuoteGateway.class)).isInstanceOf(CachingLongbridgeMarketGateway.class);
+            assertThat(context.getBean(FinancialSourceGateway.class)).isInstanceOf(LongbridgeSdkFinancialClient.class);
         });
     }
 
@@ -32,6 +34,8 @@ class LongbridgeTransportWiringTest {
     void productionAndLegacyConfigurationKeepCliOnly() {
         runner.withPropertyValues("stock-system.market.longbridge.transport=cli").run(context -> {
             assertThat(context).hasSingleBean(LongbridgeJsonRpcClient.class).doesNotHaveBean(LongbridgeSdkClient.class);
+            assertThat(context).doesNotHaveBean(LongbridgeSdkFinancialClient.class);
+            assertThat(context.getBean(FinancialSourceGateway.class)).isSameAs(context.getBean(LongbridgeJsonRpcClient.class));
         });
         runner.run(context -> assertThat(context).hasSingleBean(LongbridgeJsonRpcClient.class)
                 .doesNotHaveBean(LongbridgeSdkClient.class));
@@ -41,7 +45,8 @@ class LongbridgeTransportWiringTest {
     void mockDoesNotConstructAnyRealTransport() {
         runner.withPropertyValues("stock-system.market.mode=mock", "stock-system.market.longbridge.transport=sdk")
                 .run(context -> assertThat(context).doesNotHaveBean(LongbridgeSdkClient.class)
-                        .doesNotHaveBean(LongbridgeJsonRpcClient.class).doesNotHaveBean(CachingLongbridgeMarketGateway.class));
+                        .doesNotHaveBean(LongbridgeJsonRpcClient.class).doesNotHaveBean(CachingLongbridgeMarketGateway.class)
+                        .doesNotHaveBean(FinancialSourceGateway.class));
     }
 
     @Test
