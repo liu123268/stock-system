@@ -166,9 +166,11 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 
 `read_latest_quote` 是项目定义的工具名，`answer`／`execute` 是项目方法；AssistantMessage／ToolResponseMessage 是 Spring AI 的消息类型，`for`／`switch` 是 Java 语法。无需先背下这些拼写；应能读出“模型提出查什么 → Java 决定能否执行 → 实际数据回传 → 模型回答 → Java 核对保存”。Spring AI 2 的 ChatModel 工具调用由调用方管理执行，我们用显式循环保留额度、权限和用量控制，依据见 [官方工具调用说明](https://docs.spring.io/spring-ai/reference/api/tools/chatmodel-tool-calling.html)。
 
+Service 的返回值先在 Java 内存里；模型提出的工具请求和执行结果分别追加到 `messages` 后，下一次 `model.call` 才会收到这些资料。call ID 用于配对一次工具请求和它的结果，`sourceId` 用于最终回答引用已登记的依据；两者职责不同，引用不能直接拿工具调用编号替代。财务查询的用户／空间／股票由 `context.target` 绑定，模型参数只选择期间和科目；越界或未知字段在执行 Service 前拒绝。
+
 资料够用时模型可以直接回答。例如已有有效研究梳理，追问“订单已经增长了吗”，可以用原观点说明只是猜测，当前缺财报或权威披露；没有权威资料工具就不能补成已确认。价格问题则要求本次查报价，历史聊天里的数字只是旧快照。日 K 的实际区间和名义变化由 Java 计算，模型负责解释其口径；不能把未复权价差说成投资回报。
 
-排查承接原来的 sources → input → generated，再补工具轨迹：没有查到需要的资料，看模型是否提出正确工具；提出了却失败，看 Java 是否拒绝参数、范围或资料上限；工具确实返回了，回答仍错误，比较 ToolResponse 与最终段落。每问最多三次模型请求、两次工具尝试，错误也计次数；费用统计全部实际派发，有一次用量未知就保留预留。超时、清空或权限变化时不交付迟到答案。精确额度、数据依赖和接口契约只见 [设计](../specs/004-research-agent/design.md#4-首批工具适配)，不要求学习时记住保护数字。
+排查承接原来的 sources → input → generated，再补工具轨迹：没有查到需要的资料，看模型是否提出正确工具；提出了却失败，看 Java 是否拒绝参数、范围或资料上限；工具确实返回了，回答仍错误，比较 ToolResponse 与最终段落。接财务后每问最多四次模型请求、三次工具尝试，错误也计次数；费用统计全部实际派发，有一次用量未知就保留预留。超时、清空或权限变化时不交付迟到答案。精确额度、数据依赖和接口契约只见 [设计](../specs/004-research-agent/design.md#4-首批工具适配)，不要求学习时记住保护数字。
 
 四个自造问题的真实模型核对见 [005 证据](../specs/004-research-agent/tasks.md#14-ag-code-005工具追问与真实样本核对2026-10-14)。它证明当次资料和工具链路可用；源码由 AI 实现，用户的独立理解、审查和迁移证据继续单独记录，不能由测试通过代填。
 
@@ -184,8 +186,10 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 
 成员说“订单可能增长”仍是观点；取得财报营收数字后，也只能核对对应营收，不能直接证明订单或其增长原因。财务判断需要金额、报告期间、币种、单位和指标定义共同成立。相同名字的“净利润”可能代表归母、合并或调整后口径；同为港币的两个展示金额，也可能经过未说明的汇率换算。
 
-候选读取链路是 [StockFinancialService.read](../../src/main/java/com/stock/system/stock/service/StockFinancialService.java) 核对当前访问及可信股票 → SDK／CLI 读取 → [解析器](../../src/main/java/com/stock/system/stock/financial/LongbridgeFinancialParser.java) 选必要科目和期间 → 再核对权限。用户指定 2024 年而来源没有时，返回这个缺口；不偷偷改答 2025 年，也不把未取得的数额写成 0。目前没有财务工具或页面入口，真实完成范围见 [财务源证据](../specs/004-research-agent/tasks.md#16-财务读取基础层与生产源核对2026-10-14)。
+当前链路是模型提出 `read_financial_facts` → [StockFinancialService.read](../../src/main/java/com/stock/system/stock/service/StockFinancialService.java) 核对当前访问及可信股票 → 优先读取系统已核实的年度报告库 → 按必要科目／期间生成 DTO 和 Java 比较 → 再核对权限 → 工具结果回到模型并生成财务引用。未核实的 SDK／CLI 数字仍由 [解析器](../../src/main/java/com/stock/system/stock/financial/LongbridgeFinancialParser.java) 明确缺口，不把金额发给模型猜单位。指定期间没有时说明缺失，不偷偷改答其他年度，也不把数额写成 0。网页显示引用生成时的数字、单位和原报页码；完整覆盖和验证边界只见 [原报与财务工具证据](../specs/004-research-agent/tasks.md#17-官方原报限定覆盖与财务工具2026-10-14)。
 
-关键代码是 [FinancialFacts.compare](../../src/main/java/com/stock/system/stock/financial/FinancialFacts.java)：先判断能不能比较，再用 BigDecimal 计算。例如两笔自造营收都是原报人民币元、同为全年，基期 100.25、本期 120.30，Java 可算出增加 20.05、同比 20%；任一币种转换或单位未知，就不给这个增长率。基期为零／负数时，即便口径正确，也只给绝对变化并说明原因。数字计算由 Java 做，模型后续负责解释，不能靠提示词让模型猜单位。
+关键代码是 [FinancialFacts.compare](../../src/main/java/com/stock/system/stock/financial/FinancialFacts.java)：先判断能不能比较，再用 BigDecimal 计算。例如两笔自造营收都是原报人民币元、同为全年，基期 100.25、本期 120.30，Java 可算出增加 20.05、同比 20%；任一币种转换或单位未知，就不给这个增长率。基期为零／负数时，即便口径正确，也只给绝对变化并说明原因。数字计算由 Java 做，模型负责解释，不能靠提示词猜单位；金额与百分比发送十进制字符串，浏览器直接展示，不再次用浮点数计算。
 
-本轮真实来源只有展示币种和数值，不能完整说明金额单位及利润／原报口径。因此当前结果是 PARTIAL，变化值为空；这表示取得了一部分资料、仍有明确缺口。报告期结束日 `fp_end` 也不是公告日。排查继续沿 sources → input → generated：如果 sources 已缺口径，首先修数据适配或来源，不把它当成模型漏读。无需先背 DTO 拼写；应能判断“这些数字是否回答了所问指标，是否具有相同口径”。
+Longbridge 端点仍只有展示币种和数值，不能完整说明金额单位及利润／原报口径，因此该路径保持 PARTIAL，变化值为空；新原报目录只为已核实样本补齐依据，不把两个公司泛化到所有股票或季度。报告期结束日 `fp_end` 也不是公告日。排查继续沿 sources → input → generated：sources 缺口径时先修数据适配或来源，不把它当成模型漏读。恢复财务引用还要核对当前报告版本及数字；旧来源失效时整条回答失效。无需先背 DTO 拼写，应能判断“这些数字是否回答所问指标，是否具有相同口径”。
+
+报告准备在项目根目录进行：用隔离 Python 环境安装 [解析依赖](../../scripts/requirements-report-source.txt)，按 [清单](../../scripts/report-sources/official-financial-reports.json) 的官方链接取得对应文件并放入 `.local/report-source/pdfs/`。执行 `python scripts/import-official-financial-reports.py` 核对并生成金额目录，`--check` 只比较、不改文件；成功输出两份报告／20 个数值，哈希、单位或行布局变化则失败，需先审阅新来源。原 PDF 和提取文本由 Git 忽略，不把整份报告送给模型；这是受审样本导入，RAG 的分块、向量化与检索另验。

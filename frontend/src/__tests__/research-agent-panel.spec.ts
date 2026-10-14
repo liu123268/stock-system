@@ -43,6 +43,39 @@ beforeEach(() => {
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers = []; vi.useRealTimers() })
 
 describe('研究助手的个人记录与迟到响应', () => {
+  it('财务引用每次复核，保留精确金额、原报单位和 PDF 页码', async () => {
+    const reply = answer()
+    reply.answer!.summary = null
+    reply.answer!.followUp = {
+      question: '年度营收是否增长？',
+      reply: { paragraphs: [{ text: '按照这份年度报告核对。', sourceIds: ['financial-1'] }], missingInformation: [] },
+      historyOmitted: false,
+      evidence: [{ sourceId: 'financial-1', type: 'FINANCIAL', label: '财务数据', quote: null, dailyPrices: null,
+        financialFacts: { status: 'AVAILABLE', symbol: '600519.SH', selectedPeriod: 'FY 2025', availablePeriods: ['FY 2025', 'FY 2024'],
+          retrievedAt: '2026-10-14T12:00:00Z', disclosedOn: null, note: '仅为报告库覆盖，不能证明订单增长。', missingMetrics: [],
+          facts: [{ metric: 'REVENUE', sourceName: '营业收入',
+            current: { period: 'FY 2025', amount: '168838102514.79', currency: 'CNY', unit: 'YUAN', profitBasis: 'NOT_APPLICABLE' },
+            comparable: { period: 'FY 2024', amount: '170899152276.34', currency: 'CNY', unit: 'YUAN', profitBasis: 'NOT_APPLICABLE' },
+            change: { absoluteDifference: '-2061049761.55', percent: '-1.2060', unavailableReason: null } }],
+          reports: [{ metric: 'REVENUE', title: '官方年度报告', url: 'https://static.cninfo.com.cn/finalpage/2026-04-17/1225114741.PDF',
+            sha256: 'a'.repeat(64), reportPeriod: 'FY 2025', pdfPages: [6] }] } }],
+    }
+    api.restoreAgent.mockResolvedValue(session([reply]))
+    api.readAgentRun.mockResolvedValue({ data: { data: reply } })
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('.source-link').trigger('click'); await flushPromises()
+    const dialog = wrapper.find('dialog')
+    expect(dialog.text()).toContain('财务依据')
+    expect(dialog.text()).toContain('168838102514.79 人民币元')
+    expect(dialog.text()).toContain('-1.2060%')
+    expect(dialog.text()).toContain('PDF 第 6 页')
+    expect(dialog.find('a').attributes('href')).toBe('https://static.cninfo.com.cn/finalpage/2026-04-17/1225114741.PDF#page=6')
+    expect(api.readAgentOriginal).not.toHaveBeenCalled()
+    await dialog.find('button').trigger('click')
+    await wrapper.find('.source-link').trigger('click'); await flushPromises()
+    expect(api.readAgentRun).toHaveBeenCalledTimes(2)
+  })
+
   it('关闭原文保留回答和日期，原文每次点击重新读取', async () => {
     api.restoreAgent.mockResolvedValue(session([answer()]))
     api.readAgentOriginal.mockResolvedValue({ data: { data: { id: 5, authorNickname: '成员甲', createdAt: '2026-10-13T11:00:00', stance: 'BULLISH', reason: '原文判断', observationNote: '需要公告' } } })

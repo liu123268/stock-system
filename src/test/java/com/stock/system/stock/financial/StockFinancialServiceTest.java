@@ -26,10 +26,11 @@ class StockFinancialServiceTest {
     private final WorkspaceService workspaces = mock(WorkspaceService.class);
     private final WorkspaceStockMapper stocks = mock(WorkspaceStockMapper.class);
     private final FinancialSourceGateway gateway = mock(FinancialSourceGateway.class);
+    private final OfficialFinancialReportCatalog officialReports = mock(OfficialFinancialReportCatalog.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<@NonNull FinancialSourceGateway> gateways = mock(ObjectProvider.class);
     private final StockFinancialService service = new StockFinancialService(workspaces, stocks, gateways,
-            new LongbridgeFinancialParser(new ObjectMapper()));
+            new LongbridgeFinancialParser(new ObjectMapper()), officialReports);
     private final Stock stock = new Stock();
 
     @BeforeEach void setUp() {
@@ -40,6 +41,24 @@ class StockFinancialServiceTest {
                 .thenReturn(new FinancialSourceGateway.SourceReport("{}", Instant.parse("2026-10-14T04:50:00Z"), "LONGBRIDGE_FINANCIAL_REPORT"));
     }
     private FinancialFacts read() { return service.read(1L, 2L, 3L, FinancialPeriod.ANNUAL, null, List.of(FinancialMetric.REVENUE)); }
+
+    @Test void verifiedAnnualReportIsIndependentOfQuoteAndUnverifiedProviderAvailability() {
+        var verified = new OfficialFinancialReportCatalog().read("600519.SH", FinancialPeriod.ANNUAL,
+                null, List.of(FinancialMetric.REVENUE));
+        when(officialReports.read("600519.SH", FinancialPeriod.ANNUAL, null, List.of(FinancialMetric.REVENUE))).thenReturn(verified);
+        assertThat(read()).isEqualTo(verified);
+        verifyNoInteractions(gateway);
+        verify(workspaces, times(2)).detail(1L, 2L);
+    }
+
+    @Test void removedReportVersionOrChangedStockInvalidatesStoredFinancialEvidence() {
+        var verified = new OfficialFinancialReportCatalog().read("600519.SH", FinancialPeriod.ANNUAL,
+                null, List.of(FinancialMetric.REVENUE));
+        when(officialReports.matches(verified)).thenReturn(false);
+        assertThatThrownBy(() -> service.verifySnapshot(1L, 2L, 3L, verified))
+                .isInstanceOf(BusinessException.class).extracting(failure -> ((BusinessException) failure).getErrorCode())
+                .isEqualTo(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
+    }
 
     @Test void resolvesTrustedStockIdentityAndRechecksAccessAfterReading() {
         assertThat(read().status()).isEqualTo("NO_DATA");

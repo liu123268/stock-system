@@ -204,6 +204,8 @@ RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.sprin
 
 当前目录采集辅助工具使用 Python 3（2026-09-21 以 3.14.7 验证）、pandas/openpyxl 解析公开 JSON/Excel，使用 `opencc-python-reimplemented==0.1.7` 批量繁简转换，并使用 `pypinyin==0.55.0` 的词组词典离线生成小写拼音首字母。它们仅作为本地目录准备工具，Java 继续负责校验、事务入库及 API 搜索；没有引入 Python 常驻服务或 AKShare 运行依赖。部署/复现方式见 [目录导入操作](../engineering/development.md#8-股票目录导入)。
 
+官方年报的限定数字导入使用 [pypdf 6.11.0](../../scripts/requirements-report-source.txt)，只在项目隔离 Python 环境运行。它解决受审文本 PDF 的金额、年份、单位和页码提取，不进入 Spring 运行依赖或建立 Python 服务；不支持扫描件／通用表格，也未验证 Embedding 或向量库。哈希／布局变化失败后保留旧目录，退出路径是重新审阅来源与映射，不能用模型补猜。机制见 [财务设计](../specs/004-research-agent/design.md#42-财报查询的边界与来源)，复现见 [工程笔记](../engineering/agent-experiment.md#9-财务读取准备数字必须带口径)。PyMuPDF 1.28.2 本轮只用于将原报页面渲染作目视核对，没有加入正式导入依赖。
+
 - 新增、移除或升级技术后必须同步更新本文件。
 - `package.json`、`pom.xml` 与本文件版本冲突时，以依赖清单为事实并修正文档。
 - `计划` 和 `候选` 不能写进简历的“已实现技术栈”。

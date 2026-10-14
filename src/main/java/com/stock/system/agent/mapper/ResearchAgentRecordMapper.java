@@ -2,6 +2,7 @@ package com.stock.system.agent.mapper;
 
 import com.stock.system.agent.service.ResearchModelExecution;
 import com.stock.system.agent.service.ResearchSummaryPrompt;
+import com.stock.system.agent.service.ResearchQuestionService;
 import com.stock.system.agent.vo.ResearchAgentResponseVO.Answer;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
@@ -27,8 +28,9 @@ import java.util.function.Supplier;
 public class ResearchAgentRecordMapper {
     // 2026-10-13 官方 Flash 高峰价输入 2／输出 8 元每百万；输入按更保守的 2M 上限预留。
     public static final BigDecimal RESERVE = new BigDecimal("4.01600000");
-    // Flash 1M 上下文按 1,048,576 Token 作上界，三次模型调用，各最多 2,000 输出。
-    public static final BigDecimal QUESTION_RESERVE = new BigDecimal("6.33945600");
+    // Flash 1M 上下文按 1,048,576 Token 作上界，四次模型调用，各最多 2,000 输出。
+    public static final BigDecimal QUESTION_RESERVE = new BigDecimal("2.11315200")
+            .multiply(BigDecimal.valueOf(ResearchQuestionService.MAX_MODEL_CALLS));
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final ObjectMapper json;

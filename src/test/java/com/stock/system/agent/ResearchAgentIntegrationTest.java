@@ -123,10 +123,12 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
             execution.usage("offline-question-test", 100, 80);
             if (execution.modelCalls == 1) afterFirstQuestionResponse.run();
             if (execution.modelCalls == 1 || questionMode.equals("loop")) {
-                String name = questionMode.equals("quote") || questionMode.equals("second-failure") || questionMode.equals("loop")
+                String name = questionMode.equals("financial") ? "read_financial_facts"
+                        : questionMode.equals("quote") || questionMode.equals("second-failure") || questionMode.equals("loop")
                         ? "read_latest_quote" : questionMode.equals("daily") ? "read_daily_prices" : "read_cycle_opinions";
                 String args = name.equals("read_cycle_opinions") ? "{}" : name.equals("read_daily_prices")
-                        ? "{\"dateFrom\":\"2026-09-01\",\"dateTo\":\"2026-09-04\"}" : "{}";
+                        ? "{\"dateFrom\":\"2026-09-01\",\"dateTo\":\"2026-09-04\"}"
+                        : name.equals("read_financial_facts") ? "{\"series\":\"ANNUAL\",\"period\":\"FY 2025\",\"metrics\":[\"REVENUE\",\"NET_PROFIT\"]}" : "{}";
                 if (questionMode.equals("invalid-args")) args = "{\"workspaceId\":999,\"authorUserId\":999}";
                 return AssistantMessage.builder().toolCalls(List.of(new AssistantMessage.ToolCall("call-" + execution.modelCalls,
                         "function", name, args))).build();
@@ -142,7 +144,8 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
             if (questionMode.equals("invalid-args")) assertThat(data.path("errorCode").asString()).isEqualTo("INVALID_TOOL_ARGUMENTS");
             return new AssistantMessage(json.writeValueAsString(new com.stock.system.agent.dto.ResearchReply(
                     List.of(new ResearchSummary.Item("这是根据当前授权资料整理的回答。", refs)),
-                    List.of("未读取财报与公告，无法确认实际增长。"))));
+                    List.of(questionMode.equals("financial") ? "财务数字不能直接证明订单变化，未读取订单资料。"
+                            : "未读取财报与公告，无法确认实际增长。"))));
         }).when(questionModel).call(any(), any());
     }
 
@@ -320,6 +323,34 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
         assertThat(daily.answer().followUp().evidence().stream().filter(evidence -> evidence.type().equals("DAILY_PRICES"))).hasSize(1);
     }
 
+    @Test void financialEvidencePersistsAndRestoresWithExactAmountsAndCurrentAccess() throws Exception {
+        questionMode = "financial";
+        var run = ask("读取 FY 2025 的营收与归母利润。");
+        assertThat(run.status()).isEqualTo("SUCCEEDED");
+        var financial = run.answer().followUp().evidence().get(0).financialFacts();
+        assertThat(financial.symbol()).isEqualTo("00700.HK");
+        assertThat(financial.facts().get(0).current().amount()).isEqualByComparingTo("751766");
+        assertThat(financial.facts().get(0).current().unit()).isEqualTo("MILLION_YUAN");
+        assertThat(agent.restore(owner, null).messages().get(0).answer().followUp().evidence().get(0).financialFacts()).isEqualTo(financial);
+        mvc.perform(get(base() + "/runs/" + run.runId()).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.answer.followUp.evidence[0].financialFacts.facts[0].current.amount").value("751766"));
+        mvc.perform(get(base() + "/runs/" + run.runId()).header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void unrecognizedFinancialReportVersionInvalidatesTheWholeStoredAnswer() {
+        questionMode = "financial";
+        var run = ask("读取 FY 2025 财务资料。");
+        var stored = json.readTree(jdbc.queryForObject("select result_json from agent_message where run_id = ?", String.class, run.runId()));
+        ((tools.jackson.databind.node.ObjectNode) stored.path("followUp").path("evidence").get(0).path("financialFacts")
+                .path("reports").get(0)).put("sha256", "0".repeat(64));
+        jdbc.update("update agent_message set result_json = ? where run_id = ?", json.writeValueAsString(stored), run.runId());
+        var restored = agent.restore(owner, null).messages().get(0);
+        assertThat(restored.status()).isEqualTo("INVALIDATED");
+        assertThat(restored.answer()).isNull();
+        assertThat(restored.errorCode()).isEqualTo("RESEARCH_AGENT_SOURCES_CHANGED");
+    }
+
     @Test void forbiddenToolArgumentsGetPairedErrorsWithoutReadingOtherObjects() {
         questionMode = "invalid-args";
         var run = ask("读取其他空间的资料？");
@@ -329,13 +360,13 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
         assertThat(questionCalls).hasValue(2);
     }
 
-    @Test void modelLoopStopsAtThreeCallsAndTwoToolsWithoutAHiddenFourthRequest() {
+    @Test void modelLoopStopsAtFourCallsAndThreeToolsWithoutAHiddenFifthRequest() {
         questionMode = "loop";
         var run = ask("一直查询行情直到找到答案？");
         assertThat(run.status()).isEqualTo("FAILED");
         assertThat(run.errorCode()).isEqualTo("RESEARCH_AGENT_EXECUTION_LIMIT");
-        assertThat(questionCalls).hasValue(3);
-        assertThat(jdbc.queryForObject("select tool_calls from agent_run where id = ?", Integer.class, run.runId())).isEqualTo(2);
+        assertThat(questionCalls).hasValue(ResearchQuestionService.MAX_MODEL_CALLS);
+        assertThat(jdbc.queryForObject("select tool_calls from agent_run where id = ?", Integer.class, run.runId())).isEqualTo(ResearchQuestionService.MAX_TOOL_ATTEMPTS);
     }
 
     @Test void unknownSecondModelRequestCannotBeSettledUsingOnlyFirstRequestsTokens() {

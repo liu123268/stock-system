@@ -1,5 +1,6 @@
 package com.stock.system.stock.financial;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -11,22 +12,38 @@ import java.util.Objects;
 public record FinancialFacts(
         String status, String symbol, FinancialPeriod requestedSeries, String selectedPeriod,
         List<String> availablePeriods, List<Fact> facts, List<FinancialMetric> missingMetrics,
-        String source, Instant retrievedAt, LocalDate disclosedOn, String unavailableReason, String note
+        String source, Instant retrievedAt, LocalDate disclosedOn, String unavailableReason, String note,
+        List<ReportReference> reports
 ) {
     public FinancialFacts {
         availablePeriods = List.copyOf(availablePeriods);
         facts = List.copyOf(facts);
         missingMetrics = List.copyOf(missingMetrics);
+        reports = reports == null ? List.of() : List.copyOf(reports);
+    }
+
+    public FinancialFacts(String status, String symbol, FinancialPeriod requestedSeries, String selectedPeriod,
+                          List<String> availablePeriods, List<Fact> facts, List<FinancialMetric> missingMetrics,
+                          String source, Instant retrievedAt, LocalDate disclosedOn, String unavailableReason, String note) {
+        this(status, symbol, requestedSeries, selectedPeriod, availablePeriods, facts, missingMetrics,
+                source, retrievedAt, disclosedOn, unavailableReason, note, List.of());
     }
 
     public record Value(String period, FinancialPeriod series, int year, int part, LocalDate periodEnd,
-                        BigDecimal amount, String currency, String unit, String profitBasis,
+                        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amount,
+                        String currency, String unit, String profitBasis,
                         String currencyBasis) { }
 
     public record Fact(FinancialMetric metric, String sourceField, String sourceName,
                        Value current, Value comparable, Change change) { }
 
-    public record Change(BigDecimal absoluteDifference, BigDecimal percent, String unavailableReason) { }
+    public record Change(@JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal absoluteDifference,
+                         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal percent, String unavailableReason) { }
+
+    public record ReportReference(FinancialMetric metric, String title, String url, String sha256,
+                                  String reportPeriod, List<Integer> pdfPages) {
+        public ReportReference { pdfPages = List.copyOf(pdfPages); }
+    }
 
     /** No provider yoy field or model arithmetic can bypass these comparisons. */
     public static Change compare(FinancialMetric metric, Value current, Value comparable) {

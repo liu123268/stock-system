@@ -8,6 +8,7 @@ import com.stock.system.stock.financial.FinancialMetric;
 import com.stock.system.stock.financial.FinancialPeriod;
 import com.stock.system.stock.financial.FinancialSourceGateway;
 import com.stock.system.stock.financial.LongbridgeFinancialParser;
+import com.stock.system.stock.financial.OfficialFinancialReportCatalog;
 import com.stock.system.stock.mapper.WorkspaceStockMapper;
 import com.stock.system.workspace.service.WorkspaceService;
 import org.jspecify.annotations.NonNull;
@@ -25,13 +26,16 @@ public class StockFinancialService {
     private final WorkspaceStockMapper stocks;
     private final ObjectProvider<@NonNull FinancialSourceGateway> gateways;
     private final LongbridgeFinancialParser parser;
+    private final OfficialFinancialReportCatalog officialReports;
 
     public StockFinancialService(WorkspaceService workspaces, WorkspaceStockMapper stocks,
-                                 ObjectProvider<@NonNull FinancialSourceGateway> gateways, LongbridgeFinancialParser parser) {
+                                 ObjectProvider<@NonNull FinancialSourceGateway> gateways, LongbridgeFinancialParser parser,
+                                 OfficialFinancialReportCatalog officialReports) {
         this.workspaces = workspaces;
         this.stocks = stocks;
         this.gateways = gateways;
         this.parser = parser;
+        this.officialReports = officialReports;
     }
 
     @Transactional(propagation = Propagation.NEVER)
@@ -49,6 +53,12 @@ public class StockFinancialService {
         Stock stock = requireStock(userId, workspaceId, workspaceStockId);
         try { FinancialSourceGateway.validateSymbol(stock.getCode()); }
         catch (IllegalArgumentException ignored) { return unavailable(stock, series, metrics, "UNSUPPORTED_MARKET"); }
+        FinancialFacts verified = officialReports.read(stock.getCode(), series, period, metrics);
+        if (verified != null) {
+            Stock current = requireStock(userId, workspaceId, workspaceStockId);
+            if (!stock.getCode().equals(current.getCode())) throw new BusinessException(ErrorCode.WORKSPACE_STOCK_NOT_FOUND);
+            return verified;
+        }
         FinancialSourceGateway gateway = gateways.getIfAvailable();
         if (gateway == null) return unavailable(stock, series, metrics, "SOURCE_NOT_CONNECTED");
         FinancialFacts result;
@@ -63,6 +73,12 @@ public class StockFinancialService {
         Stock current = requireStock(userId, workspaceId, workspaceStockId);
         if (!stock.getCode().equals(current.getCode())) throw new BusinessException(ErrorCode.WORKSPACE_STOCK_NOT_FOUND);
         return result;
+    }
+
+    public void verifySnapshot(Long userId, Long workspaceId, Long workspaceStockId, FinancialFacts snapshot) {
+        Stock stock = requireStock(userId, workspaceId, workspaceStockId);
+        if (!stock.getCode().equals(snapshot.symbol()) || !officialReports.matches(snapshot))
+            throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
     }
 
     private Stock requireStock(Long userId, Long workspaceId, Long workspaceStockId) {

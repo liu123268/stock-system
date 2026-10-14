@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "reports": [
+    {
+      "symbol": "600519.SH",
+      "title": "贵州茅台 2025 年年度报告",
+      "url": "https://static.cninfo.com.cn/finalpage/2026-04-17/1225114741.PDF",
+      "sha256": "474905deeaf0f875fc0a1b097a626c0c7852c427faadc5d7fc7816cbf45ea288",
+      "year": 2025,
+      "currency": "CNY",
+      "unit": "YUAN",
+      "retrievedAt": "2026-10-14T12:24:29.987208+00:00",
+      "disclosedOn": null,
+      "values": [
+        {
+          "metric": "REVENUE",
+          "year": 2025,
+          "amount": "168838102514.79",
+          "sourceField": "OperatingRevenue",
+          "sourceName": "营业收入",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "REVENUE",
+          "year": 2024,
+          "amount": "170899152276.34",
+          "sourceField": "OperatingRevenue",
+          "sourceName": "营业收入",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "NET_PROFIT",
+          "year": 2025,
+          "amount": "82320067101.68",
+          "sourceField": "ParentShareholderNetProfit",
+          "sourceName": "归属于上市公司股东的净利润",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "NET_PROFIT",
+          "year": 2024,
+          "amount": "86228146421.62",
+          "sourceField": "ParentShareholderNetProfit",
+          "sourceName": "归属于上市公司股东的净利润",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "TOTAL_ASSETS",
+          "year": 2025,
+          "amount": "303834844021.44",
+          "sourceField": "TotalAssets",
+          "sourceName": "总资产",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "TOTAL_ASSETS",
+          "year": 2024,
+          "amount": "298944579918.70",
+          "sourceField": "TotalAssets",
+          "sourceName": "总资产",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "TOTAL_LIABILITIES",
+          "year": 2025,
+          "amount": "49875590112.37",
+          "sourceField": "TotalLiabilities",
+          "sourceName": "负债合计",
+          "pdfPages": [
+            58
+          ]
+        },
+        {
+          "metric": "TOTAL_LIABILITIES",
+          "year": 2024,
+          "amount": "56933264798.10",
+          "sourceField": "TotalLiabilities",
+          "sourceName": "负债合计",
+          "pdfPages": [
+            58
+          ]
+        },
+        {
+          "metric": "OPERATING_CASH_FLOW",
+          "year": 2025,
+          "amount": "61522204989.35",
+          "sourceField": "OperatingCashFlow",
+          "sourceName": "经营活动产生的现金流量净额",
+          "pdfPages": [
+            6
+          ]
+        },
+        {
+          "metric": "OPERATING_CASH_FLOW",
+          "year": 2024,
+          "amount": "92463692168.43",
+          "sourceField": "OperatingCashFlow",
+          "sourceName": "经营活动产生的现金流量净额",
+          "pdfPages": [
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "symbol": "700.HK",
+      "title": "腾讯 2025 年年度报告（英文原版）",
+      "url": "https://static.www.tencent.com/uploads/2026/04/09/62d786fcf3d3c8cb7e54791ee95439ac.pdf",
+      "sha256": "2a7547168077c3d9994af673125e77612e8656bc0f17ad189371d7e4088f4e98",
+      "year": 2025,
+      "currency": "CNY",
+      "unit": "MILLION_YUAN",
+      "retrievedAt": "2026-10-14T12:27:17.279380+00:00",
+      "disclosedOn": null,
+      "values": [
+        {
+          "metric": "REVENUE",
+          "year": 2025,
+          "amount": "751766",
+          "sourceField": "Revenues",
+          "sourceName": "收入",
+          "pdfPages": [
+            130
+          ]
+        },
+        {
+          "metric": "REVENUE",
+          "year": 2024,
+          "amount": "660257",
+          "sourceField": "Revenues",
+          "sourceName": "收入",
+          "pdfPages": [
+            130
+          ]
+        },
+        {
+          "metric": "NET_PROFIT",
+          "year": 2025,
+          "amount": "224842",
+          "sourceField": "ProfitAttributableToEquityHolders",
+          "sourceName": "本公司权益持有人应占盈利",
+          "pdfPages": [
+            130
+          ]
+        },
+        {
+          "metric": "NET_PROFIT",
+          "year": 2024,
+          "amount": "194073",
+          "sourceField": "ProfitAttributableToEquityHolders",
+          "sourceName": "本公司权益持有人应占盈利",
+          "pdfPages": [
+            130
+          ]
+        },
+        {
+          "metric": "TOTAL_ASSETS",
+          "year": 2025,
+          "amount": "2038986",
+          "sourceField": "TotalAssets",
+          "sourceName": "总资产",
+          "pdfPages": [
+            132
+          ]
+        },
+        {
+          "metric": "TOTAL_ASSETS",
+          "year": 2024,
+          "amount": "1780995",
+          "sourceField": "TotalAssets",
+          "sourceName": "总资产",
+          "pdfPages": [
+            132
+          ]
+        },
+        {
+          "metric": "TOTAL_LIABILITIES",
+          "year": 2025,
+          "amount": "797921",
+          "sourceField": "TotalAssetsMinusTotalEquity",
+          "sourceName": "总负债（总资产减总权益）",
+          "pdfPages": [
+            132,
+            133
+          ]
+        },
+        {
+          "metric": "TOTAL_LIABILITIES",
+          "year": 2024,
+          "amount": "727099",
+          "sourceField": "TotalAssetsMinusTotalEquity",
+          "sourceName": "总负债（总资产减总权益）",
+          "pdfPages": [
+            132,
+            133
+          ]
+        },
+        {
+          "metric": "OPERATING_CASH_FLOW",
+          "year": 2025,
+          "amount": "303052",
+          "sourceField": "OperatingCashFlow",
+          "sourceName": "经营活动产生的现金流量净额",
+          "pdfPages": [
+            139
+          ]
+        },
+        {
+          "metric": "OPERATING_CASH_FLOW",
+          "year": 2024,
+          "amount": "258521",
+          "sourceField": "OperatingCashFlow",
+          "sourceName": "经营活动产生的现金流量净额",
+          "pdfPages": [
+            139
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "reports": [
+    {
+      "symbol": "600519.SH", "file": "moutai-2025.pdf", "title": "贵州茅台 2025 年年度报告",
+      "url": "https://static.cninfo.com.cn/finalpage/2026-04-17/1225114741.PDF",
+      "sha256": "474905deeaf0f875fc0a1b097a626c0c7852c427faadc5d7fc7816cbf45ea288",
+      "year": 2025, "currency": "CNY", "unit": "YUAN", "pageCount": 143,
+      "checks": [
+        { "page": 6, "contains": ["2025年", "2024年", "单位：元", "币种：人民币", "主要会计数据"] },
+        { "page": 56, "contains": ["合并资产负债表", "2025年12月31日", "2024", "单位：元", "币种：人民币"] }
+      ],
+      "rows": [
+        { "metric": "REVENUE", "field": "OperatingRevenue", "name": "营业收入", "page": 6, "prefix": "营业收入", "count": 3 },
+        { "metric": "NET_PROFIT", "field": "ParentShareholderNetProfit", "name": "归属于上市公司股东的净利润", "page": 6, "prefix": "归属于上市公司股东的净利润", "count": 3 },
+        { "metric": "TOTAL_ASSETS", "field": "TotalAssets", "name": "总资产", "page": 6, "prefix": "总资产", "count": 3 },
+        { "metric": "TOTAL_LIABILITIES", "field": "TotalLiabilities", "name": "负债合计", "page": 58, "prefix": "负债合计", "count": 2 },
+        { "metric": "OPERATING_CASH_FLOW", "field": "OperatingCashFlow", "name": "经营活动产生的现金流量净额", "page": 6, "prefix": "经营活动产生的现金流量净额", "count": 3 }
+      ]
+    },
+    {
+      "symbol": "700.HK", "file": "tencent-2025-en.pdf", "title": "腾讯 2025 年年度报告（英文原版）",
+      "url": "https://static.www.tencent.com/uploads/2026/04/09/62d786fcf3d3c8cb7e54791ee95439ac.pdf",
+      "sha256": "2a7547168077c3d9994af673125e77612e8656bc0f17ad189371d7e4088f4e98",
+      "year": 2025, "currency": "CNY", "unit": "MILLION_YUAN", "pageCount": 282,
+      "checks": [
+        { "page": 130, "contains": ["Consolidated Income Statement", "For the year ended 31 December 2025", "2024", "RMB’Million", "Attributable to:"] },
+        { "page": 132, "contains": ["Consolidated Statement of Financial Position", "2025", "2024", "RMB’Million", "Total assets"] },
+        { "page": 133, "contains": ["2025", "2024", "RMB’Million", "Total equity"] },
+        { "page": 139, "contains": ["Consolidated Statement of Cash Flows", "2025", "2024", "RMB’Million"] }
+      ],
+      "rows": [
+        { "metric": "REVENUE", "field": "Revenues", "name": "收入", "page": 130, "linePattern": "^\\s*6\\s+[0-9,]+\\s+[0-9,]+\\s*$", "count": 2 },
+        { "metric": "NET_PROFIT", "field": "ProfitAttributableToEquityHolders", "name": "本公司权益持有人应占盈利", "page": 130, "prefix": "Equity holders of the Company", "count": 2 },
+        { "metric": "TOTAL_ASSETS", "field": "TotalAssets", "name": "总资产", "page": 132, "prefix": "Total assets", "count": 2 },
+        { "metric": "TOTAL_LIABILITIES", "field": "TotalAssetsMinusTotalEquity", "name": "总负债（总资产减总权益）", "count": 2,
+          "subtract": [ { "page": 132, "prefix": "Total assets" }, { "page": 133, "prefix": "Total equity" } ] },
+        { "metric": "OPERATING_CASH_FLOW", "field": "OperatingCashFlow", "name": "经营活动产生的现金流量净额", "page": 139, "prefix": "Net cash flows generated from operating activities", "count": 2 }
+      ]
+    }
+  ]
+}

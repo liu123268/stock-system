@@ -114,7 +114,7 @@ public class ResearchAgentService {
         RunRow existing = records.request(target.user(), normalized);
         if (existing != null) return reuse(target, existing, hash);
         if (!enabled() || !questions.enabled()) throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
-        try (var execution = new ResearchModelExecution(3)) {
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
             var material = sources.readCycle(target.user(), target.workspace(), target.stock(), target.cycle(), filter);
             if (material.scope().coverage() != ResearchCycleSourcesResponseVO.Coverage.COMPLETE)
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED);
@@ -168,6 +168,7 @@ public class ResearchAgentService {
                 for (var dependency : dependencies(row.dependenciesJson())) changed |= sources.revalidate(target.user(), target.workspace(),
                         target.stock(), target.cycle(), dependency).newOpinionsAvailable();
                 var stored = json.readValue(row.answerJson(), Answer.class);
+                if (stored.followUp() != null) questions.verifyFinancialEvidence(target, stored.followUp().evidence());
                 answer = new Answer(stored.summary(), stored.scope(), stored.references(),
                         stored.newOpinionsAvailable() || changed, stored.generatedAt(), stored.quote(), stored.followUp());
             } catch (BusinessException failure) {

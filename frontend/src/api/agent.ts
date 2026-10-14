@@ -12,7 +12,20 @@ export interface AgentDailyPrices {
   nominalPriceChangePercent: number | null; coverageNote: string
   prices: { time: string; open: number; high: number; low: number; close: number; volume: number }[]
 }
-export interface AgentEvidence { sourceId: string; type: 'QUOTE' | 'DAILY_PRICES'; label: string; quote: AgentQuote | null; dailyPrices: AgentDailyPrices | null }
+export interface AgentFinancialValue {
+  period: string; amount: string; currency: string; unit: 'YUAN' | 'MILLION_YUAN'; profitBasis: string
+}
+export interface AgentFinancialFacts {
+  status: string; symbol: string; selectedPeriod: string; availablePeriods: string[]; retrievedAt: string | null; disclosedOn: string | null; note: string
+  facts: { metric: string; sourceName: string; current: AgentFinancialValue; comparable: AgentFinancialValue | null
+    change: { absoluteDifference: string | null; percent: string | null; unavailableReason: string | null } }[]
+  missingMetrics: string[]
+  reports: { metric: string; title: string; url: string; sha256: string; reportPeriod: string; pdfPages: number[] }[]
+}
+export interface AgentEvidence {
+  sourceId: string; type: 'QUOTE' | 'DAILY_PRICES' | 'FINANCIAL'; label: string; quote: AgentQuote | null
+  dailyPrices: AgentDailyPrices | null; financialFacts?: AgentFinancialFacts | null
+}
 export interface AgentAnswer {
   summary: { overview: AgentItem; changes: AgentItem[]; members: (AgentItem & { authorId: string })[]; pendingItems: AgentItem[] } | null
   scope: { readAt: string; readOpinionCount: number; filter: AgentFilter }

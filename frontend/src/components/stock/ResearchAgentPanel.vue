@@ -26,6 +26,25 @@ const dateFrom = ref('')
 const dateTo = ref('')
 const question = ref('')
 const evidence = ref<AgentEvidence | null>(null)
+const reportLinks = computed(() => {
+  const reports = new Map<string, { title: string; url: string; pages: number[] }>()
+  for (const report of evidence.value?.financialFacts?.reports ?? []) {
+    const existing = reports.get(report.sha256)
+    if (existing) existing.pages = [...new Set([...existing.pages, ...report.pdfPages])].sort((a, b) => a - b)
+    else reports.set(report.sha256, { title: report.title, url: report.url, pages: [...report.pdfPages] })
+  }
+  return [...reports.values()]
+})
+function financialUnit(unit: string) { return unit === 'MILLION_YUAN' ? '百万元' : '元' }
+function financialReportUrl(url: string, page: number | undefined) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' || !['static.cninfo.com.cn', 'static.www.tencent.com'].includes(parsed.hostname)
+      || parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) return undefined
+    parsed.hash = page ? `page=${page}` : ''
+    return parsed.href
+  } catch { return undefined }
+}
 const clearConfirming = ref(false)
 const originalDialog = ref<HTMLDialogElement>()
 const original = ref<OpinionOriginal | null>(null)
@@ -362,8 +381,8 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
       <p v-else class="agent-note">{{ run.message || '该结果已失效，请重新梳理。' }}</p>
     </article>
     <button v-if="hasEarlier" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早的梳理</button>
-    <dialog ref="originalDialog" class="agent-original" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
-      <header><h3 id="agent-original-title">{{ evidence ? '行情依据' : '观点原文' }}</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">关闭原文</button></header>
+    <dialog ref="originalDialog" class="agent-original" :class="{ 'agent-financial-dialog': !!evidence?.financialFacts }" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
+      <header><h3 id="agent-original-title">{{ evidence?.financialFacts ? '财务依据' : evidence ? '行情依据' : '观点原文' }}</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">{{ evidence ? '关闭依据' : '关闭原文' }}</button></header>
       <p v-if="originalLoading" role="status">正在读取当前可见原文…</p>
       <p v-else-if="originalError" role="alert">{{ originalError }}</p>
       <template v-else-if="original">
@@ -381,6 +400,25 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
         <p class="agent-prose">名义收盘价差：{{ evidence.dailyPrices.nominalPriceDifference ?? '无法计算' }} {{ evidence.dailyPrices.currency }}；名义变化：{{ evidence.dailyPrices.nominalPriceChangePercent === null ? '无法计算' : `${evidence.dailyPrices.nominalPriceChangePercent}%` }}。</p>
         <p class="agent-note">{{ evidence.dailyPrices.coverageNote }} 来源：{{ evidence.dailyPrices.source }}{{ evidence.dailyPrices.simulated ? '（模拟）' : '' }}。</p>
         <div class="agent-price-table"><table><thead><tr><th scope="col">日期</th><th scope="col">收盘价</th></tr></thead><tbody><tr v-for="point in evidence.dailyPrices.prices" :key="point.time"><td>{{ time(point.time).slice(0, 10) }}</td><td>{{ point.close }} {{ evidence.dailyPrices.currency }}</td></tr></tbody></table></div>
+      </template>
+      <template v-else-if="evidence?.financialFacts">
+        <h4>{{ evidence.financialFacts.symbol }} · {{ evidence.financialFacts.selectedPeriod }} 年度数据</h4>
+        <p class="agent-note">这是回答生成时读取的已核实报告库快照，资料获取时间：{{ time(evidence.financialFacts.retrievedAt) }}。{{ evidence.financialFacts.note }}</p>
+        <p class="agent-financial-scroll-note agent-note">表格可左右滑动，查看完整数字与对比。</p>
+        <div class="agent-price-table"><table class="agent-financial-table">
+          <caption>原报财务数字与同口径变化</caption>
+          <thead><tr><th scope="col">科目</th><th scope="col">本期</th><th scope="col">上年同期</th><th scope="col">同比／变化</th></tr></thead>
+          <tbody><tr v-for="fact in evidence.financialFacts.facts" :key="fact.metric">
+            <th scope="row">{{ fact.sourceName }}</th>
+            <td>{{ fact.current.amount }} 人民币{{ financialUnit(fact.current.unit) }}</td>
+            <td>{{ fact.comparable ? `${fact.comparable.period}：${fact.comparable.amount} 人民币${financialUnit(fact.comparable.unit)}` : '未取得可比期' }}</td>
+            <td>{{ fact.change.percent !== null ? `${fact.change.percent}%` : fact.change.absoluteDifference !== null ? `变化额 ${fact.change.absoluteDifference} 人民币${financialUnit(fact.current.unit)}（基期非正，不算普通增长率）` : '无法计算' }}</td>
+          </tr></tbody>
+        </table></div>
+        <p v-if="evidence.financialFacts.missingMetrics.length" class="agent-note">部分请求科目未取得，本表仅显示已核实部分。</p>
+        <p v-for="report in reportLinks" :key="report.url" class="agent-note">
+          来源：<a :href="financialReportUrl(report.url, report.pages[0])" target="_blank" rel="noopener noreferrer">{{ report.title }}</a>，PDF 第 {{ report.pages.join('、') }} 页。页码按 PDF 文件计数。
+        </p>
       </template>
     </dialog>
   </section>
@@ -400,6 +438,11 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
 .agent-price-table { margin-top: 16px; overflow-x: auto; }
 .agent-price-table table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .agent-price-table th, .agent-price-table td { padding: 8px; border-bottom: 1px solid var(--color-border); text-align: left; }
+.agent-financial-table { min-width: 640px; }
+.agent-financial-table th, .agent-financial-table td { white-space: nowrap; }
+.agent-financial-table tbody th { min-width: 160px; max-width: 220px; white-space: normal; }
+.agent-financial-scroll-note { display: none; }
+.agent-original.agent-financial-dialog { width: min(860px, calc(100% - 32px)); }
 .agent-heading, .agent-original header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .agent-heading h3, .agent-original h3 { margin: 0 0 6px; font-size: 18px; }
 .agent-heading p, .agent-note { color: var(--color-muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
@@ -425,5 +468,6 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
   .agent-controls input { width: 100%; }
   .agent-question > div { align-items: flex-start; flex-direction: column; }
   .agent-original { padding: 18px; }
+  .agent-financial-scroll-note { display: block; }
 }
 </style>
