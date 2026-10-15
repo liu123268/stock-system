@@ -60,6 +60,11 @@ const router = createRouter({
           component: () => import('@/views/workspace/WorkspaceStockResearchView.vue'),
         },
         {
+          path: 'stocks/:workspaceStockId/research/cycles/:cycleId/assistant',
+          name: 'workspace-research-agent',
+          component: () => import('@/views/workspace/WorkspaceResearchAgentView.vue'),
+        },
+        {
           path: 'members',
           name: 'workspace-members',
           component: () => import('@/views/workspace/WorkspaceMembersView.vue'),

@@ -232,3 +232,20 @@ Spring 容器还可以单独关闭，所在的 Java 进程继续执行其他代�
 启动类还显式使用 `@MapperScan` 发现 MyBatis Mapper 接口，并排除 `UserDetailsServiceAutoConfiguration`，分别属于 Mapper 代理注册和指定自动配置排除。本节未修改这两项。假设把 AuthService 移到默认扫描范围外、且没有额外扫描或显式注册，单写 `@Service` 不会让它被发现，Controller 的必需依赖可能无法装配并导致启动失败；此处为排错推演，未移动源码或运行实验。
 
 本阶段面试准备以解释 Bean／DI、默认作用域与请求数据、基本生命周期、Boot 入口／扫描／自动配置为核心。请求作用域先掌握 HTTP 请求范围与用途，复杂代理与框架扩展点沿对应专题学习，不要求背源码或完整钩子顺序；这属于学习深度安排，不是对具体公司的出题保证。依据：[SpringBootApplication](https://docs.spring.io/spring-boot/reference/using/using-the-springbootapplication-annotation.html)、[代码组织与扫描范围](https://docs.spring.io/spring-boot/reference/using/structuring-your-code.html)、[自动配置](https://docs.spring.io/spring-boot/reference/using/auto-configuration.html)。
+
+## 10. 自动配置的条件与默认退让
+
+自动配置是 Boot 已提供的配置代码在启动时按条件生效，常用于创建基础设施 Bean。starter 是一组相关依赖的入口；它让相关类可用，不等于所有自动配置都必然生效。应用自己声明的组件、依赖中的类、已经注册的 Bean 分别判断。
+
+以当前应用的 JDBC/MySQL 场景理解：项目引入 MyBatis-Plus 的 Boot 4 starter 与 MySQL 驱动，配置文件提供 `spring.datasource.url`、`username`、`password` 等信息；自动配置启用、相关依赖和其他条件满足时，Boot 可以准备默认 DataSource Bean，供数据访问组件使用。DataSource 是提供数据库连接的对象，常通过连接池实现；连接池依赖可用时 Boot 默认优先 HikariCP。参数分别位于 [公共配置](../../src/main/resources/application.properties) 与 [开发配置](../../src/main/resources/application-dev.properties)／[生产配置](../../src/main/resources/application-prod.properties)，这里不记录实际连接值或凭据。
+
+| 条件标记 | 判断内容 |
+| --- | --- |
+| `@ConditionalOnClass` | 相关类型是否在应用可用的依赖中；不要求已有该类型的 Bean 实例 |
+| `@ConditionalOnMissingBean` | 容器中是否缺少匹配的 Bean；常用于在用户未提供组件时创建默认组件 |
+
+当前默认连接池创建分支检查 DataSource／XADataSource 是否缺失。通常用户显式注册自己的 DataSource Bean 后，默认数据源创建退让，仍可继续应用其他满足条件的自动配置；只修改数据库配置参数，则仍可以让 Boot 创建 DataSource。这里说的是通常的默认候选 Bean，多个数据源与候选资格等边界沿需要时补充，不把退让扩大为所有自动配置关闭。
+
+源码中的数据源接收方与独立命令行的手工数据源分别判断；独立命令中创建普通对象不等于在应用容器中注册 DataSource Bean。以上为依赖、配置与源码分析，未启动应用核对运行时连接池类型。自动准备 Bean 不保证数据库连接成功；MySQL 必须可用且连接参数正确。嵌入式数据库、JNDI 与 R2DBC 属于其他条件路径，不将当前 MySQL 例子的 URL 要求扩大为所有场景。
+
+面试表达可围绕“Boot 已提供配置实现，按依赖与 Bean 等条件启用；用户配置可替代对应默认组件”解释，再指出项目参数位置，不需要背自动配置源码。依据：[自动配置与用户配置替代](https://docs.spring.io/spring-boot/reference/using/auto-configuration.html)、[SQL 数据源与连接池](https://docs.spring.io/spring-boot/reference/data/sql.html)、[条件注解](https://docs.spring.io/spring-boot/reference/features/developing-auto-configuration.html)、[默认连接池分支](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/jdbc/autoconfigure/DataSourceAutoConfiguration.PooledDataSourceConfiguration.html)。

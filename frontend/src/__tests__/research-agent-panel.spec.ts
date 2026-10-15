@@ -21,13 +21,12 @@ function answer(runId = 10): AgentRun {
       quote: { status: 'UNAVAILABLE', price: null, currency: 'HKD', quoteTime: null, source: null, simulated: false },
     } }
 }
-function session(messages: AgentRun[] = []) {
-  return { data: { data: { enabled: true, contextVersion: 0, messages, activeRun: null, hasEarlierMessages: false, invalidated: false } } }
+function session(messages: AgentRun[] = [], enabled = true) {
+  return { data: { data: { enabled, contextVersion: 0, messages, activeRun: null, hasEarlierMessages: false, invalidated: false } } }
 }
 let wrappers: ReturnType<typeof mount>[] = []
-function create() {
-  const pinia = createPinia()
-  const wrapper = mount(ResearchAgentPanel, { props: { target }, global: { plugins: [pinia] }, attachTo: document.body })
+function create(pinia = createPinia(), standalone = false) {
+  const wrapper = mount(ResearchAgentPanel, { props: { target, standalone }, global: { plugins: [pinia] }, attachTo: document.body })
   wrappers.push(wrapper)
   return { wrapper, auth: useAuthStore(pinia) }
 }
@@ -43,6 +42,79 @@ beforeEach(() => {
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers = []; vi.useRealTimers() })
 
 describe('研究助手的个人记录与迟到响应', () => {
+  it('独立问答按时间顺序展示，历史与输入区分开', async () => {
+    api.restoreAgent.mockResolvedValue(session([answer(12), answer(10)]))
+    const { wrapper } = create(createPinia(), true); await flushPromises()
+    expect(wrapper.findAll('.agent-answer').map(item => item.attributes('data-run-id'))).toEqual(['10', '12'])
+    expect(wrapper.find('.agent-history').findAll('.agent-answer')).toHaveLength(2)
+    expect(wrapper.find('.agent-history .agent-question').exists()).toBe(false)
+    expect(wrapper.find('.agent-question').exists()).toBe(true)
+    expect(wrapper.findAll('input')).toHaveLength(0)
+    await wrapper.find('.agent-controls button[type=button]').trigger('click')
+    expect(wrapper.findAll('input')).toHaveLength(2)
+  })
+
+  it('返回研究再进入时保留内存草稿，换周期不混入问题', async () => {
+    const pinia = createPinia()
+    const first = create(pinia); await flushPromises()
+    await first.wrapper.find('textarea').setValue('尚未发送的问题')
+    await first.wrapper.find('input').setValue('2026-10-01')
+    first.wrapper.unmount()
+    const second = create(pinia); await flushPromises()
+    expect((second.wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('尚未发送的问题')
+    expect((second.wrapper.find('input').element as HTMLInputElement).value).toBe('2026-10-01')
+    await second.wrapper.setProps({ target: { ...target, cycleId: 4 } }); await flushPromises()
+    expect((second.wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+    await second.wrapper.find('textarea').setValue('新周期的问题')
+    await second.wrapper.setProps({ target }); await flushPromises()
+    expect((second.wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('尚未发送的问题')
+    expect(api.askAgent).not.toHaveBeenCalled()
+  })
+
+  it('已失权的组件卸载后不会重新保存被清除的草稿', async () => {
+    const pinia = createPinia()
+    const { wrapper } = create(pinia); await flushPromises()
+    await wrapper.find('textarea').setValue('来自原对象的未发送问题')
+    api.askAgent.mockResolvedValue({ data: { data: { ...answer(11), status: 'FAILED', answer: null,
+      errorCode: 'WORKSPACE_MEMBERSHIP_INACTIVE', message: '成员关系已失效' } } })
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+    wrapper.unmount()
+    const next = create(pinia); await flushPromises()
+    expect((next.wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('回答功能关闭时可以编辑草稿和查看旧记录，两种提交都不调用模型', async () => {
+    api.restoreAgent.mockResolvedValue(session([answer()], false))
+    const { wrapper } = create(); await flushPromises()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).disabled).toBe(false)
+    await wrapper.find('textarea').setValue('请比较 2025 年营业收入和归母利润')
+    expect(wrapper.text()).toContain('可以先写下问题')
+    expect(wrapper.text()).toContain('茅台、腾讯 2025 年报及 2024 比较列')
+    expect(wrapper.find('.agent-answer').text()).toContain('成员猜测订单增长')
+    for (const button of wrapper.findAll('button[type=submit]')) expect(button.attributes('disabled')).toBeDefined()
+    await wrapper.find('.agent-controls').trigger('submit')
+    await wrapper.find('.agent-question').trigger('submit'); await flushPromises()
+    expect(api.generateAgent).not.toHaveBeenCalled()
+    expect(api.askAgent).not.toHaveBeenCalled()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('请比较 2025 年营业收入和归母利润')
+  })
+
+  it('只读检查启用状态保留问题和日期，不自动发送草稿', async () => {
+    api.restoreAgent.mockResolvedValueOnce(session([], false)).mockResolvedValue(session())
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('2025 年归母利润同比如何？')
+    await wrapper.find('input').setValue('2026-10-01')
+    await wrapper.find('.agent-availability button').trigger('click'); await flushPromises()
+    expect(api.restoreAgent).toHaveBeenCalledTimes(2)
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('2025 年归母利润同比如何？')
+    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('2026-10-01')
+    expect(wrapper.find('.agent-question button').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.agent-availability').exists()).toBe(false)
+    expect(api.generateAgent).not.toHaveBeenCalled()
+    expect(api.askAgent).not.toHaveBeenCalled()
+  })
+
   it('财务引用每次复核，保留精确金额、原报单位和 PDF 页码', async () => {
     const reply = answer()
     reply.answer!.summary = null
@@ -224,8 +296,9 @@ describe('研究助手的个人记录与迟到响应', () => {
     expect(wrapper.findAll('.agent-answer')).toHaveLength(0)
     expect(wrapper.findAll('.source-link')).toHaveLength(0)
     expect(wrapper.text()).toContain('成员关系已失效')
-    expect(wrapper.text()).not.toContain('研究助手尚未启用')
+    expect(wrapper.text()).not.toContain('研究助手暂未开启回答功能')
     expect(wrapper.find('.agent-question button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
   })
   it('POST 后的恢复 GET 迟到时，旧运行错误不能覆盖新周期反馈', async () => {
     let resolve!: (value: unknown) => void

@@ -69,7 +69,7 @@ try {
   await page.getByLabel('登录账号').fill(names[0]); await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '进入空间', exact: true }).click(); await page.waitForURL(/\/workspaces/)
   await page.goto(researchUrl)
-  await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.getByRole('link', { name: '研究助手', exact: true }).click()
   await page.getByRole('button', { name: '开始梳理', exact: true }).waitFor()
   await capture('empty')
   const trigger = page.getByRole('button', { name: '开始梳理', exact: true })
@@ -104,6 +104,7 @@ try {
   await api(`${base}/summaries`, owner.accessToken, 'POST', { requestId: run.requestId })
   assert.equal((await fixtureState()).calls, before + 1)
   checks.push('private-record-and-idempotence')
+  await page.getByRole('button', { name: '观点日期范围', exact: true }).click()
   const date = page.getByLabel('观点开始日期')
   await page.setViewportSize({ width: 390, height: 1000 })
   await date.fill(new Date().toISOString().slice(0, 10))
@@ -114,7 +115,7 @@ try {
   assert.equal(await date.inputValue(), new Date().toISOString().slice(0, 10))
   assert.ok((await page.locator('.agent-answer').innerText()).includes('订单可能增长'))
   checks.push('original-dialog-escape-preserves-filter-and-answer')
-  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.reload()
   await page.locator('.agent-answer').waitFor()
   assert.equal((await fixtureState()).calls, before + 1)
   checks.push('reload-restores-without-model-call')
@@ -139,7 +140,7 @@ try {
   await page.keyboard.press('Escape')
   await capture('follow-up', [1440, 960, 390, 320])
   checks.push('daily-price-question-and-java-evidence')
-  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.reload()
   await page.getByText('你的问题：请查询2026-09-01至2026-09-04的名义收盘价变化', { exact: true }).waitFor()
   checks.push('follow-up-restores-without-model-request')
   const beforeFinancial = (await fixtureState()).calls
@@ -170,12 +171,58 @@ try {
   assert.equal(await page.getByRole('button', { name: '查看财务数据依据', exact: true }).evaluate(element => document.activeElement === element), true)
   checks.push('financial-exact-amount-original-unit-source-pages-four-widths-and-focus')
   const beforeFinancialRestore = (await fixtureState()).calls
-  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.reload()
   await page.getByRole('button', { name: '查看财务数据依据', exact: true }).click()
   await page.getByRole('dialog').getByText('财务依据', { exact: true }).waitFor()
   assert.equal((await fixtureState()).calls, beforeFinancialRestore)
   await page.keyboard.press('Escape')
   checks.push('financial-restore-and-source-access-without-paid-request')
+  // 先产生足够的自造问答，再只读加载上一页，实际覆盖长记录与分页。
+  for (let index = 1; index <= 8; index++) {
+    const question = `分页样本 ${index}：现在最新可用价是多少？`
+    await questionInput.fill(question)
+    await page.getByRole('button', { name: '发送问题', exact: true }).click()
+    await page.getByText(`你的问题：${question}`, { exact: true }).waitFor()
+  }
+  const beforeEarlier = (await fixtureState()).calls
+  await page.getByRole('button', { name: '查看更早记录', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.agent-answer').length > 6)
+  assert.equal((await fixtureState()).calls, beforeEarlier)
+  checks.push('read-earlier-chat-page-without-model-request')
+  // 长记录只滚动助手内部；输入区始终可见，主页面不被聊天撑长。
+  for (const width of [1440, 960, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 })
+    const bounds = await page.evaluate(() => {
+      const history = document.querySelector('.agent-history')
+      const composer = document.querySelector('.agent-question').getBoundingClientRect()
+      const ancestors = []
+      for (let node = history; node && node !== document.body; node = node.parentElement) {
+        const css = getComputedStyle(node)
+        ancestors.push({ class: node.className, height: node.clientHeight, display: css.display,
+          flex: css.flex, minHeight: css.minHeight, gridRows: css.gridTemplateRows })
+      }
+      return { documentHeight: document.documentElement.scrollHeight, viewport: innerHeight,
+        historyHeight: history.clientHeight, historyScroll: history.scrollHeight,
+        composerTop: composer.top, composerBottom: composer.bottom, ancestors }
+    })
+    assert.ok(bounds.documentHeight <= bounds.viewport + 1, JSON.stringify(bounds))
+    assert.ok(bounds.historyScroll > bounds.historyHeight, JSON.stringify(bounds))
+    assert.ok(bounds.composerTop >= 0 && bounds.composerBottom <= bounds.viewport)
+    await page.locator('.agent-history').evaluate(element => { element.scrollTop = 0 })
+    assert.equal(await questionInput.isVisible(), true)
+    await page.screenshot({ path: `${output}/assistant-page-${width}.png` })
+  }
+  checks.push('long-history-internal-scroll-and-visible-composer-four-widths')
+  const beforeReturn = (await fixtureState()).calls
+  await questionInput.fill('返回研究时保留的未发送草稿')
+  await page.getByRole('link', { name: '← 返回研究观点', exact: true }).click()
+  await page.locator(`[data-cycle-id="${cycle}"]`).waitFor()
+  assert.equal(await page.locator('.agent-panel').count(), 0)
+  assert.equal(await page.locator('.agent-answer').count(), 0)
+  await page.getByRole('link', { name: '研究助手', exact: true }).click()
+  await page.waitForFunction(() => document.querySelector('.agent-question textarea')?.value === '返回研究时保留的未发送草稿')
+  assert.equal((await fixtureState()).calls, beforeReturn)
+  checks.push('return-to-opinions-without-chat-body-and-restore-unsent-draft')
   // Chrome 丢掉服务端已经完成的 POST 回包，页面只能 GET 原编号恢复。
   const messagesRoute = '**/agent/messages'
   let lostQuestionId
@@ -221,12 +268,12 @@ try {
   }
   const beforeMissing = (await fixtureState()).calls
   await page.route(summariesRoute, loseBeforeServer)
-  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  await page.locator('.agent-controls button[type="submit"]').click()
   await page.getByRole('alert').getByText(/暂未找到本次任务/).waitFor()
   assert.equal((await fixtureState()).calls, beforeMissing)
   await page.unroute(summariesRoute, loseBeforeServer)
   const retriedPost = page.waitForRequest(request => request.url().endsWith('/agent/summaries') && request.method() === 'POST')
-  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  await page.locator('.agent-controls button[type="submit"]').click()
   assert.equal((await retriedPost).postDataJSON().requestId, missingRequestId)
   await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') === null)
   assert.equal((await fixtureState()).calls, beforeMissing + 1)
@@ -241,7 +288,7 @@ try {
   for (let attempt = 0; attempt < 40 && (await fixtureState()).calls === beforeReload; attempt++)
     await page.waitForTimeout(50)
   assert.equal((await fixtureState()).calls, beforeReload + 1)
-  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.reload()
   await page.getByText('你的问题：刷新中最新可用价是多少？', { exact: true }).waitFor()
   await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') === null)
   assert.equal((await fixtureState()).calls, beforeReload + 2)
@@ -268,18 +315,18 @@ try {
   await page.locator('.agent-panel').screenshot({ path: `${output}/access-lost-panel-320.png` })
   await page.unroute('**/agent', preventRestore)
   sql(`update workspace_member set status='ACTIVE',last_inactive_at=null where workspace_id=${workspace} and user_id=${owner.userId}`)
-  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.reload()
   await page.locator('.agent-answer').first().waitFor()
   checks.push('inflight-access-loss-clears-private-body-even-if-restore-disconnects')
   await fixtureState('valid')
   const validCount = await page.locator('.agent-answer').count()
   await fixtureState('invalid')
-  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  await page.locator('.agent-controls button[type="submit"]').click()
   await page.getByRole('alert').getByText('研究助手未返回可核对的完整结果', { exact: true }).waitFor()
   assert.equal(await page.locator('.agent-answer').count(), validCount)
   await capture('failed-keeps-old', [1440, 390])
   await fixtureState('slow')
-  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  await page.locator('.agent-controls button[type="submit"]').click()
   await page.getByRole('button', { name: '正在梳理…', exact: true }).waitFor()
   await page.getByRole('button', { name: '清空个人记录', exact: true }).click()
   await page.getByRole('button', { name: '确认清空', exact: true }).click()
@@ -293,7 +340,7 @@ try {
   await page.getByRole('button', { name: '开始梳理', exact: true }).click(); await page.locator('.agent-answer').waitFor()
   const originalId = (await api(base, owner.accessToken)).messages[0].answer.references[0].opinionId
   await api(`/workspaces/${workspace}/stocks/${stock}/opinions/${originalId}`, owner.accessToken, 'DELETE')
-  await page.reload(); await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.reload()
   await page.getByText('部分结果依赖的观点已经撤回或变化，需要重新梳理。', { exact: true }).waitFor()
   assert.equal(await page.locator('.agent-prose').count(), 0)
   assert.equal(await page.locator('.source-link').count(), 0)

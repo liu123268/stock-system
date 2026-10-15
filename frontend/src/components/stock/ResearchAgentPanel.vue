@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAgentDraftStore } from '@/stores/agent-draft'
 import { ApiError } from '@/api/http'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
 import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentRequest, readAgentRun, restoreAgent } from '@/api/agent'
@@ -9,9 +10,10 @@ import type { AgentAnswer, AgentEvidence, AgentItem, AgentRun, AgentTarget, Opin
 import { readPendingAgent, writePendingAgent, removePendingAgent } from '@/utils/agent-pending'
 import type { PendingAgentRequest } from '@/utils/agent-pending'
 
-const props = defineProps<{ target: AgentTarget }>()
+const props = defineProps<{ target: AgentTarget; standalone?: boolean }>()
 const router = useRouter()
 const auth = useAuthStore()
+const drafts = useAgentDraftStore()
 const accessErrors = ['WORKSPACE_NOT_FOUND', 'WORKSPACE_MEMBERSHIP_INACTIVE', 'WORKSPACE_ACCESS_DENIED', 'UNAUTHORIZED']
 const loading = ref(true)
 const busy = ref(false)
@@ -25,6 +27,28 @@ const hasEarlier = ref(false)
 const dateFrom = ref('')
 const dateTo = ref('')
 const question = ref('')
+const dateExpanded = ref(false)
+const history = ref<HTMLElement>()
+const displayMessages = computed(() => props.standalone ? [...messages.value].reverse() : messages.value)
+let draftTarget = { ...props.target }
+let draftSession = auth.sessionVersion
+let draftUser = auth.currentUser?.userId ?? null
+function saveDraft() {
+  if (!accessLost.value && draftSession === auth.sessionVersion && draftUser === (auth.currentUser?.userId ?? null))
+    drafts.write(draftTarget, { question: question.value, dateFrom: dateFrom.value, dateTo: dateTo.value })
+}
+function restoreDraft() {
+  const draft = drafts.read(props.target)
+  question.value = draft?.question ?? ''; dateFrom.value = draft?.dateFrom ?? ''; dateTo.value = draft?.dateTo ?? ''
+  dateExpanded.value = !!(dateFrom.value || dateTo.value)
+  draftTarget = { ...props.target }; draftSession = auth.sessionVersion; draftUser = auth.currentUser?.userId ?? null
+}
+restoreDraft()
+async function showLatest() {
+  await nextTick()
+  if (props.standalone && !disposed && history.value) history.value.scrollTop = history.value.scrollHeight
+}
+watch(() => messages.value[0]?.runId, () => void showLatest())
 const evidence = ref<AgentEvidence | null>(null)
 const reportLinks = computed(() => {
   const reports = new Map<string, { title: string; url: string; pages: number[] }>()
@@ -57,8 +81,8 @@ let disposed = false
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let sourceButton: HTMLElement | null = null
 const latest = computed(() => messages.value.find((item) => item.answer?.summary)?.answer)
-function capture() { return { version, session: auth.sessionVersion, target: { ...props.target } } }
-function current(request: ReturnType<typeof capture>) { return !disposed && version === request.version && auth.sessionVersion === request.session }
+function capture() { return { version, session: auth.sessionVersion, user: auth.currentUser?.userId ?? null, target: { ...props.target } } }
+function current(request: ReturnType<typeof capture>) { return !disposed && version === request.version && auth.sessionVersion === request.session && request.user === (auth.currentUser?.userId ?? null) }
 function time(value: string | null) { return value ? value.replace('T', ' ').slice(0, 19) : '暂无时间' }
 function sections(answer: AgentAnswer) {
   if (!answer.summary) return []
@@ -95,6 +119,7 @@ function hidePrivateContent() {
   busy.value = false; loading.value = false; notices.value = ''
   messages.value = []; original.value = null; evidence.value = null
   originalDialog.value?.close(); enabled.value = false; accessLost.value = true
+  drafts.remove(draftTarget); question.value = ''; dateFrom.value = ''; dateTo.value = ''
   if (pending.value) forgetRequest(pending.value.requestId)
 }
 function stopPoll() { clearTimeout(pollTimer); pollTimer = undefined }
@@ -134,6 +159,7 @@ function accept(run: AgentRun) {
 }
 async function load(reset = true, older = false) {
   const request = capture()
+  const previousScroll = history.value ? { top: history.value.scrollTop, height: history.value.scrollHeight } : null
   pending.value ??= readPendingAgent(request.target, auth.currentUser?.userId ?? null)
   loading.value = true
   error.value = ''
@@ -145,6 +171,11 @@ async function load(reset = true, older = false) {
     accessLost.value = false
     messages.value = older ? [...messages.value, ...session.messages] : session.messages
     hasEarlier.value = session.hasEarlierMessages
+    if (older && props.standalone && previousScroll) {
+      await nextTick()
+      if (!current(request)) return
+      if (history.value) history.value.scrollTop = previousScroll.top + history.value.scrollHeight - previousScroll.height
+    }
     busy.value = !!session.activeRun
     if (session.invalidated) notices.value = '部分结果依赖的观点已经撤回或变化，需要重新梳理。'
     else if (reset) notices.value = ''
@@ -254,6 +285,7 @@ async function clear() {
     original.value = null
     evidence.value = null
     question.value = ''
+    drafts.remove(draftTarget)
     if (pending.value) forgetRequest(pending.value.requestId)
     originalDialog.value?.close()
     clearConfirming.value = false
@@ -308,45 +340,55 @@ function closeOriginal() {
   evidence.value = null
   sourceButton?.focus({ preventScroll: true })
 }
-watch([() => props.target.workspaceId, () => props.target.stockId, () => props.target.cycleId, () => auth.sessionVersion], (next, previous) => {
-  if (next[3] !== previous[3] && pending.value) forgetRequest(pending.value.requestId)
+watch([() => props.target.workspaceId, () => props.target.stockId, () => props.target.cycleId, () => auth.sessionVersion, () => auth.currentUser?.userId], (next, previous) => {
+  saveDraft()
+  const accountChanged = next[3] !== previous[3] || next[4] !== previous[4]
+  if (accountChanged && pending.value) forgetRequest(pending.value.requestId)
   pending.value = null
   accessLost.value = false
   version++; originalVersion++; stopPoll(); messages.value = []; original.value = null
   originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''; question.value = ''; evidence.value = null
+  restoreDraft()
+  if (accountChanged && !auth.isAuthenticated) { hidePrivateContent(); return }
   void load()
 })
 onMounted(() => void load())
-onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(); originalDialog.value?.close() })
+onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion++; stopPoll(); originalDialog.value?.close() })
 </script>
 
 <template>
-  <section class="agent-panel" aria-label="个人研究助手" :aria-busy="busy || loading">
+  <section class="agent-panel" :class="{ 'agent-panel--standalone': standalone }" aria-label="个人研究助手" :aria-busy="busy || loading">
+    <div class="agent-tools">
     <header class="agent-heading">
-      <div><h3>研究梳理</h3><p>整理本周期的成员观点，结果仅你可见。</p></div>
+      <div><h3>{{ standalone ? '个人问答' : '研究梳理' }}</h3><p>整理本周期的成员观点，结果仅你可见。</p></div>
       <button class="ui-button" type="button" :disabled="loading || clearing" @click="clearConfirming = !clearConfirming">清空个人记录</button>
     </header>
     <form class="agent-controls" @submit.prevent="generate">
-      <label>观点开始日期<input v-model="dateFrom" type="date" :disabled="busy || clearing" /></label>
-      <label>观点结束日期<input v-model="dateTo" type="date" :disabled="busy || clearing" /></label>
+      <button v-if="standalone" class="ui-button" type="button" :aria-expanded="dateExpanded" @click="dateExpanded = !dateExpanded">观点日期范围</button>
+      <div v-if="!standalone || dateExpanded" class="agent-date-fields">
+        <label>观点开始日期<input v-model="dateFrom" type="date" :disabled="busy || clearing" /></label>
+        <label>观点结束日期<input v-model="dateTo" type="date" :disabled="busy || clearing" /></label>
+      </div>
       <button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled">{{ busy ? '正在梳理…' : latest ? '重新梳理' : '开始梳理' }}</button>
     </form>
-    <p class="agent-note">日期留空时读取完整周期。成员的推测仍需权威资料核对。</p>
+    <p v-if="!standalone || dateExpanded" class="agent-note">日期留空时读取完整周期。成员的推测仍需权威资料核对。</p>
     <div v-if="clearConfirming" class="agent-confirm">
       <p>清空这个周期的个人结果？正在生成的迟到结果也不会重新保存。</p>
       <button class="ui-button" type="button" :disabled="clearing" @click="clearConfirming = false">保留记录</button>
       <button class="ui-button" type="button" :disabled="clearing" @click="clear">确认清空</button>
     </div>
     <p v-if="loading" role="status" class="agent-note">正在读取个人记录…</p>
-    <p v-else-if="!enabled && !accessLost" class="agent-note">研究助手尚未启用。启用服务端模型和预算配置后可生成；已有记录仍可查看。</p>
+    <div v-else-if="!enabled && !accessLost" class="agent-availability">
+      <p class="agent-note" role="status">研究助手暂未开启回答功能。可以先写下问题；已有记录仍可查看。</p>
+      <button class="ui-button" type="button" :disabled="busy || clearing" @click="load(false)">重新检查</button>
+    </div>
     <p v-if="notices" role="status" class="agent-note">{{ notices }}</p>
     <div v-if="error" class="agent-error" role="alert"><p>{{ error }}</p><button class="ui-button" type="button" :disabled="loading" @click="load(false)">恢复运行状态</button></div>
-    <form class="agent-question" @submit.prevent="ask">
-      <label>继续提问<textarea v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || !enabled" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
-      <div><span class="agent-note">可查询成员观点、最新可用报价和短期日 K；财报与公告尚未接入。</span><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
-    </form>
+    </div>
+    <div ref="history" class="agent-history" role="region" aria-label="个人问答记录" :tabindex="standalone ? 0 : undefined">
+    <button v-if="hasEarlier && standalone" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早记录</button>
     <p v-if="!loading && !messages.length && !busy && !accessLost" class="agent-empty">生成后会在这里保留概况、成员观点和待核对事项，返回页面可继续查看。</p>
-    <article v-for="run in messages" :key="run.runId" class="agent-answer" :data-run-id="run.runId">
+    <article v-for="run in displayMessages" :key="run.runId" class="agent-answer" :data-run-id="run.runId">
       <template v-if="run.answer?.summary">
         <p class="agent-note">资料读取于 {{ time(run.answer.scope.readAt) }} · {{ run.answer.scope.readOpinionCount }} 条有效观点</p>
         <p v-if="run.answer.scope.filter.dateFrom || run.answer.scope.filter.dateTo" class="agent-note">观点日期：{{ run.answer.scope.filter.dateFrom || '周期开始' }} 至 {{ run.answer.scope.filter.dateTo || '周期结束' }}</p>
@@ -380,7 +422,12 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
       </template>
       <p v-else class="agent-note">{{ run.message || '该结果已失效，请重新梳理。' }}</p>
     </article>
-    <button v-if="hasEarlier" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早的梳理</button>
+    <button v-if="hasEarlier && !standalone" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早记录</button>
+    </div>
+    <form class="agent-question" @submit.prevent="ask">
+      <label>继续提问<textarea v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || accessLost" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
+      <div><details class="agent-capabilities"><summary>可查询的资料</summary><p class="agent-note">可查询成员观点、最新可用报价和短期日 K。已核实财务仅覆盖茅台、腾讯 2025 年报及 2024 比较列；公告正文检索尚未接入。</p></details><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
+    </form>
     <dialog ref="originalDialog" class="agent-original" :class="{ 'agent-financial-dialog': !!evidence?.financialFacts }" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
       <header><h3 id="agent-original-title">{{ evidence?.financialFacts ? '财务依据' : evidence ? '行情依据' : '观点原文' }}</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">{{ evidence ? '关闭依据' : '关闭原文' }}</button></header>
       <p v-if="originalLoading" role="status">正在读取当前可见原文…</p>
@@ -447,10 +494,22 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
 .agent-heading h3, .agent-original h3 { margin: 0 0 6px; font-size: 18px; }
 .agent-heading p, .agent-note { color: var(--color-muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 .agent-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 18px 0 8px; }
+.agent-date-fields { display: flex; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .agent-controls label { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
 .agent-controls input { padding: 9px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); min-height: 40px; max-width: 100%; }
 .agent-confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; padding: 14px; background: var(--color-surface-secondary); }
 .agent-confirm p { flex-basis: 100%; font-size: 14px; }
+.agent-availability { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.agent-capabilities { min-width: 0; font-size: 12px; color: var(--color-muted); }
+.agent-capabilities summary { cursor: pointer; }
+.agent-capabilities p { max-width: 65ch; padding-top: 8px; }
+.agent-panel--standalone { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px 0; border: 1px solid var(--color-border); background: var(--color-surface); }
+.agent-panel--standalone .agent-tools { flex-shrink: 0; max-height: 42%; overflow-y: auto; }
+.agent-panel--standalone .agent-controls { margin-top: 10px; }
+.agent-panel--standalone .agent-history { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 4px; scrollbar-gutter: stable; }
+.agent-panel--standalone .agent-question { flex-shrink: 0; margin-top: 0; padding: 12px 0; max-height: 45%; overflow-y: auto; }
+.agent-panel--standalone .agent-question textarea { min-height: 72px; max-height: 140px; resize: vertical; }
+.agent-panel--standalone .agent-empty { padding: 20px 0; }
 .agent-error { color: var(--color-danger); display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .agent-empty { padding: 22px 0; font-size: 14px; line-height: 1.8; color: var(--color-muted); }
 .agent-answer { padding: 22px 0; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
@@ -463,6 +522,12 @@ onBeforeUnmount(() => { disposed = true; version++; originalVersion++; stopPoll(
 .agent-original { width: min(640px, calc(100% - 32px)); max-height: 80dvh; padding: 24px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; overflow-y: auto; }
 .agent-original::backdrop { background: rgb(25 21 16 / 42%); }
 @media (max-width: 480px) {
+  .agent-panel--standalone { padding-inline: 12px; }
+  .agent-panel--standalone .agent-heading { flex-wrap: nowrap; gap: 8px; }
+  .agent-panel--standalone .agent-heading h3 { font-size: 15px; }
+  .agent-panel--standalone .agent-heading p { font-size: 12px; }
+  .agent-panel--standalone .agent-heading button { padding-inline: 10px; flex-shrink: 0; }
+  .agent-panel--standalone .agent-question > div { flex-direction: row; align-items: center; }
   .agent-heading { flex-wrap: wrap; }
   .agent-controls label { width: 100%; }
   .agent-controls input { width: 100%; }

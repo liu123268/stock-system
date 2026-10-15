@@ -1,0 +1,10 @@
+# 复制到项目根目录，命名为 .env.research-agent-local.properties。
+# 已有 .env.deepseek-local.properties 提供 deepseek.api-key，不要在这里再复制密钥。
+# 只有 dev 读取这两个开关；默认保持付费生成关闭。
+local.research-agent.chat-model=none
+local.research-agent.budget-yuan=0
+# 确认本地正式使用预算后，把 none 改为 deepseek，把 0 改为本次同意的人民币累计额度。
+# 例如 deepseek 与 10 表示启用模型，并由 MySQL 记录独立的累计 10 元应用预算。
+# 该额度不复用或重置原实验的 10 元 JSONL 账本；新增额度须先得到用户授权。
+# RESEARCH_AGENT_CHAT_MODEL / RESEARCH_AGENT_BUDGET_YUAN / DEEPSEEK_API_KEY 环境变量优先。
+# 修改后需重启本地后端；刷新网页不会重新加载后端配置。

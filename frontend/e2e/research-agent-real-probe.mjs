@@ -77,7 +77,7 @@ try {
   await page.getByLabel('登录账号').fill(names[0]); await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '进入空间', exact: true }).click(); await page.waitForURL(/\/workspaces/)
   await page.goto(`${frontend}/workspaces/${workspace}/stocks/${target.workspaceStockId}#research-timeline`)
-  await page.getByRole('button', { name: '研究助手', exact: true }).click()
+  await page.getByRole('link', { name: '研究助手', exact: true }).click()
   await page.getByText(`你的问题：${steps[3].body.question}`, { exact: true }).waitFor()
   assert.equal(await page.locator('.agent-answer').count(), 4)
   for (const width of [1440, 390]) {

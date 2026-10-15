@@ -23,7 +23,9 @@ const navigation = [
   { path: 'settings', label: '设置' },
 ]
 const currentSection = computed(() => route.path.split('/')[3] ?? 'overview')
+const isResearchAgentPage = computed(() => route.name === 'workspace-research-agent')
 const currentPage = computed(() => {
+  if (isResearchAgentPage.value) return '研究助手'
   if (route.name === 'workspace-stock-market') return '股票行情'
   if (route.name === 'workspace-stock-research') return '研究详情'
   return navigation.find((item) => item.path === currentSection.value)?.label ?? '空间'
@@ -53,7 +55,7 @@ watch(
 </script>
 
 <template>
-  <div class="workspace-shell research-theme">
+  <div class="workspace-shell research-theme" :class="{ 'workspace-shell--agent': isResearchAgentPage }">
     <a class="ui-skip-link" href="#workspace-content">跳到页面内容</a>
     <aside class="workspace-nav">
       <div class="ui-brand" aria-label="基点">基点<span aria-hidden="true">。</span></div>
@@ -104,7 +106,7 @@ watch(
         <!-- 空间改变时卸载旧子页；同空间内股票参数仍沿用页面原有监听。 -->
         <RouterView :key="workspaceId" />
       </main>
-      <footer class="workspace-footer">
+      <footer v-if="!isResearchAgentPage" class="workspace-footer">
         <span>基点 · 共同研究，保留各自的判断</span>
         <span>行情与观点仅供研究参考</span>
       </footer>
@@ -295,7 +297,15 @@ watch(
   color: var(--color-muted);
   font-size: 11px;
 }
+.workspace-shell--agent { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); }
+.workspace-shell--agent .workspace-main { min-height: 0; }
+.workspace-shell--agent .workspace-nav { height: 100dvh; }
+.workspace-shell--agent .workspace-topbar { flex-shrink: 0; }
+.workspace-shell--agent .workspace-content { display: flex; min-height: 0; padding-bottom: 16px; }
 @media (max-width: 960px) {
+  .workspace-shell.workspace-shell--agent { display: flex; flex-direction: column; }
+  .workspace-shell--agent .workspace-main { flex: 1; }
+  .workspace-shell--agent .workspace-nav { display: none; }
   .workspace-shell {
     display: block;
   }

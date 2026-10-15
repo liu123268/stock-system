@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import StockStatusNotice from '@/components/stock/StockStatusNotice.vue'
-import ResearchAgentPanel from '@/components/stock/ResearchAgentPanel.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
@@ -26,8 +25,6 @@ const workspaceId = computed(() => Number(route.params.workspaceId))
 const workspaceStockId = computed(() => Number(route.params.workspaceStockId))
 const isArchived = computed(() => workspaceStore.currentWorkspace?.status !== 'ACTIVE')
 const currentCycle = computed(() => stockStore.researchDetail?.currentCycle)
-const assistantCycleId = ref<number | null>(null)
-watch([workspaceId, workspaceStockId], () => { assistantCycleId.value = null })
 const market = ref<WorkspaceStockMarketDetailResponseVO | null>(null)
 const marketLoading = ref(false)
 const marketError = ref('')
@@ -94,6 +91,31 @@ const timelineCycles = ref<ResearchCycleDetailResponseVO[]>([])
 const timelineNextCursor = ref<string | null>(null)
 const timelineLoading = ref(false)
 const timelineError = ref('')
+const timelineCycleCursors = new Map<number, string | undefined>()
+let returnCursorPending = true
+function positiveQueryId(value: unknown) {
+  return typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value))
+    ? Number(value) : null
+}
+const returnCycleId = computed(() => positiveQueryId(route.query.cycleId))
+const returnCycleMissing = computed(() => returnCycleId.value !== null && !timelineLoading.value
+  && !timelineError.value && !timelineCycles.value.some(cycle => cycle.id === returnCycleId.value))
+function readReturnCursor() {
+  const cursor = route.query.timelineCursor
+  return returnCycleId.value && typeof cursor === 'string' && /^[1-9]\d{0,18}:[1-9]\d{0,18}$/.test(cursor) ? cursor : undefined
+}
+function assistantLink(cycleId: number) {
+  return {
+    name: 'workspace-research-agent',
+    params: { workspaceId: workspaceId.value, workspaceStockId: workspaceStockId.value, cycleId },
+    query: {
+      ...(timelineCycleCursors.get(cycleId) ? { timelineCursor: timelineCycleCursors.get(cycleId) } : {}),
+      ...(authorFilter.value !== 'ALL' ? { author: authorFilter.value } : {}),
+      ...(stanceFilter.value !== 'ALL' ? { stance: stanceFilter.value } : {}),
+      ...(typeFilter.value !== 'ALL' ? { type: typeFilter.value } : {}),
+    },
+  }
+}
 let timelineRequestVersion = 0
 let loadedTimelineTarget = ''
 const currentTime = ref(Date.now())
@@ -127,10 +149,12 @@ async function scrollToTimeline() {
   const requested = captureTarget()
   await nextTick()
   if (!isCurrent(requested)) return
-  const target = document.getElementById('research-timeline')
+  const target = (returnCycleId.value ? document.getElementById(`research-cycle-${returnCycleId.value}`) : null)
+    ?? document.getElementById('research-timeline')
   if (!target) return
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+  if (returnCycleId.value && target.id === `research-cycle-${returnCycleId.value}`) target.focus({ preventScroll: true })
 }
 
 async function toggleCompose() {
@@ -154,9 +178,12 @@ async function loadTimeline(reset: boolean) {
   if (!reset && (!timelineNextCursor.value || timelineLoading.value)) return false
   const requested = captureTarget()
   const requestVersion = reset ? ++timelineRequestVersion : timelineRequestVersion
+  const cursor = reset ? (returnCursorPending ? readReturnCursor() : undefined)
+    : (timelineNextCursor.value ?? undefined)
   if (reset) {
     timelineCycles.value = []
     timelineNextCursor.value = null
+    timelineCycleCursors.clear()
   }
   timelineLoading.value = true
   timelineError.value = ''
@@ -170,12 +197,13 @@ async function loadTimeline(reset: boolean) {
           ...(stanceFilter.value !== 'ALL' ? { stance: stanceFilter.value as StockStance } : {}),
           ...(typeFilter.value !== 'ALL' ? { type: typeFilter.value as OpinionType } : {}),
         },
-        reset ? undefined : (timelineNextCursor.value ?? undefined),
+        cursor,
       )
     ).data.data
     if (!isCurrent(requested) || requestVersion !== timelineRequestVersion) return false
     const cycles = reset ? [] : [...timelineCycles.value]
     for (const cycle of page.cycles) {
+      if (!timelineCycleCursors.has(cycle.id)) timelineCycleCursors.set(cycle.id, cursor)
       const existing = cycles.find((item) => item.id === cycle.id)
       if (existing) {
         const ids = new Set(existing.opinions.map((item) => item.id))
@@ -184,6 +212,9 @@ async function loadTimeline(reset: boolean) {
     }
     timelineCycles.value = cycles
     timelineNextCursor.value = page.nextCursor
+    if (reset) returnCursorPending = false
+    else if (route.hash === '#research-timeline' && returnCycleId.value
+      && page.cycles.some(cycle => cycle.id === returnCycleId.value)) await scrollToTimeline()
     return true
   } catch (error) {
     if (!isCurrent(requested) || requestVersion !== timelineRequestVersion) return false
@@ -197,6 +228,7 @@ async function loadTimeline(reset: boolean) {
 
 watch([authorFilter, stanceFilter, typeFilter], () => {
   if (loadedTimelineTarget === `${workspaceId.value}:${workspaceStockId.value}`) {
+    returnCursorPending = false
     void loadTimeline(true)
   }
 })
@@ -545,22 +577,26 @@ watch(
     marketLoading.value = false
     marketError.value = ''
     timelineRequestVersion += 1
+    returnCursorPending = true
+    timelineCycleCursors.clear()
     loadedTimelineTarget = ''
     timelineCycles.value = []
     timelineNextCursor.value = null
     timelineLoading.value = false
     timelineError.value = ''
-    authorFilter.value = 'ALL'
-    stanceFilter.value = 'ALL'
-    typeFilter.value = 'ALL'
+    authorFilter.value = positiveQueryId(route.query.author)?.toString() ?? 'ALL'
+    stanceFilter.value = typeof route.query.stance === 'string' && ['BULLISH', 'NEUTRAL', 'BEARISH'].includes(route.query.stance)
+      ? route.query.stance : 'ALL'
+    typeFilter.value = typeof route.query.type === 'string' && ['INITIAL', 'UPDATE', 'REVIEW'].includes(route.query.type)
+      ? route.query.type : 'ALL'
     void load()
   },
   { immediate: true },
 )
 
 watch(
-  () => route.hash,
-  (hash) => {
+  [() => route.hash, () => route.query.cycleId],
+  ([hash]) => {
     if (
       hash === '#research-timeline' &&
       loadedTimelineTarget === `${workspaceId.value}:${workspaceStockId.value}`
@@ -899,11 +935,14 @@ onBeforeUnmount(() => {
         <button class="ui-button" type="button" @click="loadTimeline(true)">重试</button>
       </p>
       <p v-else-if="!timelineCycles.length" class="empty-filter">当前筛选条件下没有观点。</p>
+      <p v-if="returnCycleMissing" class="cycle-note" role="status">返回的研究周期尚未出现在本页。可调整筛选或手动加载更早记录；不会自动读取全部历史。</p>
       <article
         v-for="cycle in timelineCycles"
         :key="cycle.id"
         class="cycle-card"
         :data-cycle-id="cycle.id"
+        :id="`research-cycle-${cycle.id}`"
+        tabindex="-1"
       >
         <header>
           <div>
@@ -920,10 +959,7 @@ onBeforeUnmount(() => {
               }}
               · {{ cycle.attentionLevel === 'FOCUS' ? '重点关注' : '普通关注' }}
             </h3>
-            <button class="ui-button" type="button" :aria-expanded="assistantCycleId === cycle.id"
-              @click="assistantCycleId = assistantCycleId === cycle.id ? null : cycle.id">
-              {{ assistantCycleId === cycle.id ? '收起研究助手' : '研究助手' }}
-            </button>
+            <RouterLink class="ui-button assistant-link" :to="assistantLink(cycle.id)">研究助手</RouterLink>
           </div>
           <dl>
             <div>
@@ -940,9 +976,6 @@ onBeforeUnmount(() => {
             </div>
           </dl>
         </header>
-
-        <ResearchAgentPanel v-if="assistantCycleId === cycle.id" :key="`${workspaceId}:${workspaceStockId}:${cycle.id}`"
-          :target="{ workspaceId, stockId: workspaceStockId, cycleId: cycle.id }" />
 
         <div class="timeline">
           <section
@@ -1324,7 +1357,9 @@ fieldset:disabled textarea {
   border-radius: var(--radius-control);
   background: var(--color-surface);
   overflow: hidden;
+  scroll-margin-top: 90px;
 }
+.assistant-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; padding: 8px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-action); background: var(--color-surface); color: var(--color-ink); font-size: 12px; text-decoration: none; }
 .cycle-card > header {
   display: flex;
   justify-content: space-between;
