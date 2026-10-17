@@ -1,8 +1,10 @@
 # 当前项目状态
 
-更新：2026-10-14；业务实施、个人学习与验证边界分别记录，详细任务与历史证据只见对应 specs／tasks。
+更新：2026-10-17；业务实施、个人学习与验证边界分别记录，详细任务与历史证据只见对应 specs／tasks。
 
 ## 当前阶段与下一步
+
+2026-10-17 完成获批的六题真实财务／报价检查：金额、原报币种／单位、同比、缺季度拒编及营收不证明订单的关键行为 6/6 正确，完整回答 4/6 满意，两题仍多列无关缺口，已更新追问规则为 v4；新规则只有 10 项定向回归与打包，尚未付费复测，005F 保持未勾选。第 20 节的无关日 K 缺口在本次报价题未复现，不代表整体质量通过。新增费用上界 0.060194 元，原实验累计 0.172606 元／10 元、未知占用 0，正式页面独立预算不变；测试库十类数据清零、临时端口释放。新增可复现入口及四表存储说明，完整证据见 [任务第 21 节](../specs/004-research-agent/tasks.md#21-财务六题真实检查与问答存储说明2026-10-17)。下一步单独核对 v4 的相关性，001R 可独立推进，再沿 007／008／009；个人学习待核对项不阻塞开发。
 
 2026-10-14 V2 已接入受限财务工具与依据查看：首批仅茅台／腾讯 2025 年官方年报及 2024 比较列，五科目、原报人民币元／百万元、归母定义与 Java 同口径变化；财务快照保存／恢复及版本核对、三工具组合和手机依据表格已接入。78 项后端、15 项组件、类型／lint／前后端构建与 26 组受控 Chrome 检查通过，证据见 [任务第 17 节](../specs/004-research-agent/tasks.md#17-官方原报限定覆盖与财务工具2026-10-14)。001F 在此限定覆盖关闭；Longbridge 显示口径仍 PARTIAL，不把其未经核实金额交模型，半年度／季度／其他股票保留缺口。005F 真实模型财务质量尚未验收。006 变化／恢复见第 15 节，005 原三工具及自造真实模型见第 14 节。本轮测试库数据清零、临时服务关闭，无真实模型费或部署，默认模型／正式预算仍关闭。下一步落实 005F 真实财务语义检查与 001R 报告预检，再做 007／008／009；个人待核对项不阻塞开发，V1 CODE-206I 保留。
 
@@ -38,8 +40,8 @@
 | 正式入口 | [ResearchAgentService](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java) 接梳理／提问和个人运行，固定摘要沿 SummaryService／Model；新追问由 [ResearchQuestionService.answer](../../src/main/java/com/stock/system/agent/service/ResearchQuestionService.java) 串工具往返。复习见 [生成核心](../engineering/agent-experiment.md#6-正式业务学习从资料到研究梳理结果) 与 [工具追问](../engineering/agent-experiment.md#7-正式业务学习一次工具追问怎样完成) |
 | 本人动作 | 已提交自然语言回答要求，并提出本案例的依据判断和 sources → input → generated 排查顺序。contains 填空取消，不记为本人完成。2026-10-14 明确授权仅四组自造样本真实检查及原累计 10 元上限；尚未本人对照本轮输出，不将授权记作质量审查 |
 | 本人产出／提示／验证 | 2026-10-13 本人提出简洁概括与资料缺口要求，由 AI 补明日期／事实边界后落入 ANSWER_RULE；内存 HTTP 替身检查该规则进入 system。在示例与讲解后，本人正确指出“可能增长”不能写成“已经增长”，实际事实需要对应权威材料；随后提出先检查 sources，再检查 input 是否给模型，最后检查 generated 是否漏处理。2026-10-14 在条件明确的半年／全年案例中指出下半年缺失、全年资料覆盖不齐；只记此例业务判断正确，不作为独立程序分析或迁移证据。尚无本人独立 Java 修改、真实模型质量比较或隔次复述证据 |
-| 已讲与卡点 | 主流程与 System／User 已讲，能够在给定场景下按资料读取、消息发送、模型返回定位问题；仍反馈看懂但难记、格式不清、教学未与开发同步。已承接财务读取／可比校验与断线恢复；半年／全年常识题被反馈过浅，已结束并修正 teaching。2026-10-14 已讲财务工具的消息往返，但本人明确反馈 messages 两次追加、response／responses、下一次模型调用及两类编号这一段不理解；当前用同一问题的消息列表变化及展开的对象构造补讲，等待反馈，不因讲过或源码测试记录为看懂／掌握 |
-| 下一动作 | 先补清 Java 内存中的消息列表、模型工具请求与 Java 工具结果各是什么、add 和 model.call 分别发生什么，再在同一例中分清 call ID 与 sourceId；暂不叠加新的引用校验或编号主题。学习仍为 AG-01，复习入口见 agent-experiment 第 7／9 节。工程验收以当前任务为准，个人待核对项不阻塞工程；实际模型质量审查与独立迁移待核对，单元测试系统教学仍在 Java 测试专题 |
+| 已讲与卡点 | 主流程与 System／User、财务读取／可比校验与断线恢复已讲；本人曾正确提出资料依据与 sources → input → generated 排查顺序。半年／全年常识题反馈过浅，已结束并修正 teaching。工具消息与编号经具体记录补讲后，2026-10-15 本人反馈示意看懂但难记、想不出代码大概。局部汇总起草先被反馈题设不清；补骨架后本人指出中文答案已在注释中、Java 仍写不出，并明确要求跳过。本次题设及提示未形成有效个人产出，练习结束；不把复述注释记为应用，也不由此推断整体构思或 Java 能力 |
+| 下一动作 | 2026-10-16 本人明确反馈讲解仍不太懂、数日推进过慢且缺少收获；逐段解释 JSON、引用、异常与测试未形成有效整体能力，停止沿辅助方法继续加课。已有本人 IDE 截图证明执行到 readValue 转换后，看到字符串与 reply 字段；独立解释、代码构思与编码仍待核对，已跳过的循环题不再布置。下一次以财务问答为完整业务目标，从需求拆到实现步骤、关键代码和结果核对，先由 AI 示范怎样构思与定位，再结合实际需求安排边界清楚的局部参与；不立即换成无背景编码题。开发继续沿 005F 真实财务质量与后续路线推进，不等待用户先学完全部实现细节。复习见 agent-experiment 第 7 节，上一轮 Prompt 修正工程证据见任务第 20 节；方法调整与讲过均不记为掌握 |
 | 节奏 | 时间与分段只见 roadmap；教学方法见 teaching，个人待核对项不阻塞工程。页面／回归与 Codex 四例质量检查不代替本人掌握；不将每个 Agent 单元手写或背格式设为门槛，默认模型关闭 |
 
 当前 MySQL 专题已完成第一轮教学：表关系与约束、主键／二级／联合／覆盖索引和回表、B+ 树与 `explain`、常用查询与游标分页、JDBC 批处理、事务与四种隔离级别、MVCC、`select ... for update`、记录锁／间隙锁／临键锁、悲观锁／乐观锁、死锁，以及 undo log／redo log／binlog。项目链路使用邀请加入、`workspace_member`、股票目录搜索、研究时间线和目录批量导入；复习答案见 [数据库与持久化面试问答](../career/interview/03-database-persistence.md)，结构与执行计划证据见 [数据模型](../architecture/data-model.md)。
@@ -56,11 +58,11 @@ Java 基础编码仍需补独立完成参数、字符串与返回值、对象、
 
 | Java 当前学习字段 | 实际快照 |
 | --- | --- |
-| 专题与单元目标 | Spring 核心与 Web，范围沿 [路线第 3 块](roadmap.md#3-spring-核心与-web-开发)。当前承接 Boot 自动配置：用 JDBC/MySQL 数据源说明依赖、配置参数、已有 Bean 与默认创建退让；独立应用仍待核对，不扩展多数据源或框架源码 |
-| 正式入口 | [StockSystemApplication](../../src/main/java/com/stock/system/StockSystemApplication.java)、[AuthController 构造器](../../src/main/java/com/stock/system/auth/controller/AuthController.java)、[AuthService 构造器](../../src/main/java/com/stock/system/auth/service/AuthService.java)、[PasswordConfig](../../src/main/java/com/stock/system/config/PasswordConfig.java)；用现有实现讲解，未修改业务源码；复习正文见 [Spring 教学](../engineering/spring.md) |
-| 已讲范围 | 构造器参数由容器提供；单构造器可省略 @Autowired；@Service／@Bean 注册与接口注入；必需依赖缺失的启动边界；IoC／DI／Bean 区分、@Configuration 与 @Bean 分工、默认配置类增强与普通调用的 A／B 对照、Bean 方法参数注入；getter、密码判断与短路、完整登录职责及依赖替换；默认单例、并发调用与请求数据；补字段／局部变量的声明位置，prototype 的 getBean 获取与普通调用区别、单例接收方的普通注入时机；request 按 HTTP 请求区分真实实例、RequestScope 注解及与局部变量的范围区别；侧聊补讲单例保留时间与容器关闭的关系、prototype 创建成本及独立任务用途；生命周期基础顺序、PostConstruct／PreDestroy 的时机及真实 SDK 客户端清理入口；Boot 启动入口、默认扫描范围、组合注解的三项职责、组件扫描与自动配置的区别；starter／连接参数／DataSource Bean 的关系，ConditionalOnClass 与 ConditionalOnMissingBean，默认数据源退让与连接成功的区别 |
-| 本人动作与卡点 | 2026-10-14 此前单例／多例复述与 Bean／HTTP 关系的卡点保留；用户最新要求继续，当前结合数据库依赖、配置项与现有 DataSource 接收方解释自动配置。此轮只有源码与官方条件核对，没有启动或连接实验，也没有本人独立解释或应用证据，不以继续标为掌握；正式源码未修改 |
-| 下一动作 | 按反馈短补依赖中的类与容器中的 Bean、修改参数与提供自定义 Bean 的区别；随后承接 Profile 选择及配置属性加载与覆盖，复用当前公共／开发／生产配置，不扩展源码与多数据源。Agent AG-01 待做动作继续保留 |
+| 专题与单元目标 | Spring 核心与 Web，范围沿 [路线第 3 块](roadmap.md#3-spring-核心与-web-开发)。2026-10-16 本人希望当天完成核心范围，同时指出流程导览仍未形成理解、此前细碎讲解与时长说法不一致。当前先明确 Service 层／Spring MVC 的实际形态，用无代码请求场景区分 Filter／Interceptor；核心范围不删减，不以一轮导览计为学完 |
+| 正式入口 | [AuthController](../../src/main/java/com/stock/system/auth/controller/AuthController.java)、[LoginRequestDTO](../../src/main/java/com/stock/system/auth/dto/LoginRequestDTO.java)、[AuthService](../../src/main/java/com/stock/system/auth/service/AuthService.java)、[GlobalExceptionHandler](../../src/main/java/com/stock/system/common/exception/GlobalExceptionHandler.java)、SecurityConfig 与 JwtAuthenticationFilter。配置绑定旧入口保留在 [Spring 教学](../engineering/spring.md)；本轮只讲现有实现，未修改业务源码 |
+| 已讲范围 | Bean／IoC／DI、构造器与接口注入、Service／Bean 注册和必需依赖的启动边界；配置类增强与普通调用、Bean 方法参数注入；登录链路阅读（getter、密码判断与短路）及依赖替换；单例／prototype／request、实例保留时间与获取／调用区别、字段／局部变量与请求并发；生命周期；Boot 启动、扫描与条件自动配置、默认数据源退让；Profile、配置覆盖、脚本传参；占位符／环境变量、Value 与 ConfigurationProperties 的查询／保存、绑定注册与 Duration 转换。本轮新增登录请求完整处理链、路由与 RequestBody／Valid、Controller／Service 分工、Jackson、MVC 全局异常及 Filter／Interceptor 区别。具体要点统一见 Spring 复习正文 |
+| 本人动作与卡点 | 本人能复述 Environment 统一查询、提出直接改原配置；配置绑定独立解释仍待核对。本轮明确反馈“能看懂但说不出是什么”：Service 层／Spring MVC 的形态及 Filter／Interceptor 区别未建立，要求用具体例子、语言描述、不贴代码；还质疑此前碎片展开和十几个小时估计与突然提速的关系。前一轮 MVC 仅为流程导览，未获独立理解证据，不把“继续”记为掌握；未运行测试、服务或修改环境，正式源码未修改 |
+| 下一动作 | 先解决进度与深度的质疑，说明核心必须理解、较少使用的分支达到用途／边界即可、不要求源码穷举；用查看研究详情的单一场景连接框架、业务类与两类公共处理入口，不另换题考试。再接 AOP／动态代理与 Transactional 的原理和失效边界；按路线核对已讲覆盖与待复习能力，旧卡点保留定点回看。Agent AG-01 待做动作继续保留 |
 
 ## 未完成边界
 

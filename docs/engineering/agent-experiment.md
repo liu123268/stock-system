@@ -168,11 +168,15 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 
 Service 的返回值先在 Java 内存里；模型提出的工具请求和执行结果分别追加到 `messages` 后，下一次 `model.call` 才会收到这些资料。call ID 用于配对一次工具请求和它的结果，`sourceId` 用于最终回答引用已登记的依据；两者职责不同，引用不能直接拿工具调用编号替代。财务查询的用户／空间／股票由 `context.target` 绑定，模型参数只选择期间和科目；越界或未知字段在执行 Service 前拒绝。
 
+最终回答沿 `parseReply` 分两步处理：`strict.readValue(text, ResearchReply.class)` 把 JSON 字符串转换成含 paragraphs／missingInformation 的对象，再检查段落数量、文字和引用等业务约束；能解析不代表对象符合项目要求。财务查询先把已核对的快照以 `sourceId → Evidence` 保存到 `context.evidence`，并把同一编号和数据交给模型；最终回答引用编号，Java 检查其是否已登记，返回时同时带回答与依据列表，页面按编号匹配并展示依据。编号存在只证明能对应到已登记资料，不能证明资料支持该段结论。离线观察入口为 ResearchFinancialQuestionTest 的 `sendsVerifiedFinancialSnapshotAndKeepsSourcePagesAndJavaChanges`，在 parseReply 的 readValue 行断点并步过，可对照字符串与对象字段；该测试不调用真实模型。
+
 资料够用时模型可以直接回答。例如已有有效研究梳理，追问“订单已经增长了吗”，可以用原观点说明只是猜测，当前缺财报或权威披露；没有权威资料工具就不能补成已确认。价格问题则要求本次查报价，历史聊天里的数字只是旧快照。日 K 的实际区间和名义变化由 Java 计算，模型负责解释其口径；不能把未复权价差说成投资回报。
 
 排查承接原来的 sources → input → generated，再补工具轨迹：没有查到需要的资料，看模型是否提出正确工具；提出了却失败，看 Java 是否拒绝参数、范围或资料上限；工具确实返回了，回答仍错误，比较 ToolResponse 与最终段落。接财务后每问最多四次模型请求、三次工具尝试，错误也计次数；费用统计全部实际派发，有一次用量未知就保留预留。超时、清空或权限变化时不交付迟到答案。精确额度、数据依赖和接口契约只见 [设计](../specs/004-research-agent/design.md#4-首批工具适配)，不要求学习时记住保护数字。
 
 四个自造问题的真实模型核对见 [005 证据](../specs/004-research-agent/tasks.md#14-ag-code-005工具追问与真实样本核对2026-10-14)。它证明当次资料和工具链路可用；源码由 AI 实现，用户的独立理解、审查和迁移证据继续单独记录，不能由测试通过代填。
+
+读测试时核对断言检查的对象：[财务工具测试](../../src/test/java/com/stock/system/agent/ResearchFinancialQuestionTest.java) 人为指定模型的工具请求和最终回复，用于检查 Java 往返、范围和依据；真实检查脚本中的 SUCCEEDED／answer 存在断言，只能证明相应程序条件，正文数值、单位、来源及是否回答本次问题仍需与快照对照。历史报价记录中无关的日 K 缺口已转为一次实际 Prompt 修正，证据见 [缺口聚焦](../specs/004-research-agent/tasks.md#20-报价回答的资料缺口聚焦2026-10-15)；输入规则已修改与真实输出已改善分别验收。
 
 ## 8. 正式业务学习：断线后查原任务
 
@@ -181,6 +185,21 @@ Service 的返回值先在 Java 内存里；模型提出的工具请求和执行
 入口是 [ResearchAgentService.requestStatus](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java)：当前授权 → 当前账号的 requestId 查运行 → 再用完整研究对象查询 → 重验来源 → 返回状态／有效答案。客户端 [待确认标记](../../frontend/src/utils/agent-pending.ts) 只存当前标签页的编号、账号和对象，不存问题或凭据；它用于找任务，不能作为权限证明。历史正文仍由后端授权接口返回。
 
 来源变化的检查发生在模型往返之间和交付前。撤回使依赖回答失效；权限失效不再返回正文；清空增加版本，旧任务不能重新写回。它们停止下一步工作，已经发生的模型调用仍计费。临时断网、任务失败和资料失效分别判断，不能统一当作“重新发一次就好”。程序证据见 [006 任务](../specs/004-research-agent/tasks.md#15-ag-code-006记录变化与断线恢复2026-10-14)，这条链路与 HTTP、幂等、状态保存共同服务于可靠恢复。
+
+### 已完成的问答怎样入库
+
+当前 [保存实现](../../src/main/java/com/stock/system/agent/mapper/ResearchAgentRecordMapper.java) 使用 JdbcTemplate 执行 SQL。用户发送问题后先建立 RUNNING 运行；模型和工具在数据库事务外执行，交付前再核对权限、来源及运行版本。最后在一个短事务中更新运行状态，并且只在成功时插入消息：
+
+| 表 | 职责 |
+| --- | --- |
+| `agent_session` | 用用户、空间、共享股票与周期的唯一组合标识一份个人对话 |
+| `agent_message` | `result_json` 保存结构化结果；追问的问题、回答段落及引用依据位于其中的 followUp。`dependencies_json` 保存用于重验有效性的资料依赖 |
+| `agent_run` | 保存请求编号／摘要、状态、版本、调用次数与用量，支持幂等和中断恢复；失败不插入成功消息 |
+| `agent_budget` | 独立记录已发生或尚未确定的费用占用，不能随清空消息重置 |
+
+结构以 [V13](../../src/main/resources/db/migration/V13__create_research_agent_records.sql)／[V14](../../src/main/resources/db/migration/V14__track_agent_model_and_tool_calls.sql) 为准。页面恢复时读取本人当前对象的最近一批消息，再核对权限和来源；查看更早记录继续分页，不因为打开页面重新生成答案。清空会删除当前对象的 message 正文与依赖、增加会话版本，保留必要运行／费用记录，阻止迟到结果重新出现。
+
+未发送问题由 [草稿 Store](../../frontend/src/stores/agent-draft.ts) 暂存本次登录的内存，往返页面能恢复，刷新或退出后不保留；失败时输入仍留在当前页面，不把它当作已完成问答入库。数据库保存、前端草稿和每轮传给模型的有界历史各有职责，具体上限与权限机制只见 [记录设计](../specs/004-research-agent/design.md#61-保存与撤回处理)。
 
 ## 9. 财务读取准备：数字必须带口径
 
@@ -193,3 +212,31 @@ Service 的返回值先在 Java 内存里；模型提出的工具请求和执行
 Longbridge 端点仍只有展示币种和数值，不能完整说明金额单位及利润／原报口径，因此该路径保持 PARTIAL，变化值为空；新原报目录只为已核实样本补齐依据，不把两个公司泛化到所有股票或季度。报告期结束日 `fp_end` 也不是公告日。排查继续沿 sources → input → generated：sources 缺口径时先修数据适配或来源，不把它当成模型漏读。恢复财务引用还要核对当前报告版本及数字；旧来源失效时整条回答失效。无需先背 DTO 拼写，应能判断“这些数字是否回答所问指标，是否具有相同口径”。
 
 报告准备在项目根目录进行：用隔离 Python 环境安装 [解析依赖](../../scripts/requirements-report-source.txt)，按 [清单](../../scripts/report-sources/official-financial-reports.json) 的官方链接取得对应文件并放入 `.local/report-source/pdfs/`。执行 `python scripts/import-official-financial-reports.py` 核对并生成金额目录，`--check` 只比较、不改文件；成功输出两份报告／20 个数值，哈希、单位或行布局变化则失败，需先审阅新来源。原 PDF 和提取文本由 Git 忽略，不把整份报告送给模型；这是受审样本导入，RAG 的分块、向量化与检索另验。
+
+## 10. 财务真实模型检查怎样复现
+
+[固定六题](../../scripts/agent-quality/financial-cases.mjs) 分别检查 A 股年度金额与同比、港股原报币种／单位、缺可比期、未覆盖季度、营收与订单猜测、报价缺口的相关性。期望数字从已审年度报告目录读取，保留金额字符串和原报定位；[程序检查](../../scripts/agent-quality/financial-cases.test.mjs) 验证工具快照与请求上限，不能自动判断自然语言是否支持结论。每次结果仍须逐题审阅，不能把 HTTP 成功或程序检查通过当成模型质量通过。
+
+在项目根目录先打印计划：
+
+```powershell
+node frontend/e2e/research-agent-financial-probe.mjs --dry-run
+```
+
+它不读取 Key、不连接数据库、不启动服务。检查题目与发送范围后，可在已准备 JDK 17、Node、MySQL 客户端、打包 JAR 及 DB_PASSWORD／JWT_SECRET 环境变量的 PowerShell 7 中执行本地替身：
+
+```powershell
+./scripts/run-agent-financial-probe.ps1 -Mode Fixture
+```
+
+[启动脚本](../../scripts/run-agent-financial-probe.ps1) 建立独立 test 后端与前端代理，Fixture 只用回环模型和模拟行情，不触碰真实实验账本。执行前检查测试端口空闲，写入前检查前后端探针及实际 SQL catalog；每题保存、恢复和相同 requestId 去重后，核对另一成员看不到本人记录。finally 只清理本轮随机账号及关联数据，并关闭自己记录的 PID／启动时间对应服务。成功输出 FINANCIAL_PROBE_OK 和 FINANCIAL_PROBE_SERVICES_CLOSED，结果位于忽略的 target/agent-financial-fixture-*。
+
+真实模式另需本轮数据范围及费用授权，命令中的开关只表达执行意图，不能代替授权：
+
+```powershell
+./scripts/run-agent-financial-probe.ps1 -Mode Real -ApprovedFinancialData
+```
+
+Real 从本地忽略文件读取既有 Key，仅经子进程环境传递，固定 DeepSeek 官方接口，沿用第 3 节原累计 10 元实验 JSONL；不创建新账本、不动正式页面的独立预算，不自动付费重试。单题最多四次模型请求、三次工具尝试。results.json 保存期望、回答、工具轨迹、提示版本与用量，verification.json 区分程序检查和待人工语义审查；完整结果与坏例子归档于 [当前任务证据](../specs/004-research-agent/tasks.md#21-财务六题真实检查与问答存储说明2026-10-17)。
+
+中途失败须先核对保存结果和已发生费用。只有确认是检查器误判、已执行答案能够离线重新通过时，才使用 -ContinueFrom 指向该轮 results.json，继续尚未发问的题。该入口核对相同题集、模型／价格条件、真实／替身模式并拒绝重复项；已执行问题复用保存输出，不发新请求。真正的失败答案不能借续做重新付费。修正提示词后的真实复测须单独安排，不能把旧输出重新标为新版本的效果。

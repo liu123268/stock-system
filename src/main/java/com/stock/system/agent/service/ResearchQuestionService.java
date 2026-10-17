@@ -30,7 +30,7 @@ import java.util.*;
 /** 所有查询由当前 Java 对象绑定权限范围；模型只能提出有界工具请求。 */
 @Service
 public class ResearchQuestionService {
-    public static final String VERSION = "research-question-20261014-v2-financial";
+    public static final String VERSION = "research-question-20261017-v4-question-gaps";
     public static final int MAX_MODEL_CALLS = 4;
     public static final int MAX_TOOL_ATTEMPTS = 3;
     private final StockResearchSourceService sources;
@@ -57,6 +57,9 @@ public class ResearchQuestionService {
             比较同一成员前后变化要有该作者两条不同记录依据；说最新观点应采用所读取范围内最新记录。
             最终仅返回 JSON：{"paragraphs":[{"text":"直接回答本次问题","sourceIds":["实际提供的来源ID"]}],"missingInformation":["具体缺口"]}。
             段落1至8条，每段最多2000字符、最多8个引用；缺口0至8条，不新增字段，不输出工具参数或思考过程。
+            缺口仅列影响本次问题结论的资料；不要把未查询但与本次问题无关的工具或指标列为缺口。
+            缺口指完成用户本次要求仍必需但未取得的证据；已经足够回答时返回空数组，不列举未使用功能。
+            只问指定年度数字及同比时，不额外列出经营驱动、销量或后续季度趋势缺口；用户追问这些结论时再说明所需资料。
             引用必须来自本次工具或已核对的历史材料，概念解释可没有引用。不要重复整份研究梳理。
             """;
 

@@ -41,14 +41,17 @@ const server = createServer(async (request, response) => {
       if (question.includes('最新可用价')) selected = question.includes('成员') ? ['read_cycle_opinions', 'read_latest_quote'] : ['read_latest_quote']
       if (question.includes('名义收盘价')) selected = ['read_daily_prices']
       if (question.includes('年度财务')) selected = question.includes('成员') ? ['read_cycle_opinions', 'read_latest_quote', 'read_financial_facts'] : ['read_financial_facts']
-      message = { role: 'assistant', content: '', tool_calls: selected.map((name, index) => ({ id: `fixture-call-${calls}-${index}`, type: 'function', function: { name, arguments: name === 'read_daily_prices' ? '{"dateFrom":"2026-09-01","dateTo":"2026-09-04"}' : name === 'read_financial_facts' ? '{"series":"ANNUAL","period":"FY 2025","metrics":["REVENUE","NET_PROFIT"]}' : '{}' } })) }
+      if (/营业收入|归母净利润|应占盈利|2024年收入/.test(question)) selected = ['read_financial_facts']
+      const financialArgs = question.includes('第三季度') ? { series: 'QUARTER', period: 'Q3 2025', metrics: ['REVENUE'] }
+        : { series: 'ANNUAL', period: question.includes('2024年收入') ? 'FY 2024' : 'FY 2025', metrics: ['REVENUE', 'NET_PROFIT'] }
+      message = { role: 'assistant', content: '', tool_calls: selected.map((name, index) => ({ id: `fixture-call-${calls}-${index}`, type: 'function', function: { name, arguments: name === 'read_daily_prices' ? '{"dateFrom":"2026-09-01","dateTo":"2026-09-04"}' : name === 'read_financial_facts' ? JSON.stringify(financialArgs) : '{}' } })) }
       finish = 'tool_calls'
     } else {
       const paragraphs = toolResponses.map(result => {
         if (result.opinions) return { text: `成员观点仍需权威资料核对：${result.opinions.map(item => item.reason).join('；')}`, sourceIds: result.opinions.slice(-8).map(item => item.sourceId) }
         if (result.quote) return { text: `本次取得的最新可用报价为${result.quote.price} ${result.quote.currency}，时间${result.quote.quoteTime}，来源${result.quote.source}，这是模拟行情。`, sourceIds: result.quote.status === 'AVAILABLE' ? [result.sourceId] : [] }
         if (result.dailyPrices) return { text: `本次区间名义收盘价差为${result.dailyPrices.nominalPriceDifference} ${result.dailyPrices.currency}，未复权，不代表投资回报。`, sourceIds: result.dailyPrices.status === 'AVAILABLE' ? [result.sourceId] : [] }
-        if (result.financialFacts) return { text: '已核对所选年度报告的营收与股东应占利润，原报人民币百万元；不能据此证明订单增长。', sourceIds: result.sourceId ? [result.sourceId] : [] }
+        if (result.financialFacts) return { text: result.sourceId ? '已核对所选年度报告财务科目，数值与口径见本次依据；不能据此证明订单增长。' : '本次资料没有可核实的所问财务期间或科目，不用其他年度数字替代。', sourceIds: result.sourceId ? [result.sourceId] : [] }
         return { text: '本次查询未取得可用资料。', sourceIds: [] }
       })
       message = { role: 'assistant', content: usedMode === 'invalid' ? 'invalid-json' : JSON.stringify({ paragraphs: paragraphs.length ? paragraphs : [{ text: '这是通用概念说明。', sourceIds: [] }], missingInformation: [toolResponses.some(result => result.financialFacts) ? '未读取订单资料，财务数字不证明订单变化。' : '未读取财报与公告，无法确认实际增长。'] }) }

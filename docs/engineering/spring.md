@@ -249,3 +249,73 @@ Spring 容器还可以单独关闭，所在的 Java 进程继续执行其他代�
 源码中的数据源接收方与独立命令行的手工数据源分别判断；独立命令中创建普通对象不等于在应用容器中注册 DataSource Bean。以上为依赖、配置与源码分析，未启动应用核对运行时连接池类型。自动准备 Bean 不保证数据库连接成功；MySQL 必须可用且连接参数正确。嵌入式数据库、JNDI 与 R2DBC 属于其他条件路径，不将当前 MySQL 例子的 URL 要求扩大为所有场景。
 
 面试表达可围绕“Boot 已提供配置实现，按依赖与 Bean 等条件启用；用户配置可替代对应默认组件”解释，再指出项目参数位置，不需要背自动配置源码。依据：[自动配置与用户配置替代](https://docs.spring.io/spring-boot/reference/using/auto-configuration.html)、[SQL 数据源与连接池](https://docs.spring.io/spring-boot/reference/data/sql.html)、[条件注解](https://docs.spring.io/spring-boot/reference/features/developing-auto-configuration.html)、[默认连接池分支](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/jdbc/autoconfigure/DataSourceAutoConfiguration.PooledDataSourceConfiguration.html)。
+
+## 11. Profile 与配置加载、覆盖
+
+Profile 用环境名称选择一组配置，让同一套应用代码在开发、测试、生产环境使用不同参数。项目的 [application.properties](../../src/main/resources/application.properties) 提供公共配置，另外三份 `application-dev.properties`、`application-test.properties`、`application-prod.properties` 分别提供对应环境的配置。
+
+公共文件当前声明 `spring.profiles.default=dev`：没有显式激活其他 Profile 时默认选择 dev。按单个环境理解，未显式指定时组合公共文件与 dev 文件，选择 test 时组合公共文件与 test 文件，选择 prod 时组合公共文件与 prod 文件；dev 不因为是默认值就额外加入显式选择的 test。Profile 文件补充配置，同一位置的同名配置项可覆盖公共文件中的值，未重写的项继续使用公共值。
+
+应用可用 `--spring.profiles.active=test` 这样的启动参数选择环境；它是交给应用的参数，不是独立命令。[start-dev.cmd](../../scripts/start-dev.cmd) 与 [start-test.cmd](../../scripts/start-test.cmd) 当前分别通过 Maven 插件选项 `spring-boot.run.profiles=dev`／`test` 选择环境，不能把 Maven 插件属性名与应用自己的参数名混为一项配置。
+
+启动脚本与配置文件不靠放在同一目录建立联系。测试脚本在项目根目录运行 Maven，使用 `-Dspring-boot.run.arguments=--server.port=18082` 要求插件把端口选项传给应用。应用的 `main(String[] args)` 接收启动参数，再通过 `SpringApplication.run(StockSystemApplication.class, args)` 交给 Boot；Boot 将参数作为配置来源处理。方向是脚本启动程序并传参，配置文件不反过来读取脚本。
+
+`application-test.properties` 是配置数据文件，不是 Java 测试类。Maven 按资源目录约定把 `src/main/resources` 中的内容提供到运行类路径，Boot 按默认位置和 `application-{profile}.properties` 命名规则加载相应文件。这里的类路径是运行时查找类和资源的位置，不要求源文件与启动脚本物理相邻。依据：[Maven 启动插件的 arguments／profiles 参数](https://docs.spring.io/spring-boot/maven-plugin/run.html)、[Maven 资源目录约定](https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html)。
+
+真实端口例子：公共配置是 `server.port=8082`，生产文件当前也显式配置为 8082；测试文件本身没有另设端口。测试启动脚本传入 `--server.port=18082`，按普通应用启动参数优先于文件配置的规则，脚本要求后端使用 18082。此处根据源码和优先级分析，未运行脚本或测试。
+
+本轮比较的常规来源可按“命令行参数 > 操作系统环境变量 > 配置文件”理解；不是完整来源清单。配置文件中还要区分外部文件、打包内文件、环境专用文件及显式导入等顺序，不能一概说任意 Profile 文件都高于所有公共文件。当前 dev／prod 文件另有 `spring.config.import` 声明，可能加载额外文件，也不等于 Spring 会自动读取任意 `.env` 文件。
+
+参数加载与覆盖得到最终配置后，自动配置才据此及其他条件准备基础组件；选择环境不是另写一套 Service，也不等于改动业务源码。本阶段掌握环境选择、公共与环境文件组合、同名项覆盖及常见启动覆盖即可；Profile 组、多环境同时激活和完整优先级细节按实际需求展开，不新增复杂配置。依据：[Profiles](https://docs.spring.io/spring-boot/reference/features/profiles.html)、[外部化配置与覆盖顺序](https://docs.spring.io/spring-boot/reference/features/external-config.html)。
+
+## 12. 占位符与 Value：配置值进入构造器
+
+`${名称:默认值}` 由 Spring 解析：从配置来源查找指定名称，找不到时采用冒号后的默认值。名称可以由环境变量或其他配置来源提供，不是让 Java 类打开某个同名文件。环境变量是运行环境向进程提供的命名值，启动配置也可以引用它。
+
+项目 [开发配置](../../src/main/resources/application-dev.properties) 与生产配置声明 `stock-system.market.mode=${MARKET_MODE:longbridge}`。这里先查 `MARKET_MODE`，找不到则使 `stock-system.market.mode` 取值为 `longbridge`；测试配置直接声明该项为 `mock`。模式名在本单元只作配置字符串，不扩展供应商调用。
+
+[StockMarketPreviewService 构造器](../../src/main/java/com/stock/system/stock/service/StockMarketPreviewService.java) 的参数是 `@Value("${stock-system.market.mode:mock}") String marketMode`，方法体执行 `this.marketMode = marketMode`。Spring 创建这个 Service 时解析 Value、把字符串作为构造器参数传入，再由构造器保存到字段；真实类还有其他对象依赖，不能把教学精简示意当作替换源码。
+
+两处默认值的查找目标不同：配置文件表达式缺少 MARKET_MODE 时使用 longbridge；Value 表达式只有找不到 `stock-system.market.mode` 配置项时才回退到 mock。不能因注解里出现 mock，就断言开发环境最终模式为 mock。假设选 dev、没有 MARKET_MODE 且没有其他覆盖，链路为“缺少 MARKET_MODE → 配置项解析为 longbridge → Value 取得 longbridge → 构造器字段保存 longbridge”；若该名称由环境变量明确提供 directory，且无更高优先级覆盖，则传入 directory。以上为源码规则推演，未读取或修改当前进程环境、未启动应用。
+
+Value 注解来自 Spring，可用于字段或构造器等注入位置，本例在构造器参数上。普通的这类注入发生在 Bean 创建阶段；后续业务方法使用已保存的字段，不会每次请求自动重新读取文件，修改配置也不意味着该字段自动刷新。依据：[Value 注入与默认值](https://docs.spring.io/spring-framework/reference/core/beans/annotation-config/value-annotations.html)、[配置占位符](https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.files.property-placeholders)。
+
+## 13. ConfigurationProperties：同组配置绑定到对象
+
+先连接配置来源、查询入口与接收对象：application-dev.properties、环境变量、启动参数等提供配置，Spring 的 Environment 为这些来源提供统一查询入口；项目 [MarketRedisProperties](../../src/main/java/com/stock/system/stock/market/MarketRedisProperties.java) 是接收其中一组有效值的 Java 类。`@ConfigurationProperties` 的绑定从 Environment 可访问的配置中，按 `prefix = "stock-system.market.redis"` 匹配并设置对象属性，不是另建一份配置去替换原文件，也不会把字段值反向写入环境配置。修改某个环境的参数，直接修改已有环境配置项或相应外部来源即可，不需要另建覆盖用的 Java 类；第 10 节自定义 Bean 替代默认 Bean 是另一种机制。
+
+使用 Environment 后并非必须再建参数类。消费方可以显式调用 `environment.getProperty("stock-system.market.redis.quote-ttl")` 查询；也可以让 Spring 先把同组参数转换并保存进配置对象，业务通过 `properties.getQuoteTtl()` 读取已保存的 Duration。后者把同组字段、类型和默认值集中起来，业务不用反复写配置键名或处理文本转换。前述 Value 例子也在创建 Bean 时先查询并注入、再保存为字段，并非每次业务调用都查询 Environment。大写的 MARKET_REDIS_QUOTE_TTL 是配置名称，不因大写就成为 Java 常量；`${…}`、Value、ConfigurationProperties 绑定或显式 getProperty 调用才建立相应的查值过程，普通 Java 标识符不会自动查配置。
+
+| 配置项（省略共同前缀） | Java 属性 | 类型与值示例 |
+| --- | --- | --- |
+| `enabled` | `enabled` | true → boolean |
+| `quote-ttl` | `quoteTtl` | 5s → 表示 5 秒的 Duration |
+| `lock-wait` | `lockWait` | 800ms → 表示 800 毫秒的 Duration |
+
+横线形式名称可以匹配 Java 驼峰名称，是 Boot 的宽松绑定规则。Duration 是 Java 表示时间长度的类型；绑定时按目标类型转换配置文本。当前可变配置类提供 getter／setter，绑定通过 setter 设置属性，消费方通过 getter 读取。缺少某个配置项时，可保留对象字段自己的初始化值；这不表示该初始化值被写回全局配置来源。
+
+当前 quote-ttl 在环境文件的占位符中默认 5s，Java 字段也初始化为 5 秒，分别处理“找不到 MARKET_REDIS_QUOTE_TTL 名称”和“该属性未从外部绑定赋值”的情况。两处默认不是 Spring 强制要求重复声明；项目 [缓存网关测试的构造代码](../../src/test/java/com/stock/system/stock/market/CachingLongbridgeMarketGatewayTest.java) 还直接 new MarketRedisProperties，不经过配置绑定，也能使用字段默认值。参数类集中定义字段类型、保存参数；外部配置让不同环境可调整取值而不改业务 Java 实现。给某个环境设置 30s 时，配置会把对象字段设为 30 秒，不要求同时把 Java 的兜底值从 5 改成 30；这是赋值替换字段初始值，不是替换其他配置文件。
+
+该类型当前没有 Component 注解；项目在缓存组件上使用 `@EnableConfigurationProperties(MarketRedisProperties.class)` 注册并启用绑定。[CachingLongbridgeMarketGateway](../../src/main/java/com/stock/system/stock/market/CachingLongbridgeMarketGateway.java) 与 RedisMarketSharedCache 各自有启用条件：相关组件实际被加载时，相应注册声明才参与处理，不能推断所有 Profile 都必然创建该配置 Bean。前者构造器接收配置对象、保存为 `properties` 字段，业务中调用 `properties.getQuoteTtl()` 取得缓存时间。
+
+假设最终有效配置中的 quote-ttl 为 30s，则绑定后 getter 返回表示 30 秒的 Duration，而不是字段初始的 5 秒。配置来源 → Environment 统一查询入口 → 前缀与属性匹配、类型转换并保存到配置 Bean → 构造器注入消费组件 → getter 读取已保存的值，是本单元完整链路。此处是规则与源码推演，未修改配置、未运行应用；Value 适用于指定单项值，同组配置可集中使用 ConfigurationProperties，不要求用两套方式重复读取同一组参数。
+
+依据：[ConfigurationProperties 的前缀定义](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/context/properties/ConfigurationProperties.html)、[EnableConfigurationProperties 注册支持](https://docs.spring.io/spring-boot/api/java/org/springframework/boot/context/properties/EnableConfigurationProperties.html)、[宽松绑定与 Duration 转换](https://docs.spring.io/spring-boot/reference/features/external-config.html)。
+
+## 14. 登录请求：MVC、参数绑定、校验与响应
+
+Spring MVC 是项目通过依赖引入、与业务代码一起运行的 Web 框架，由现成的 Java 组件组织 HTTP 请求与 Java 方法之间的连接；它不是某一个业务类或独立部署的服务。Service 层是开发者按业务职责组织的一组 Java 类，AuthService 是其中的一个类；“层”表示职责分工，登录规则仍由开发者编写，Service 注解本身不会生成这些业务规则。
+
+以直接访问后端的 POST /api/auth/login 为例，默认端口沿 application.properties 的 8082；前端开发代理和生产反向代理是外层转发环节。内嵌 Tomcat 接收 HTTP 请求、管理 Servlet 的运行；Servlet 是处理 Web 请求的 Java 标准组件，DispatcherServlet 是 Spring MVC 的统一入口。通常执行路径为 Tomcat → Servlet Filter／Security 过滤器链 → DispatcherServlet → 定位 Controller 方法 → 参数读取与校验 → Controller → Service → Mapper／数据库；成功返回时，经消息转换器用 Jackson 把响应对象转换成 JSON。HandlerMapping 负责定位处理方法，HandlerAdapter 负责适配调用及参数／返回值处理。
+
+[AuthController](../../src/main/java/com/stock/system/auth/controller/AuthController.java) 的类级 RequestMapping /api/auth 与方法级 PostMapping /login 共同匹配 POST /api/auth/login。`@RequestBody` 通过消息转换器将 JSON 转成 LoginRequestDTO；`@Valid` 触发该对象的校验，本接口未声明 BindingResult，校验失败在进入 Controller 方法体前抛出 MethodArgumentNotValidException。DTO 的 NotBlank 拒绝 null、空串和纯空白，Size 对登录密码要求 4～64 字符；这项长度兼容旧凭据，不应误用为注册／改密的新密码规则。
+
+Controller 接收和返回 HTTP 数据，AuthService 负责查账号、密码匹配、账号状态和签发 Token 等业务；结构校验通过不代表账号存在、密码正确或权限满足。`Result.success(authService.login(request))` 先执行 Service 得到 LoginResponseVO，再包进 Result；RestController 包含响应体语义，Spring 将返回对象写入 HTTP 响应，业务代码不必手动拼 JSON。
+
+[GlobalExceptionHandler](../../src/main/java/com/stock/system/common/exception/GlobalExceptionHandler.java) 的 RestControllerAdvice／ExceptionHandler 把 MVC 可解析的异常转成统一响应：该请求的参数校验错误返回 HTTP 400 与 INVALID_REQUEST，BusinessException 按 ErrorCode 返回相应 HTTP 状态及错误信息。此处的“全局”是 MVC 异常处理范围；过滤器中在进入 MVC 前直接拒绝的请求，由安全链自身处理，不能推断 ControllerAdvice 自动捕获所有层的异常。
+
+Filter 在 Servlet 层包围配置范围内的后续链路，不依赖 MVC 已定位哪个 Controller；Spring MVC 的 HandlerInterceptor 在找到处理方法后参与前置、后置和完成回调，能直接取得目标处理器。两者都可记录日志、决定是否继续，不能只按“认证／日志”给它们划分互斥用途。项目 JWT 认证沿 [JwtAuthenticationFilter](../../src/main/java/com/stock/system/security/JwtAuthenticationFilter.java) 和 SecurityConfig；无 Token 的登录请求由安全规则放行，不会免除 AuthService 对账号密码的验证。当前未发现自定义 HandlerInterceptor，其职责区别属于知识准备。
+
+一个对照场景：用户请求查看研究详情，安全过滤器链先识别身份，无有效身份的受保护请求可在进入 Controller 前被拒绝；身份有效后，MVC 定位详情方法。若未来希望按该方法声明的业务名称记录调用结果和耗时，可用 Interceptor 在取得目标方法后参与记录；此拦截器是假设用途，并非已实现功能。Controller 再调用 Service 执行资料访问规则与读取。Filter 也能记请求耗时，选择 Interceptor 的理由是本例需要 MVC 识别出的处理方法信息。对当前同步处理路径，前置顺序可记为 Filter → DispatcherServlet → Interceptor（若配置）→ Controller；请求可在中间被拒绝，并非每次都执行 Service／SQL。
+
+依据：[DispatcherServlet 请求处理](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/sequence.html)、[RequestBody 与参数校验](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-methods/requestbody.html)、[MVC 拦截器](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/handlermapping-interceptor.html)。本节按当前源码与框架契约讲解，未启动服务或执行登录请求。

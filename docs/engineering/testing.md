@@ -66,6 +66,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 `frontend/e2e/research-agent-real-probe.mjs` 是显式启用的付费检查，只有 `AGENT_REAL_MODEL_PROBE=true`、test／实际 catalog／前端代理确认、官方端点和共享账本探针全部满足才发送。仅新建自造观点、mock 行情和四类问题；临时后端须显式配置 `stock-system.agent.experiment-ledger`，复用原累计 10 元 JSONL／文件锁，不删除账本、不自动付费重试。Key 仅由本地忽略配置提供，不能将其值写入启动参数、结果或日志。该入口的数据外发与预算按实际授权核对，不由环境开关代替授权。每例保存结果和用量，结构成功后再对照原文／快照审查语义；任一失败先停并核对用量，finally 清理自造业务数据，保留真实已发生费用。实际授权、语义结果、视口和清理只见 [005 任务](../specs/004-research-agent/tasks.md#14-ag-code-005工具追问与真实样本核对2026-10-14)。
 
+[财务六题入口](../../scripts/run-agent-financial-probe.ps1) 将公开年报的已核实科目加入检查，使用独立 AGENT_FINANCIAL_MODEL_PROBE 开关；默认 Fixture，Real 另核对本轮授权并共享原实验账本。--dry-run、运行前提、续做及人工审查操作只见 [实验说明第 10 节](agent-experiment.md#10-财务真实模型检查怎样复现)。对应 Node 检查执行 `node --test scripts/agent-quality/financial-cases.test.mjs scripts/agent-quality/financial-probe-guard.test.mjs`，仅用合成输出和子进程，不读取 Key、不连接服务。真实模型结果必须分别记录数字／工具契约与回答语义，失败案例不隐藏；测试库数据清理和进程关闭继续沿第 4／5 节，真实费用不可随清理重置。
+
 ## 3. 前端测试
 
 - 类型检查：`npm.cmd run type-check`。
