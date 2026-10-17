@@ -240,3 +240,26 @@ node frontend/e2e/research-agent-financial-probe.mjs --dry-run
 Real 从本地忽略文件读取既有 Key，仅经子进程环境传递，固定 DeepSeek 官方接口，沿用第 3 节原累计 10 元实验 JSONL；不创建新账本、不动正式页面的独立预算，不自动付费重试。单题最多四次模型请求、三次工具尝试。results.json 保存期望、回答、工具轨迹、提示版本与用量，verification.json 区分程序检查和待人工语义审查；完整结果与坏例子归档于 [当前任务证据](../specs/004-research-agent/tasks.md#21-财务六题真实检查与问答存储说明2026-10-17)。
 
 中途失败须先核对保存结果和已发生费用。只有确认是检查器误判、已执行答案能够离线重新通过时，才使用 -ContinueFrom 指向该轮 results.json，继续尚未发问的题。该入口核对相同题集、模型／价格条件、真实／替身模式并拒绝重复项；已执行问题复用保存输出，不发新请求。真正的失败答案不能借续做重新付费。修正提示词后的真实复测须单独安排，不能把旧输出重新标为新版本的效果。
+
+## 11. 报告正文检索的本地预检
+
+财务工具回答已核实科目的数字，正文检索先寻找能够支持业务说明的段落。[预检程序](../../scripts/rag-preflight/preflight.py) 按受审边界解析中文 PDF，分成带版本／页码／页内位置的短片段，用本机中文模型将问题和片段转成同维向量，再在 Qdrant 本地索引中寻找候选。相似度用于排序，不能证明段落支持结论；输出保留候选和关键词基线，回答模型尚未接入。本轮是条件预检，正式 Java 权限、工具和页面继续沿 008 实施，不增加 Python 业务服务。
+
+在项目根目录，先用 --stage plan 打印来源／模型计划，不读取 PDF 或模型权重，不连接网络／数据库。当前机器已经准备隔离环境及权重；新机器先将 [来源清单](../../scripts/rag-preflight/sources.json) 的两份官方 PDF 放入 .local/report-source/pdfs，文件名、哈希和页数必须匹配，再执行：
+
+```powershell
+python -m venv .local/rag-preflight/venv
+./.local/rag-preflight/venv/Scripts/python.exe -m pip install -r scripts/rag-preflight/requirements.txt
+./.local/rag-preflight/venv/Scripts/python.exe -X utf8 scripts/rag-preflight/download_model.py
+./.local/rag-preflight/venv/Scripts/python.exe -X utf8 scripts/rag-preflight/preflight.py --stage retrieve
+```
+
+前两步创建项目内环境并安装固定依赖；第三步只下载固定提交的约 95 MB 公共模型文件，核对尺寸及哈希，不发送资料或凭据。最后一步离线运行真实 CPU 向量化、存储和检索，没有模型 API 费用，也不连接业务 MySQL。只想检查解析时用 --stage parse，不加载向量模型。环境、权重与结果均由 Git 忽略，脚本和受审清单保留在版本库。
+
+成功后打印 target/rag-preflight-* 目录。先读其中 review.md，看问题找到哪份报告的哪一页，再用 retrieval.json 查看排名／分数，用 passages.json 核对正文及位置。verification.json 保存版本和清理结果；模型缓存保留，临时向量数据先按本轮 ID 删除并核对 0，再关闭库并删除唯一临时目录。原 PDF 不改写。自动边界检查执行：
+
+```powershell
+./.local/rag-preflight/venv/Scripts/python.exe -X utf8 -m unittest discover -s scripts/rag-preflight -p test_preflight.py -v
+```
+
+问题集分校准与留出改写两组。门槛只用前一组确定，后者运行后不据其结果继续调参；参数变更保留前后结果。当前 0.45 只适用于本轮小语料候选，不作为通用答案可信度或全市场默认值。检索失败先检查原文是否可读、边界是否完整、输入是否被截断及元数据过滤，再检查排名；无相关片段时反馈缺口，不用模型记忆补报告。已验证范围、实际成绩和未完成事项只见 [001R 任务证据](../specs/004-research-agent/tasks.md#22-中文报告解析与本地检索预检2026-10-17)。

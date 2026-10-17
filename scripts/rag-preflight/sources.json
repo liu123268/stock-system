@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "reports": [
+    {
+      "financialSourceFile": "moutai-2025.pdf",
+      "language": "zh-CN",
+      "sections": [
+        {"id": "mt-business", "page": 8, "title": "主要业务", "start": "公司主要业务是", "end": "2025年度，公司经营模式为", "contains": ["生产与销售", "营销网络"]},
+        {"id": "mt-operations", "page": 8, "title": "经营与销售模式", "start": "2025年度，公司经营模式为", "end": "报告期内公司新增重要非主营业务", "contains": ["原料采购模式", "直销", "批发代理"]},
+        {"id": "mt-quality", "page": 9, "title": "品质管理", "start": "一是品质根基更加牢固", "end": "二是市场基本盘", "contains": ["质量标准", "全产业链"]},
+        {"id": "mt-channels", "page": 17, "title": "未来线上经营战略", "start": "公司将构建批发", "end": "7、公司收入及成本分析", "contains": ["五大渠道", "线上+线下"]},
+        {"id": "mt-risks", "page": 23, "title": "可能面对的风险", "start": "(四)可能面对的风险", "end": "(五)其他", "contains": ["宏观经济风险", "环境保护风险"]}
+      ]
+    },
+    {
+      "file": "tencent-2025.pdf",
+      "symbol": "00700.HK",
+      "title": "腾讯2025年年度报告（中文原版）",
+      "url": "https://static.www.tencent.com/uploads/2026/04/09/5c38a9ec3c5695da42c1534d63e4be0b.pdf",
+      "sha256": "d19f183452e9b8d0c47bcb7543dcbf435b585b2610759b42c0cba7c13f7361c7",
+      "year": 2025,
+      "pageCount": 282,
+      "language": "zh-Hant",
+      "sections": [
+        {"id": "tx-highlights", "page": 6, "title": "主要产品及服务表现", "start": "以下為二零二五年", "end": "1長青遊戲", "contains": ["AI", "混元", "廣告技術"]},
+        {"id": "tx-games", "page": 9, "title": "增值服务变化解释", "start": "增值服務業務截至", "end": "營銷服務業務截至", "contains": ["遊戲收入", "社交網絡"]},
+        {"id": "tx-marketing", "page": 9, "title": "营销服务变化解释", "start": "營銷服務業務截至", "end": "金融科技及企業服務業務截至", "contains": ["廣告單價", "曝光量", "AI"]},
+        {"id": "tx-fintech", "page": 9, "title": "金融科技及企业服务变化解释", "start": "金融科技及企業服務業務截至", "contains": ["雲服務", "技術服務費"]},
+        {"id": "tx-risks", "page": 106, "title": "重大风险与市场竞争", "start": "本公司的重大風險", "contains": ["組織及人才管理風險", "市場競爭及創新風險"]}
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # 项目实际技术栈
 
-更新时间：2026-10-17（同步财务工具／会话采用状态与模型价格核对；云端尚未发布本轮构建）
+更新时间：2026-10-17（同步报告检索本地预检、财务／会话采用状态与模型价格；云端尚未发布本轮构建）
 
 本文档记录项目技术的真实状态。用户最初提供的学习目标和候选技术清单保存在 [技术目标与选型参考](../project/technology-reference.md)，两者不得混淆。
 
@@ -68,7 +68,8 @@
 | WebSocket                       | 候选         | 有真实需要时的双向通信或行情推送               | 不与 SSE 或当前行情轮询绑定                                               |
 | LLM API + 结构化输出            | 独立实验及正式业务已接入 | 观点整理、工具追问与资料缺口                 | 个人权限、会话、独立助手页及有限财务工具已接；分项真实质量见 SPEC-004 tasks，不代表完整 V2       |
 | Spring AI                       | 2.0.1，框架已接入，版本默认模型关闭 | V2 主框架：模型调用、Tool Calling、会话、RAG 与观测 | 正式研究生成、原生受限工具及保存恢复已接；检索契约预检不代表业务 RAG 或 MCP 已完成 |
-| 向量数据库                      | 计划选一种，具体实现待验证 | V2 必做受控文档 RAG 的语义检索 | 与关键词检索比较，验证资料权限与检索收益；Qdrant 为优先评估候选，不将全部业务记录向量化或替换 MySQL |
+| 向量数据库                      | Qdrant Python 本地模式已预检；正式服务待接 | V2 必做受控文档 RAG 的候选检索 | 001R 已验证真实向量、持久化与过滤；本地模式不证明 Java／Qdrant 服务端接入，不替换 MySQL |
+| 本地文本向量模型                | BGE-small-zh-v1.5 ONNX，512 维，预检已使用 | 中文报告段落与问题向量化 | 固定模型提交／文件哈希与编码依赖，CPU 运行，不等同于 DeepSeek 回答模型；正式业务适配待验 |
 
 ### 3.1 外部行情调用与密钥边界
 
@@ -189,6 +190,14 @@ RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.sprin
 
 2026-10-08 模式参数补核：[官方思考模式](https://api-docs.deepseek.com/guides/thinking_mode/) 说明默认开启思考。首轮 HTTP 请求显式设置 `thinking: {"type": "disabled"}`，不能只在提示词里要求“不思考”；以后启用思考工具调用时，另验 reasoning_content 的协议回传要求。补核时仅有文档证据；2026-10-09 独立真实实验已使用这一参数，业务接入仍待后续任务。
 
+### 3.6 报告检索预检的本地候选
+
+001R 先解决中文报告能否准确读出、定位及检索的问题。当前本机没有 Docker，预检选择已有公共 PDF、隔离 Python 与本地 CPU 中文模型，采用 [Qdrant 官方支持的本地模式](https://qdrant.tech/documentation/tutorials-basics/generate-embeddings-fastembed/)验证持久化／过滤；不为这一步安装 Docker 或新增远程服务。候选替代是服务端 Embedding API 与正式 Qdrant 服务，但外发、费用和 Java 通信需分别落实，不默认借用原 DeepSeek 实验预算。
+
+[BGE-small-zh-v1.5 原模型说明](https://huggingface.co/BAAI/bge-small-zh-v1.5) 给出中文用途、512 维及查询指令；本轮使用 Qdrant 仓库固定提交的 ONNX 文件，资产约 95 MB，模型清单与哈希只维护在 [model.json](../../scripts/rag-preflight/model.json)。FastEmbed 0.9.0、ONNX Runtime 1.31.0、tokenizers 0.23.3 和 Qdrant client 1.19.1 仅进入 [隔离预检依赖](../../scripts/rag-preflight/requirements.txt)，不加入 Spring 运行依赖或自动建立 Python 服务。实际资源及成绩只见 [任务第 22 节](../specs/004-research-agent/tasks.md#22-中文报告解析与本地检索预检2026-10-17)。
+
+解析候选采用 PyMuPDF 1.28.2，已核对腾讯中文原版能恢复原 pypdf 6.11.0 未读出的汉字；原有英文财务提取路径保留。哈希、页数、受审段落哨兵与码点定位共同检查，失败不猜原文。模型、分词器或编码依赖变化必须重建相应索引，未知维度／截断／零向量拒绝。候选门槛按固定题校准并留出改写验证，不把分数当答案证据；关键词基线保留，正式混合／重排与回答质量沿 008。若中文解析或检索不能成立，先缩到可读章节或验证替代，不能仅以组件能安装标为业务 RAG 可用。
+
 ## 4. 当前明确不采用
 
 | 技术/方案                           | 原因                                                                                                            |
@@ -206,7 +215,7 @@ RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.sprin
 
 当前目录采集辅助工具使用 Python 3（2026-09-21 以 3.14.7 验证）、pandas/openpyxl 解析公开 JSON/Excel，使用 `opencc-python-reimplemented==0.1.7` 批量繁简转换，并使用 `pypinyin==0.55.0` 的词组词典离线生成小写拼音首字母。它们仅作为本地目录准备工具，Java 继续负责校验、事务入库及 API 搜索；没有引入 Python 常驻服务或 AKShare 运行依赖。部署/复现方式见 [目录导入操作](../engineering/development.md#8-股票目录导入)。
 
-官方年报的限定数字导入使用 [pypdf 6.11.0](../../scripts/requirements-report-source.txt)，只在项目隔离 Python 环境运行。它解决受审文本 PDF 的金额、年份、单位和页码提取，不进入 Spring 运行依赖或建立 Python 服务；不支持扫描件／通用表格，也未验证 Embedding 或向量库。哈希／布局变化失败后保留旧目录，退出路径是重新审阅来源与映射，不能用模型补猜。机制见 [财务设计](../specs/004-research-agent/design.md#42-财报查询的边界与来源)，复现见 [工程笔记](../engineering/agent-experiment.md#9-财务读取准备数字必须带口径)。PyMuPDF 1.28.2 本轮只用于将原报页面渲染作目视核对，没有加入正式导入依赖。
+官方年报的限定数字导入使用 [pypdf 6.11.0](../../scripts/requirements-report-source.txt)，只在项目隔离 Python 环境运行。它解决受审文本 PDF 的金额、年份、单位和页码提取，不进入 Spring 运行依赖或建立 Python 服务；不支持扫描件／通用表格，该财务脚本也不生成 Embedding 或写向量库。哈希／布局变化失败后保留旧目录，退出路径是重新审阅来源与映射，不能用模型补猜。机制见 [财务设计](../specs/004-research-agent/design.md#42-财报查询的边界与来源)，复现见 [工程笔记](../engineering/agent-experiment.md#9-财务读取准备数字必须带口径)。财务数字导入阶段的 PyMuPDF 1.28.2 仅用于原页渲染，没有加入该导入依赖；后续 001R 的中文正文解析预检另见第 3.6 节。
 
 - 新增、移除或升级技术后必须同步更新本文件。
 - `package.json`、`pom.xml` 与本文件版本冲突时，以依赖清单为事实并修正文档。

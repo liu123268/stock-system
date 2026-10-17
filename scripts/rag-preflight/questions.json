@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "split": "CALIBRATION",
+  "purpose": "retrieval-only; expected sections are human-reviewed source locations, not model answers",
+  "cases": [
+    {"id": "mt-business", "symbol": "600519.SH", "query": "这家公司主要生产和销售什么产品？", "expectedSections": ["mt-business"]},
+    {"id": "mt-procurement", "symbol": "600519.SH", "query": "酿酒原料的采购模式和参与方有哪些？", "expectedSections": ["mt-operations"]},
+    {"id": "mt-quality", "symbol": "600519.SH", "query": "报告怎样描述全产业链质量管理？", "expectedSections": ["mt-quality"]},
+    {"id": "mt-channel-plan", "symbol": "600519.SH", "query": "报告计划怎样结合线上线下销售渠道？", "expectedSections": ["mt-channels"]},
+    {"id": "mt-risk", "symbol": "600519.SH", "query": "报告列举了哪些可能面对的风险？", "expectedSections": ["mt-risks"]},
+    {"id": "tx-marketing", "symbol": "00700.HK", "query": "管理层怎样解释营销服务的收入增长？", "expectedSections": ["tx-marketing"]},
+    {"id": "tx-enterprise", "symbol": "00700.HK", "query": "报告说企业服务收入增长由什么推动？", "expectedSections": ["tx-fintech"]},
+    {"id": "tx-games", "symbol": "00700.HK", "query": "国际市场游戏收入增长有哪些来源？", "expectedSections": ["tx-games"]},
+    {"id": "tx-ai", "symbol": "00700.HK", "query": "报告怎样介绍人工智能在产品服务中的应用？", "expectedSections": ["tx-highlights"]},
+    {"id": "tx-risk", "symbol": "00700.HK", "query": "年报新增了哪类与组织和人才有关的重大风险？", "expectedSections": ["tx-risks"]},
+    {"id": "no-answer-spacecraft", "symbol": "600519.SH", "query": "报告说明了载人飞船的发射时间和轨道高度吗？", "expectedSections": []},
+    {"id": "no-answer-drug", "symbol": "00700.HK", "query": "报告说明了抗癌药三期临床试验的入组人数吗？", "expectedSections": []}
+  ]
+}

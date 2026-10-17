@@ -68,6 +68,8 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 [财务六题入口](../../scripts/run-agent-financial-probe.ps1) 将公开年报的已核实科目加入检查，使用独立 AGENT_FINANCIAL_MODEL_PROBE 开关；默认 Fixture，Real 另核对本轮授权并共享原实验账本。--dry-run、运行前提、续做及人工审查操作只见 [实验说明第 10 节](agent-experiment.md#10-财务真实模型检查怎样复现)。对应 Node 检查执行 `node --test scripts/agent-quality/financial-cases.test.mjs scripts/agent-quality/financial-probe-guard.test.mjs`，仅用合成输出和子进程，不读取 Key、不连接服务。真实模型结果必须分别记录数字／工具契约与回答语义，失败案例不隐藏；测试库数据清理和进程关闭继续沿第 4／5 节，真实费用不可随清理重置。
 
+001R 的 [报告预检](../../scripts/rag-preflight/preflight.py) 在项目隔离 Python 环境中处理受审 PDF 与真实本地 Embedding，不调用回答模型、不写业务 MySQL。其边界单元检查使用 scripts/rag-preflight/test_preflight.py；完整 retrieve 阶段另验证实际 Qdrant 本地持久化、重复导入、版本／股票／模型过滤和移除后空结果。临时库使用本轮唯一目录和集合，finally 删除本轮片段、查询数量为 0，关闭句柄后核对绝对路径再移除目录；模型缓存保留。题集与候选成绩不等于回答质量，更不证明 Java／网页／服务端 Qdrant 已通过。操作只见 [实验说明第 11 节](agent-experiment.md#11-报告正文检索的本地预检)，成绩只见对应 tasks。
+
 ## 3. 前端测试
 
 - 类型检查：`npm.cmd run type-check`。

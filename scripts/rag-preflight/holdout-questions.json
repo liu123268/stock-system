@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "split": "HOLDOUT_AFTER_CUTOFF_FIXED",
+  "purpose": "Written before evaluation with the 0.45 candidate cutoff; do not retune on this set",
+  "cases": [
+    {"id": "holdout-mt-distribution", "symbol": "600519.SH", "query": "直营与经销商分销在报告里如何区分？", "expectedSections": ["mt-operations"]},
+    {"id": "holdout-mt-supply", "symbol": "600519.SH", "query": "高粱和小麦采购涉及哪些合作主体？", "expectedSections": ["mt-operations"]},
+    {"id": "holdout-mt-quality", "symbol": "600519.SH", "query": "公司怎样把控制曲、制酒、勾贮到包装的产品质量？", "expectedSections": ["mt-quality"]},
+    {"id": "holdout-mt-online", "symbol": "600519.SH", "query": "公司对线上效率触达与线下服务转化有哪些安排？", "expectedSections": ["mt-channels"]},
+    {"id": "holdout-mt-environment", "symbol": "600519.SH", "query": "年报有没有列出宏观经济、安全、舆情和环保方面的风险？", "expectedSections": ["mt-risks"]},
+    {"id": "holdout-tx-advertising", "symbol": "00700.HK", "query": "广告的价格和曝光为什么能增加，报告给出了什么解释？", "expectedSections": ["tx-marketing"]},
+    {"id": "holdout-tx-cloud", "symbol": "00700.HK", "query": "企业服务是否受益于云服务需求和商家技术服务费？", "expectedSections": ["tx-fintech"]},
+    {"id": "holdout-tx-international", "symbol": "00700.HK", "query": "Supercell和PUBG MOBILE对海外游戏业务有什么贡献？", "expectedSections": ["tx-games"]},
+    {"id": "holdout-tx-model", "symbol": "00700.HK", "query": "报告里提到的混元基础模型和元宝有哪些应用进展？", "expectedSections": ["tx-highlights"]},
+    {"id": "holdout-tx-competition", "symbol": "00700.HK", "query": "技术迭代和跨界竞争会给公司带来什么挑战？", "expectedSections": ["tx-risks"]},
+    {"id": "holdout-unrelated", "symbol": "00700.HK", "query": "报告给出了火星探测车着陆地点和速度吗？", "expectedSections": []},
+    {"id": "holdout-near-domain-missing", "symbol": "600519.SH", "query": "公司新增订单总金额和未交付合同余额分别是多少？", "expectedSections": []}
+  ]
+}
