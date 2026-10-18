@@ -338,6 +338,23 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test void modelFailureDiagnosticsPersistWithoutLeakingProviderTextOrClearingUnknownCost() {
+        org.mockito.Mockito.doAnswer(invocation -> {
+            var execution = ResearchModelExecution.current();
+            execution.dispatch(); execution.usage("fixture", 10, 10);
+            execution.dispatch();
+            throw ResearchModelFailure.translate(new org.springframework.web.client.ResourceAccessException("private-raw-response",
+                    new java.net.SocketTimeoutException("private-token")), "QUESTION_MODEL");
+        }).when(questionModel).call(any(), any());
+        var run = ask("请核对财务资料");
+        assertThat(run.status()).isEqualTo("FAILED");
+        assertThat(run.errorCode()).isEqualTo("RESEARCH_AGENT_TIMEOUT");
+        String stored = jdbc.queryForObject("select model_failure_json from agent_run where id = ?", String.class, run.runId());
+        assertThat(stored).contains("TIMEOUT", "QUESTION_MODEL", "modelCall", "2", run.requestId())
+                .doesNotContain("private-token", "private-raw-response");
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id = ?", java.math.BigDecimal.class, run.runId())).isNull();
+    }
+
     @Test void unrecognizedFinancialReportVersionInvalidatesTheWholeStoredAnswer() {
         questionMode = "financial";
         var run = ask("读取 FY 2025 财务资料。");

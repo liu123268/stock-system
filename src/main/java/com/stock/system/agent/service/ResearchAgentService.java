@@ -76,6 +76,7 @@ public class ResearchAgentService {
             execution.remainingMillis();
             var started = records.begin(target, normalized, hash, !material.opinions().isEmpty());
             if (!started.created()) return reuse(target, started.run(), hash);
+            execution.bind(started.run().id(), normalized);
             Answer answer = null;
             ErrorCode error = null;
             try {
@@ -138,6 +139,7 @@ public class ResearchAgentService {
             execution.remainingMillis();
             var started = records.begin(target, normalized, hash, ResearchAgentRecordMapper.QUESTION_RESERVE, ResearchQuestionService.VERSION);
             if (!started.created()) return reuse(target, started.run(), hash);
+            execution.bind(started.run().id(), normalized);
             Answer answer = null;
             ErrorCode error = null;
             try { answer = questions.answer(context, question, () -> records.ensureRunning(target, started.run())); }

@@ -35,9 +35,7 @@ public class ResearchSummaryModel {
                             .responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build()))
                     .call().chatResponse();
         } catch (RuntimeException exception) {
-            if (exception instanceof BusinessException business) throw business;
-            // 不把请求正文、密钥或上游错误作为业务错误返回。
-            throw new BusinessException(ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
+            throw ResearchModelFailure.translate(exception, "SUMMARY_MODEL");
         }
         var execution = ResearchModelExecution.current();
         if (response != null && execution != null) {

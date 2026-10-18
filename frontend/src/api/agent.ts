@@ -31,6 +31,7 @@ export interface AgentEvidence {
 export interface AgentReportLibrary {
   retrievalEnabled: boolean; note: string
   reports: { title: string; year: number; url: string; version: string; sections: string[]; pdfPages: number[] }[]
+  states?: { key: string; title: string; year: number; status: 'AVAILABLE' | 'PROCESSING' | 'FAILED' | 'REMOVED'; usableVersion: boolean }[]
 }
 export interface AgentAnswer {
   summary: { overview: AgentItem; changes: AgentItem[]; members: (AgentItem & { authorId: string })[]; pendingItems: AgentItem[] } | null

@@ -150,11 +150,12 @@ public class ResearchAgentRecordMapper {
             BigDecimal cost = settle(execution, run.reserved());
             jdbc.update("update agent_run set status = ?, error_code = ?, finished_at = current_timestamp(3),"
                             + " dispatched = ?, model = ?, input_tokens = ?, output_tokens = ?, cost_upper_yuan = ?,"
-                            + " model_calls = ?, tool_calls = ?, tool_trace_json = ? where id = ?",
+                            + " model_calls = ?, tool_calls = ?, tool_trace_json = ?, model_failure_json = ? where id = ?",
                     status, finalError == null ? null : finalError.name(), execution.dispatched,
                     execution.model == null ? null : execution.model.substring(0, Math.min(100, execution.model.length())),
                     safeTokens(execution.inputTokens), safeTokens(execution.outputTokens), cost,
-                    execution.modelCalls, execution.toolCalls, json.writeValueAsString(execution.toolTrace), run.id());
+                    execution.modelCalls, execution.toolCalls, json.writeValueAsString(execution.toolTrace),
+                    execution.failure == null ? null : json.writeValueAsString(execution.failure), run.id());
             if (status.equals("SUCCEEDED")) {
                 jdbc.update("insert into agent_message(session_id, run_id, result_json, dependencies_json) values (?, ?, ?, ?)",
                         run.sessionId(), run.id(), json.writeValueAsString(answer), json.writeValueAsString(dependencies));

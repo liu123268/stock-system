@@ -32,7 +32,8 @@ public class ResearchReportService {
         return stock.getCode();
     }
     public Library library(Target target) {
-        var rows = catalog.forSymbol(symbol(target));
+        String symbol = symbol(target);
+        var rows = catalog.forSymbol(symbol);
         var reports = rows.stream().map(ReportPassage::reportVersion).distinct().map(version -> {
             var parts = rows.stream().filter(row -> row.reportVersion().equals(version)).toList();
             var first = parts.get(0);
@@ -40,7 +41,7 @@ public class ResearchReportService {
                     parts.stream().map(ReportPassage::sectionTitle).distinct().toList(),
                     parts.stream().map(ReportPassage::pdfPage).distinct().sorted().toList());
         }).toList();
-        return new Library(vectors.enabled(), reports, "仅检索已核对的文字章节，不覆盖整份年报或全部最新披露。观点日期范围不限制报告年份。");
+        return new Library(vectors.enabled(), reports, "仅检索已核对的文字章节，不覆盖整份年报或全部最新披露。观点日期范围不限制报告年份。", catalog.statuses(symbol));
     }
     @Transactional(propagation = Propagation.NEVER)
     public Search search(Target target, String query, Integer year) {
@@ -55,15 +56,24 @@ public class ResearchReportService {
         catch (RuntimeException failure) { return new Search("UNAVAILABLE", List.of(), "报告检索暂时不可用，未返回未经核对的原文。"); }
         if (!symbol.equals(symbol(target))) throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
         hits.forEach(row -> verify(target, row));
+        if (hits.stream().anyMatch(row -> !catalog.matchesCurrent(row))) throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
         return new Search(hits.isEmpty() ? "NO_MATCH" : "AVAILABLE", hits,
                 hits.isEmpty() ? "已入库章节未找到足够相关的段落；不能据此认定整份报告没有该信息。"
                         : "这是报告原文候选，须核对是否支持本次结论；报告中的判断与展望不代表当前已实现事实。");
     }
     public void verify(Target target, ReportPassage snapshot) {
-        if (snapshot == null || !symbol(target).equals(snapshot.symbol()) || !catalog.matches(snapshot))
+        if (snapshot == null || !symbol(target).equals(snapshot.symbol()))
             throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
+        boolean matches;
+        try {
+            matches = catalog.matches(snapshot);
+        } catch (RuntimeException failure) {
+            // A corrupt/unreadable publication cannot authorize a saved original from message JSON.
+            throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
+        }
+        if (!matches) throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
     }
     public record Search(String status, List<ReportPassage> passages, String note) {}
-    public record Library(boolean retrievalEnabled, List<Report> reports, String note) {}
+    public record Library(boolean retrievalEnabled, List<Report> reports, String note, List<com.stock.system.agent.report.ReportLibraryStore.Status> states) {}
     public record Report(String title, int year, String url, String version, List<String> sections, List<Integer> pdfPages) {}
 }

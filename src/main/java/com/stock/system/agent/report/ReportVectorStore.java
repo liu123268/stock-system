@@ -20,7 +20,7 @@ import java.nio.channels.FileLock;
 import java.time.Duration;
 import java.util.*;
 
-/** Local Qdrant REST adapter. It accepts only release-owned documents and bounded stock filters. */
+/** Local Qdrant REST adapter. It accepts only reviewed publications and bounded stock filters. */
 @Component
 public class ReportVectorStore implements VectorStore, AutoCloseable {
     private final ReportCatalog catalog;
@@ -29,7 +29,8 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
     private final int port;
     private final JsonMapper json = JsonMapper.builder().build();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
-    private final String collection;
+    private String collection;
+    private ReportCatalog indexedCatalog;
     private Process process;
     private LocalReportEmbedding embedding;
     private boolean ready;
@@ -47,16 +48,22 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
         if (port < 1024 || port > 65535) throw new IllegalArgumentException("Invalid local report port");
         this.port = port;
         // Short paths also matter on Windows: Qdrant appends segment UUIDs and file names.
-        collection = "reports_" + ReportCatalog.sha256((catalog.fingerprint() + LocalReportEmbedding.VERSION)
-                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0, 20);
+        selectCatalog(catalog.installed());
     }
     public boolean enabled() { return enabled; }
 
-    public List<ReportPassage> search(String query, String symbol, Integer year) {
+    public synchronized List<ReportPassage> search(String query, String symbol, Integer year) {
         // Internal filter values come only from the authorized business target and validated year.
         String filter = "symbol == '" + symbol + "'" + (year == null ? "" : " && reportYear == " + year);
         return similaritySearch(SearchRequest.builder().query(query).topK(3).similarityThreshold(0.45)
-                .filterExpression(filter).build()).stream().map(document -> catalog.require(document.getId())).toList();
+                .filterExpression(filter).build()).stream().map(document -> indexedCatalog.require(document.getId())).toList();
+    }
+
+    public synchronized void prepare(ReportCatalog candidate) { selectCatalog(candidate); ensureReady(); }
+    private void selectCatalog(ReportCatalog candidate) {
+        String selected = "reports_" + ReportCatalog.sha256((candidate.fingerprint() + LocalReportEmbedding.VERSION)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0, 20);
+        if (!selected.equals(collection)) { collection = selected; indexedCatalog = candidate; ready = false; }
     }
 
     @Override public synchronized List<Document> similaritySearch(SearchRequest request) {
@@ -68,13 +75,14 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
             throw new IllegalArgumentException("A bound stock is required");
         must.add(match("embeddingVersion", LocalReportEmbedding.VERSION));
         must.add(match("status", "AVAILABLE"));
+        selectCatalog(catalog.snapshot());
         ensureReady();
         float[] vector = embedding.embed(LocalReportEmbedding.QUERY_PREFIX + request.getQuery());
         var result = request("POST", "/collections/" + collection + "/points/query", Map.of("query", vector,
                 "filter", Map.of("must", must), "limit", request.getTopK(), "score_threshold", Math.max(0.45, request.getSimilarityThreshold()), "with_payload", true));
         var output = new ArrayList<Document>();
         for (JsonNode hit : result.path("result").path("points")) {
-            var passage = catalog.require(hit.path("id").asString());
+            var passage = indexedCatalog.require(hit.path("id").asString());
             var payload = hit.path("payload");
             double score = hit.path("score").asDouble();
             if (!Double.isFinite(score) || score < 0.45 || !passage.symbol().equals(payload.path("symbol").asString())
@@ -150,9 +158,9 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
             var configVector = request("GET", "/collections/" + collection, null).path("result").path("config").path("params").path("vectors");
             if (configVector.path("size").asInt() != 512 || !"Cosine".equals(configVector.path("distance").asString()))
                 throw new IllegalStateException("Report vector collection configuration changed");
-            add(catalog.all().stream().map(row -> Document.builder().id(row.id()).text(row.text()).build()).toList());
+            add(indexedCatalog.all().stream().map(row -> Document.builder().id(row.id()).text(row.text()).build()).toList());
             int count = request("POST", "/collections/" + collection + "/points/count", Map.of("exact", true)).path("result").path("count").asInt();
-            if (count != catalog.all().size()) throw new IllegalStateException("Report index has unexpected points");
+            if (count != indexedCatalog.all().size()) throw new IllegalStateException("Report index has unexpected points");
             ready = true;
         } catch (Exception failure) {
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -164,7 +172,7 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
         if (embedding == null || process == null || !process.isAlive()) throw new IllegalStateException("Report index is not initialized");
         var points = new ArrayList<Object>();
         for (var document : documents) {
-            var row = catalog.require(document.getId());
+            var row = indexedCatalog.require(document.getId());
             if (!row.text().equals(document.getText())) throw new IllegalArgumentException("Only canonical report text can be indexed");
             points.add(Map.of("id", row.id(), "vector", embedding.embed(row.text()), "payload", Map.of("symbol", row.symbol(),
                     "reportYear", row.reportYear(), "reportVersion", row.reportVersion(), "textSha256", row.textSha256(),

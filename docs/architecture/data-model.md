@@ -229,7 +229,9 @@ V10 只保存无法由当前周期状态还原的普通／重点关注切换：`
 
 [V14](../../src/main/resources/db/migration/V14__track_agent_model_and_tool_calls.sql) 只给 `agent_run` 增加 `model_calls`、`tool_calls` 和 `tool_trace_json`。前者记录实际 HTTP 派发，后者记录模型工具尝试，轨迹仅含工具名／完成或失败／耗时，不保存参数正文。旧运行默认 0 表示此前没有此统计，不能据此说旧运行没有调用。每轮 Token 为所有已知响应之和；任何派发用量未知仍保留整轮预留，清空不改变它。
 
-`agent_message.answer_json` 兼容旧固定梳理，并增加 `followUp`（问题、段落／引用、缺口、行情依据、历史省略标记）。`sources_json` 兼容旧单快照，追问使用有界快照列表保存实际依赖；模型上下文只继承当前仍有效且同筛选的历史，主快照覆盖其观点依赖。行情依据保存生成时实际取得的 QUOTE／DAILY_PRICES 快照，查看时重新授权，不把它存入全局股票行情表。
+[V15](../../src/main/resources/db/migration/V15__record_agent_model_failure.sql) 给 `agent_run` 增加可空 `model_failure_json`，保存固定字段的模型失败诊断：运行／请求编号、阶段、调用轮次、HTTP 状态与类别。不保存原始异常消息、响应、Header 或密钥；旧记录为空，不补造历史原因。该迁移不调整 Token、预留或消息正文。公开报告的本机发布状态另由原子文件维护，范围和选择理由只见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)，不将它描述为已新增 MySQL 报告表。
+
+`agent_message.result_json` 兼容旧固定梳理，并增加 `followUp`（问题、段落／引用、缺口、行情依据、历史省略标记）。`dependencies_json` 兼容旧单快照，追问使用有界快照列表保存实际依赖；模型上下文只继承当前仍有效且同筛选的历史，主快照覆盖其观点依赖。行情依据保存生成时实际取得的 QUOTE／DAILY_PRICES 快照，查看时重新授权，不把它存入全局股票行情表。
 
 ## 4. 阶段 1 约束与索引终审
 

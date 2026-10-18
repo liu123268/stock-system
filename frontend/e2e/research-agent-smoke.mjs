@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 
@@ -22,6 +23,14 @@ let cleaned = false
 const sql = query => execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', ['--host=localhost', '--port=3306', '--user=root', '--database=stock_system_test', '--default-character-set=utf8mb4', '--batch', '--skip-column-names', `--execute=${query}`], {
   encoding: 'utf8', env: { ...process.env, MYSQL_PWD: process.env.DB_PASSWORD },
 }).trim()
+function maintainReport(action, input, expectedExit = 0) {
+  assert.ok(process.env.AGENT_REPORT_LIBRARY)
+  const result = spawnSync(process.env.AGENT_JAVA_PATH, ['-Dloader.main=com.stock.system.agent.report.ReportMaintenanceCommand',
+    '-cp', resolve('../target/stock-system-0.0.1-SNAPSHOT.jar'), 'org.springframework.boot.loader.launch.PropertiesLauncher',
+    action, process.env.AGENT_REPORT_LIBRARY, ...(input ? [input] : [])], { cwd: resolve('..'), encoding: 'utf8', timeout: 30_000, windowsHide: true })
+  assert.equal(result.status, expectedExit, `Maintenance ${action} failed`)
+  return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1))
+}
 for (const origin of [frontend, backend]) {
   const response = await fetch(`${origin}/api/test/environment`)
   assert.ok(response.ok)
@@ -237,6 +246,50 @@ try {
     checks.push('report-and-opinion-combination-with-canonical-text-and-pdf-page')
     checks.push('report-database-snapshot-restore-and-read-without-model-call')
     checks.push('missing-report-year-and-no-match-do-not-fabricate-citations')
+    const tencent = JSON.parse(await readFile('../src/main/resources/reports/reviewed-passages.json', 'utf8')).passages.filter(row => row.symbol === '00700.HK')
+    const fullReport = `${output}/reviewed-tencent.json`
+    const partialReport = `${output}/reviewed-tencent-one-passage.json`
+    await writeFile(fullReport, JSON.stringify({ version: 'reviewed-probe', passages: tencent }))
+    await writeFile(partialReport, JSON.stringify({ version: 'reviewed-probe', passages: tencent.slice(0, 1) }))
+    const reportKey = library.states.find(item => item.title.includes('腾讯')).key
+    maintainReport('remove', reportKey)
+    const removed = await api(`${base}/reports`, owner.accessToken)
+    assert.equal(removed.reports.length, 0)
+    assert.equal(removed.states[0].status, 'REMOVED')
+    const invalidated = await api(`${base}/runs/${reportRun.runId}`, owner.accessToken)
+    assert.equal(invalidated.answer, null)
+    assert.equal(invalidated.errorCode, 'RESEARCH_AGENT_SOURCES_CHANGED')
+    await page.reload()
+    await page.locator('.agent-capabilities summary').click()
+    await page.getByText(/已移除，相关旧引用已失效/).waitFor()
+    assert.equal(await page.getByRole('button', { name: '查看报告原文依据', exact: true }).count(), 0)
+    await capture('report-removed', [1440, 390, 320])
+    await page.locator('.agent-capabilities summary').click()
+    maintainReport('import', fullReport, 1)
+    assert.equal((await api(`${base}/reports`, owner.accessToken)).reports.length, 0)
+    maintainReport('restore', fullReport)
+    assert.equal((await api(`${base}/reports`, owner.accessToken)).reports.length, 1)
+    maintainReport('import', partialReport)
+    assert.equal((await api(`${base}/reports`, owner.accessToken)).reports[0].sections.length, 1)
+    assert.ok((await api(`${base}/runs/${reportRun.runId}`, owner.accessToken)).answer)
+    // A genuinely occupied local index port exercises failure retention without a production fault switch.
+    const occupied = createServer(socket => socket.end())
+    await new Promise(resolve => occupied.listen(16336, '127.0.0.1', resolve))
+    try { maintainReport('import', fullReport, 1) }
+    finally { await new Promise(resolve => occupied.close(resolve)) }
+    const failedUpdate = await api(`${base}/reports`, owner.accessToken)
+    assert.equal(failedUpdate.states[0].status, 'FAILED')
+    assert.equal(failedUpdate.states[0].usableVersion, true)
+    assert.equal(failedUpdate.reports[0].sections.length, 1)
+    await page.locator('.agent-capabilities summary').click()
+    await page.getByText(/更新失败，仍可查询上个可用版本/).waitFor()
+    await capture('report-update-failed', [1440, 390, 320])
+    await page.locator('.agent-capabilities summary').click()
+    maintainReport('retry', fullReport)
+    assert.ok((await api(`${base}/reports`, owner.accessToken)).reports[0].sections.length > 1)
+    checks.push('report-removal-blocks-stale-index-and-historical-original')
+    checks.push('report-maintenance-cli-explicit-restore-and-live-update')
+    checks.push('report-failed-index-build-keeps-previous-publication-and-retry')
   }
   // 先产生足够的自造问答，再只读加载上一页，实际覆盖长记录与分页。
   for (let index = 1; index <= 8; index++) {
@@ -411,6 +464,26 @@ try {
   await page.getByRole('button', { name: '清空个人记录', exact: true }).focus()
   assert.ok(await page.getByRole('button', { name: '清空个人记录', exact: true }).evaluate(element => parseFloat(getComputedStyle(element).transitionDuration) <= 0.001))
   checks.push('keyboard-focus-and-reduced-motion')
+  // 未知用量会占用本轮 test 的 10 元预算，放到最后，并确认下一次准入会被拒绝。
+  await fixtureState('failure')
+  const beforeFailure = (await fixtureState()).calls
+  const failure = await api(`${base}/messages`, owner.accessToken, 'POST', {
+    requestId: crypto.randomUUID(), question: '检查本地故障记录',
+  })
+  assert.equal(failure.status, 'FAILED')
+  assert.equal(failure.errorCode, 'RESEARCH_AGENT_UNAVAILABLE')
+  assert.equal((await fixtureState()).calls, beforeFailure + 1)
+  const diagnostic = JSON.parse(sql(`select model_failure_json from agent_run where id=${failure.runId} and user_id=${owner.userId}`))
+  assert.deepEqual(diagnostic, { stage: 'QUESTION_MODEL', category: 'UPSTREAM_HTTP', upstreamStatus: 503,
+    modelCall: 1, runId: failure.runId, requestId: failure.requestId })
+  assert.equal(sql(`select cost_upper_yuan is null and reserved_yuan > 0 from agent_run where id=${failure.runId}`), '1')
+  assert.equal(JSON.stringify(failure).includes('offline fixture failure'), false)
+  const denied = await fetch(`${backend}/api${base}/messages`, { method: 'POST', headers: {
+    'Content-Type': 'application/json', Authorization: `Bearer ${owner.accessToken}`,
+  }, body: JSON.stringify({ requestId: crypto.randomUUID(), question: '预算不足时不应派发模型请求' }) })
+  assert.equal((await denied.json()).code, 'RESEARCH_AGENT_BUDGET_EXCEEDED')
+  assert.equal((await fixtureState()).calls, beforeFailure + 1)
+  checks.push('actual-http-failure-persists-safe-diagnostics-and-retains-unknown-usage-without-retry')
   assert.deepEqual(errors, [])
   success = true
 } catch (error) {

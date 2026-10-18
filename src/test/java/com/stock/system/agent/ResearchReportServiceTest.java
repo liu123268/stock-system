@@ -57,4 +57,12 @@ class ResearchReportServiceTest {
         assertThatIllegalArgumentException().isThrownBy(() -> service.search(target, "问".repeat(241), null));
         verifyNoInteractions(access, stocks, vectors);
     }
+    @Test void unreadablePublicationInvalidatesSavedOriginalRatherThanRestoringMessageText() {
+        var unavailable = mock(ReportCatalog.class);
+        var row = catalog.forSymbol("600519.SH").get(0);
+        when(unavailable.matches(row)).thenThrow(new IllegalStateException("unreadable local publication"));
+        var guarded = new ResearchReportService(access, stocks, unavailable, vectors);
+        assertThatThrownBy(() -> guarded.verify(target, row)).isInstanceOfSatisfying(BusinessException.class,
+                failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED));
+    }
 }

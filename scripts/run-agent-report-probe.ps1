@@ -7,7 +7,7 @@ $mysqlPath = if ($env:MYSQL_CLIENT_PATH) { $env:MYSQL_CLIENT_PATH } else { 'D:\d
 foreach ($name in @('DB_PASSWORD', 'JWT_SECRET')) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, 'Process'))) { throw "$name is required" }
 }
-$ports = @(18082, 18083, 18084, 16335)
+$ports = @(18082, 18083, 18084, 16335, 16336)
 if (@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -in $ports).Count) { throw 'A test port is occupied; existing services will be preserved' }
 $id = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $output = Join-Path $projectRoot "target/report-rag-browser-$(Get-Date -Format yyyyMMdd-HHmmss)-$id"
@@ -36,7 +36,8 @@ try {
         '--spring.datasource.url=jdbc:mysql://localhost:3306/stock_system_test?createDatabaseIfNotExist=false&useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai',
         '--stock-system.market.mode=mock','--spring.ai.model.chat=deepseek','--spring.ai.deepseek.base-url=http://127.0.0.1:18084',
         '--stock-system.agent.budget-yuan=10','--stock-system.agent.experiment-ledger=false',
-        '--stock-system.agent.reports.enabled=true','--stock-system.agent.reports.port=16335',"--stock-system.agent.reports.storage-directory=$runtime"
+        '--stock-system.agent.reports.enabled=true','--stock-system.agent.reports.port=16335',"--stock-system.agent.reports.storage-directory=$runtime",
+        "--stock-system.agent.reports.catalog-directory=$(Join-Path $runtime 'library')"
     ) $projectRoot @{ DEEPSEEK_API_KEY='offline-report-fixture'; SPRING_AI_DEEPSEEK_API_KEY='offline-report-fixture' }
     $null=Start-Owned 'frontend' $nodePath @('node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','18083','--strictPort') (Join-Path $projectRoot 'frontend') @{ VITE_API_TARGET='http://localhost:18082'; VITE_DEV_PORT='18083' }
     foreach ($origin in @('http://localhost:18082','http://localhost:18083')) {
@@ -48,6 +49,7 @@ try {
     }
     $runner=Start-Owned 'probe' $nodePath @('e2e/research-agent-smoke.mjs') (Join-Path $projectRoot 'frontend') @{
         AGENT_E2E_OUTPUT=$output; AGENT_REPORT_RAG_PROBE='true'; MYSQL_CLIENT_PATH=$mysqlPath
+        AGENT_REPORT_LIBRARY=(Join-Path $runtime 'library'); AGENT_JAVA_PATH=$javaPath
     }
     $runner.WaitForExit()
     $null=$owned[-1].OutTask.GetAwaiter().GetResult(); $null=$owned[-1].ErrTask.GetAwaiter().GetResult()

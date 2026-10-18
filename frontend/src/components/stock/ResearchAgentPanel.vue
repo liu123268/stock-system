@@ -55,7 +55,7 @@ const libraryLoading = ref(false)
 const libraryError = ref('')
 const capabilities = ref<HTMLDetailsElement>()
 async function loadLibrary(event: Event) {
-  if (!(event.target as HTMLDetailsElement).open || reportLibrary.value || libraryLoading.value || accessLost.value) return
+  if (!(event.target as HTMLDetailsElement).open || libraryLoading.value || accessLost.value) return
   const request = capture()
   libraryLoading.value = true; libraryError.value = ''
   try {
@@ -399,7 +399,10 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
           <p v-if="libraryLoading" class="agent-note" role="status">正在读取当前股票的报告范围…</p>
           <p v-else-if="libraryError" class="agent-note" role="alert">{{ libraryError }}</p>
           <template v-else-if="reportLibrary">
-            <p v-if="!reportLibrary.reports.length" class="agent-note">当前股票还没有入库的报告文字。可继续询问观点或行情。</p>
+            <p v-for="state in (reportLibrary.states ?? []).filter(item => item.status !== 'AVAILABLE')" :key="state.key" class="agent-note">
+              {{ state.title }}：{{ state.status === 'PROCESSING' ? (state.usableVersion ? '正在更新，暂用上个可用版本。' : '正在处理，尚不能查询。') : state.status === 'FAILED' ? (state.usableVersion ? '更新失败，仍可查询上个可用版本。' : '处理失败，尚不能查询。') : '已移除，相关旧引用已失效。' }}
+            </p>
+            <p v-if="!reportLibrary.reports.length" class="agent-note">当前股票没有可用的报告文字。可继续询问观点或行情。</p>
             <template v-else>
               <p v-if="!reportLibrary.retrievalEnabled" class="agent-note">当前可查看以下范围，报告段落检索尚未开启。</p>
               <div v-for="report in reportLibrary.reports" :key="report.version" class="agent-library-report">

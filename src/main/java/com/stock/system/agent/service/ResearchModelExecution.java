@@ -18,6 +18,10 @@ public final class ResearchModelExecution implements AutoCloseable {
     private boolean unknownUsage;
     private ResearchExperimentBudget experimentBudget;
     private String experimentRequestId;
+    private Long runId;
+    private String requestId;
+    private Integer upstreamStatus;
+    public ResearchModelFailure.Diagnostic failure;
     public final java.util.List<ToolTrace> toolTrace = new java.util.ArrayList<>();
 
     public ResearchModelExecution() {
@@ -31,6 +35,11 @@ public final class ResearchModelExecution implements AutoCloseable {
     }
 
     public static ResearchModelExecution current() { return CURRENT.get(); }
+    public void bind(long runId, String requestId) { this.runId = runId; this.requestId = requestId; }
+    public Long runId() { return runId; }
+    public String requestId() { return requestId; }
+    public Integer upstreamStatus() { return upstreamStatus; }
+    public void upstreamStatus(int status) { upstreamStatus = status; }
 
     public int remainingMillis() {
         long millis = (deadline - System.nanoTime()) / 1_000_000L;
@@ -62,6 +71,7 @@ public final class ResearchModelExecution implements AutoCloseable {
         this.experimentRequestId = java.util.UUID.randomUUID().toString();
         if (experimentBudget != null) experimentBudget.reserve(experimentRequestId, inputBytes);
         modelCalls++;
+        upstreamStatus = null;
         dispatched = true;
         waitingForUsage = true;
     }

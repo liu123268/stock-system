@@ -42,7 +42,6 @@ public class ResearchQuestionModel {
             if (!"stop".equalsIgnoreCase(reason) && !"tool_calls".equalsIgnoreCase(reason))
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
             return response.getResult().getOutput();
-        } catch (BusinessException failure) { throw failure; }
-        catch (RuntimeException failure) { throw new BusinessException(ErrorCode.RESEARCH_AGENT_UNAVAILABLE); }
+        } catch (RuntimeException failure) { throw ResearchModelFailure.translate(failure, "QUESTION_MODEL"); }
     }
 }

@@ -162,6 +162,8 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 
 原来的“研究梳理”由 Java 先固定读观点和报价，再让模型整理。本次新增“继续提问”：模型根据问题提出允许的查询，Java 校验并执行，再把实际结果送回模型。工具调用多了一次取得资料的往返；模型不直接访问数据库，也不能自行选另一个用户、空间或股票。
 
+把已有 Service 接成工具需要同时维护声明和执行两侧：definitions 中的名称用于识别，说明用于帮助模型选择，参数契约约定可填字段、类型及必填项；ResearchQuestionModel 把这些 ToolCallback 与消息一起交给模型。模型返回名称和参数后，execute 以白名单／分支分派到真实业务方法，并继续执行 Java 参数和权限检查。财务工具只让模型选择 series／period／metrics，用户、空间与股票由 context.target 绑定；参数契约不是权限证明，Service 仍重验访问。结果组成工具响应，加入下一次请求。新增工具应核对说明、受限参数、Service 分派和结果处理是否都已接上，不能只在 Prompt 中提到一个方法名。
+
 先沿“最新可用价是多少”看完整链路：页面把问题、当前周期和 requestId 交给 [ResearchAgentService.ask](../../src/main/java/com/stock/system/agent/service/ResearchAgentService.java)；Service 验证访问、读取范围、筛选有效历史、预留费用后，进入 [ResearchQuestionService.answer](../../src/main/java/com/stock/system/agent/service/ResearchQuestionService.java)。第一次 [ResearchQuestionModel.call](../../src/main/java/com/stock/system/agent/service/ResearchQuestionModel.java) 可以返回 `read_latest_quote` 请求，Java 的 `execute` 选择报价 Service，取得价格、币种、时间、来源和模拟标记，再以相同 call ID 组成 ToolResponseMessage。第二次模型请求读到这一结果，写出回答及引用；Java 校验引用、重查权限和来源后保存，页面显示并允许打开依据。这就是本轮真实样本的两次模型请求、一次工具执行。
 
 `read_latest_quote` 是项目定义的工具名，`answer`／`execute` 是项目方法；AssistantMessage／ToolResponseMessage 是 Spring AI 的消息类型，`for`／`switch` 是 Java 语法。无需先背下这些拼写；应能读出“模型提出查什么 → Java 决定能否执行 → 实际数据回传 → 模型回答 → Java 核对保存”。Spring AI 2 的 ChatModel 工具调用由调用方管理执行，我们用显式循环保留额度、权限和用量控制，依据见 [官方工具调用说明](https://docs.spring.io/spring-ai/reference/api/tools/chatmodel-tool-calling.html)。
@@ -272,12 +274,42 @@ python -m venv .local/rag-preflight/venv
 
 以前报告文字只在 Python 预检中参与查询。现在 [导出脚本](../../scripts/rag-preflight/export_catalog.py) 从同一已审 PDF 与边界生成版本化正文目录，Java 加载并验证文字哈希和位置；提问时经 ResearchQuestionService → ResearchReportService → 本地 EmbeddingModel → Qdrant，取得最多三段候选，才进入回答模型。关键词相似、向量相似和材料能否支持结论是不同检查，不能用命中代替答案审查。完整机制与后续维护边界见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)。
 
-模型只传检索文字与可选年度，当前用户／空间／股票／周期由 Java 校验和绑定，观点日期不限制年报年份。向量库是可重建索引，受审目录才是本阶段的正文权威来源。回复只保存实际引用的 REPORT 依据，放进现有 agent_message.result_json，不新增聊天表；里面保留原文、报告哈希、章节和 PDF 页码。查看记录与引用会重校验当前权限及同一版本，失效时不展示旧正文，回看不新增模型调用。当前目录由版本发布维护，在线状态机与增删任务仍待 008 完成。
+模型只传检索文字与可选年度，当前用户／空间／股票／周期由 Java 校验和绑定，观点日期不限制年报年份。向量库是可重建索引，本机受审发布记录是正文权威来源。回复只保存实际引用的 REPORT 依据，放进现有 agent_message.result_json，不新增聊天表；里面保留原文、报告哈希、章节和 PDF 页码。查看记录与引用重校验权限及对应已发布版本：正常更新保留旧依据，移除或记录损坏时不从聊天快照恢复原文，回看不新增模型调用。
 
 本机资产准备在项目根目录运行 scripts/setup-report-rag.ps1 -EnableLocal：核对固定公共权重及官方 Qdrant 文件，写入被忽略的本机开启配置，不启动服务，也不调用回答模型。当前机器已完成这一步；IDEA 重新加载 Maven 后重启 dev 后端，Vue 开发页由 Vite 更新。Java 在首次需要报告检索时启动自己的回环 Qdrant，正常关闭时释放；端口占用不接管其他服务。强制结束后的恢复先核对文件锁及进程身份，不按进程名批量清理。默认与生产仍关闭，其他操作系统需单独落实服务与验证。
 
 页面入口：研究详情 → 研究助手 → “可查询的资料与报告”，查看当前股票已入库的具体章节。可以在腾讯问“2025年年报怎样解释营销服务收入增长”，在茅台问“2025年年报列举了哪些经营风险”。点回答中的“查看报告原文依据”能看实际段落和 PDF 页码，再打开官方原报对应页；没有对应股票／年份、无相关候选和检索故障分别说明。只覆盖受审文字，不等于整份报告或全部最新披露。
 
-开发验收用 scripts/run-agent-report-probe.ps1：独立 test HTTP／真实 MySQL／Chrome、Java 本地向量和 Qdrant 服务端，回答模型是回环替身。先核对两条环境探针与真实 catalog，随机样本 finally 逐表清零，测试向量目录与四个端口一并清理；不会调用 DeepSeek 或占用其预算。单独验证 Java 检索时启用 REPORT_RAG_LOCAL_PROBE=true 后运行 LocalReportRetrievalProbeTest；普通回归跳过该本地资产依赖。真实回答质量与生产部署另验，最新结果只见 tasks。
+开发验收用 scripts/run-agent-report-probe.ps1：独立 test HTTP／真实 MySQL／Chrome、Java 本地向量和 Qdrant 服务端，回答模型是回环替身。先核对两条环境探针与真实 catalog，随机样本 finally 逐表清零，测试目录与 18082／18083／18084／16335／16336 五个端口一并清理；不会调用 DeepSeek 或占用其预算。单独验证 Java 检索时启用 REPORT_RAG_LOCAL_PROBE=true 后运行 LocalReportRetrievalProbeTest；普通回归跳过该本地资产依赖。真实回答质量与生产部署另验，最新结果只见 tasks。
 
 兼容排查：Python ONNX 可运行不证明 Java JNI 路径可用。本机首次 ORT Java 1.31 在 JDK17 的旧 msvcp140.dll 初始化崩溃；仅调整 Java 依赖后重新跑实际模型，不替换系统 DLL／JDK。Qdrant 集合名过长还会触发 Windows 段目录路径限制；用包含完整内容／编码身份的短哈希名解决，不能为缩短路径丢掉版本隔离。Windows ProcessHandle 不提供 arguments，子进程恢复以精确创建时刻、可执行路径、已退出的原父进程、数据目录、端口和独占锁联合校验。
+
+### 本机报告维护
+
+这是系统维护操作，普通用户仍只在助手页查看资料范围、提问和点原文，不增加上传入口。公开报告发布记录在 `.local/report-rag/library/library.json`；私人聊天、运行与预算继续保存在 MySQL 四表。文件只适用于当前单机小语料，生产共享维护另验，状态与版本机制见设计 4.4。
+
+下面在项目根目录的 PowerShell 运行，使用已打包的 JAR 与当前 Java 17；改过 Java 后先按既有构建流程打包。先导出腾讯单份受审材料，再设置这个终端内的命令参数。Python 导出仍会核对原 PDF 哈希和段落，不读取 Key，不调用模型；超出已审来源的股票不会导出。
+
+```powershell
+& .local/rag-preflight/venv/Scripts/python.exe scripts/rag-preflight/export_catalog.py --symbol 00700.HK --output target/report-tencent-reviewed.json
+$reportJava = Join-Path $env:JAVA_HOME 'bin/java.exe'
+$reportCommand = @('-Dloader.main=com.stock.system.agent.report.ReportMaintenanceCommand', '-cp', 'target/stock-system-0.0.1-SNAPSHOT.jar', 'org.springframework.boot.loader.launch.PropertiesLauncher')
+$reportLibrary = '.local/report-rag/library'
+& $reportJava @reportCommand status $reportLibrary
+```
+
+status 返回固定状态和文档 key，退出码 0、最后一行 JSON 的 status 为 OK 表示成功。import 只导入一份报告，先建候选索引再发布；已经可用的相同版本不会重建。每次展开页面的“可查询的资料与报告”都会重读状态，已启用新代码的后端不必为资料更新再次重启。
+
+```powershell
+& $reportJava @reportCommand import $reportLibrary target/report-tencent-reviewed.json
+```
+
+处理失败时退出码为 1，不覆盖旧可用版；页面会说明仍可用旧版。修好本机资产或释放被其他程序占用的 16336 后，可将 import 换成 retry。中断停在 PROCESSING 也使用 retry，由新代次接替；没有后台自动重试。维护索引在 library 的同级 maintenance-index，日常查询仍使用自己的目录和 16333。
+
+remove 的最后一个参数是 status 返回的文档 key，会同时禁止新检索和旧聊天原文。普通 import 不恢复已移除资料；确需重新提供时使用 restore，参数与 import 相同。移除是业务禁用，当前不自动物理删除旧正文版本或向量集合；不要为恢复一份报告删除整个 library.json，这会丢掉其他移除状态。
+
+### 模型失败如何排查
+
+“研究助手暂不可用”是给页面的统一反馈，不能单凭它判定数据错误、超时或欠费。先查同一运行的 model_calls 与 tool_trace_json，确认失败前走到了哪步，再查 V15 增加的 model_failure_json：stage 指定梳理／问答模型阶段，modelCall 指第几次模型派发，upstreamStatus 和 category 区分 HTTP、限流、认证、超时、连接、TLS、响应解码或未知错误。安全日志沿相同 run／request 编号串联，不记录原始响应、异常消息或密钥。
+
+例如第 23 节旧腾讯记录的两次财务工具均完成，随后第二次模型请求没有有效用量，且旧日志未保留异常原因；只能定位到后续模型调用，不能补猜具体根因。本次修复诊断不等于该真实接口已恢复。未知用量继续保留原预留，不以已知前一次 Token 释放它；先取得服务商可核对的用量证据，再处理账本，不能将预留当成确认实扣或直接清零。

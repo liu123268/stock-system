@@ -39,7 +39,9 @@ public class ResearchAiConfiguration {
                 execution.remainingMillis();
                 execution.dispatch(experimentBudgets == null ? null : experimentBudgets.getIfAvailable(), body.length);
             }
-            return next.execute(request, body);
+            var response = next.execute(request, body);
+            if (execution != null) execution.upstreamStatus(response.getStatusCode().value());
+            return response;
         });
     }
 

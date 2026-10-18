@@ -2,6 +2,9 @@ package com.stock.system.agent.report;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import java.nio.file.*;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -10,17 +13,34 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 
-/** The release-owned catalog is authoritative. Vector payloads cannot publish or restore sources. */
+/** Reviewed local publications are authoritative. Vector payloads cannot publish or restore sources. */
 @Component
 public class ReportCatalog {
     private final Map<String, ReportPassage> passages;
     private final String fingerprint;
+    private ReportLibraryStore library;
 
     public ReportCatalog() throws IOException {
         this(new ClassPathResource("reports/reviewed-passages.json").getContentAsByteArray());
     }
 
-    ReportCatalog(byte[] content) {
+    @Autowired
+    public ReportCatalog(@Value("${stock-system.agent.reports.catalog-directory:.local/report-rag/library}") String directory,
+                         @Value("${stock-system.agent.reports.enabled:false}") boolean enabled) throws IOException {
+        this();
+        Path path = Path.of(directory);
+        if (enabled || Files.isRegularFile(path.resolve("library.json"))) library = new ReportLibraryStore(path, this.installed());
+    }
+
+    public ReportCatalog installed() { return ReportLibraryStore.catalog(List.copyOf(passages.values())); }
+    public ReportCatalog snapshot() { return library == null ? this : library.active(); }
+    public ReportLibraryStore library() {
+        if (library == null) throw new IllegalStateException("Report maintenance storage is not enabled");
+        return library;
+    }
+    public List<ReportLibraryStore.Status> statuses(String symbol) { return library == null ? List.of() : library.statuses(symbol); }
+
+    public ReportCatalog(byte[] content) {
         var catalog = JsonMapper.builder().build().readValue(content, Catalog.class);
         if (catalog.version() == null || catalog.passages() == null || catalog.passages().size() > 200)
             throw new IllegalArgumentException("Invalid reviewed report catalog");
@@ -48,11 +68,13 @@ public class ReportCatalog {
         UUID.fromString(row.id());
     }
 
-    public String fingerprint() { return fingerprint; }
-    public List<ReportPassage> all() { return List.copyOf(passages.values()); }
-    public List<ReportPassage> forSymbol(String symbol) { return passages.values().stream().filter(row -> row.symbol().equals(symbol)).toList(); }
-    public boolean matches(ReportPassage snapshot) { return snapshot != null && snapshot.equals(passages.get(snapshot.id())); }
+    public String fingerprint() { return library == null ? fingerprint : snapshot().fingerprint(); }
+    public List<ReportPassage> all() { return library == null ? List.copyOf(passages.values()) : snapshot().all(); }
+    public List<ReportPassage> forSymbol(String symbol) { return all().stream().filter(row -> row.symbol().equals(symbol)).toList(); }
+    public boolean matches(ReportPassage snapshot) { return library == null ? snapshot != null && snapshot.equals(passages.get(snapshot.id())) : library.matches(snapshot); }
+    public boolean matchesCurrent(ReportPassage value) { return snapshot().matches(value); }
     public ReportPassage require(String id) {
+        if (library != null) return snapshot().require(id);
         ReportPassage row = passages.get(id);
         if (row == null) throw new IllegalArgumentException("Unknown report passage");
         return row;

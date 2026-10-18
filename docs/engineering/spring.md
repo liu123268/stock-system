@@ -304,7 +304,7 @@ Value 注解来自 Spring，可用于字段或构造器等注入位置，本例�
 
 ## 14. 登录请求：MVC、参数绑定、校验与响应
 
-Spring MVC 是项目通过依赖引入、与业务代码一起运行的 Web 框架，由现成的 Java 组件组织 HTTP 请求与 Java 方法之间的连接；它不是某一个业务类或独立部署的服务。Service 层是开发者按业务职责组织的一组 Java 类，AuthService 是其中的一个类；“层”表示职责分工，登录规则仍由开发者编写，Service 注解本身不会生成这些业务规则。
+Spring MVC 是 Spring 已提供的一套 Java 组件，项目通过依赖引入后，与业务代码一起运行。浏览器发送的是接口地址、请求方式和数据；MVC 根据接口映射找到 Java 处理方法，准备参数、组织调用，再将结果写进 HTTP 响应。它不是某一个业务类或独立部署的服务。Service 层是开发者按业务职责组织的一组 Java 类，AuthService 是其中的一个类；“层”表示职责分工，登录规则仍由开发者编写，Service 注解本身不会生成这些业务规则。
 
 以直接访问后端的 POST /api/auth/login 为例，默认端口沿 application.properties 的 8082；前端开发代理和生产反向代理是外层转发环节。内嵌 Tomcat 接收 HTTP 请求、管理 Servlet 的运行；Servlet 是处理 Web 请求的 Java 标准组件，DispatcherServlet 是 Spring MVC 的统一入口。通常执行路径为 Tomcat → Servlet Filter／Security 过滤器链 → DispatcherServlet → 定位 Controller 方法 → 参数读取与校验 → Controller → Service → Mapper／数据库；成功返回时，经消息转换器用 Jackson 把响应对象转换成 JSON。HandlerMapping 负责定位处理方法，HandlerAdapter 负责适配调用及参数／返回值处理。
 
@@ -314,8 +314,10 @@ Controller 接收和返回 HTTP 数据，AuthService 负责查账号、密码匹
 
 [GlobalExceptionHandler](../../src/main/java/com/stock/system/common/exception/GlobalExceptionHandler.java) 的 RestControllerAdvice／ExceptionHandler 把 MVC 可解析的异常转成统一响应：该请求的参数校验错误返回 HTTP 400 与 INVALID_REQUEST，BusinessException 按 ErrorCode 返回相应 HTTP 状态及错误信息。此处的“全局”是 MVC 异常处理范围；过滤器中在进入 MVC 前直接拒绝的请求，由安全链自身处理，不能推断 ControllerAdvice 自动捕获所有层的异常。
 
-Filter 在 Servlet 层包围配置范围内的后续链路，不依赖 MVC 已定位哪个 Controller；Spring MVC 的 HandlerInterceptor 在找到处理方法后参与前置、后置和完成回调，能直接取得目标处理器。两者都可记录日志、决定是否继续，不能只按“认证／日志”给它们划分互斥用途。项目 JWT 认证沿 [JwtAuthenticationFilter](../../src/main/java/com/stock/system/security/JwtAuthenticationFilter.java) 和 SecurityConfig；无 Token 的登录请求由安全规则放行，不会免除 AuthService 对账号密码的验证。当前未发现自定义 HandlerInterceptor，其职责区别属于知识准备。
+Filter 与 Interceptor 参与处理的是同一次 HTTP 请求，不能理解成“Filter 检查用户权限，Interceptor 检查方法是否合格”。Java 方法原本就在应用中；用户传入请求，由 MVC 选择对应的处理目标，并非用户传进来一个方法供拦截器过滤。对这里的 Controller 请求，前置 Filter 可以在 MVC 尚未选择方法时处理请求；MVC 找到目标后调用 HandlerInterceptor，并直接提供目标处理器信息，拦截器还可参与后置和完成回调。读取目标方法上的标记，是利用方法信息决定如何处理请求，不是判断 Java 方法写得是否合格。
 
-一个对照场景：用户请求查看研究详情，安全过滤器链先识别身份，无有效身份的受保护请求可在进入 Controller 前被拒绝；身份有效后，MVC 定位详情方法。若未来希望按该方法声明的业务名称记录调用结果和耗时，可用 Interceptor 在取得目标方法后参与记录；此拦截器是假设用途，并非已实现功能。Controller 再调用 Service 执行资料访问规则与读取。Filter 也能记请求耗时，选择 Interceptor 的理由是本例需要 MVC 识别出的处理方法信息。对当前同步处理路径，前置顺序可记为 Filter → DispatcherServlet → Interceptor（若配置）→ Controller；请求可在中间被拒绝，并非每次都执行 Service／SQL。
+对照场景：登录请求进入后，假设由 Filter 先生成统一请求编号，让后续日志使用；MVC 再定位登录 Controller 方法；假设已配置 Interceptor，它可检查该方法是否带有“记录业务操作”的标记，按约定参与记录，再继续执行 Controller。请求编号和标记处理均为教学设定，并非项目已实现功能。项目 JWT 认证实际沿 [JwtAuthenticationFilter](../../src/main/java/com/stock/system/security/JwtAuthenticationFilter.java) 和 SecurityConfig；无 Token 的登录请求由安全规则放行，不会免除 AuthService 对账号密码的验证。当前未发现自定义 HandlerInterceptor，其职责区别属于知识准备。
+
+用途重叠不等于整体可互换：对覆盖相同范围的 Controller 请求，统计耗时可以选 Filter 或 Interceptor；但若要求在 MVC 开始查找方法之前生成编号，不能直接改用较晚才执行的 Interceptor。若规则依赖目标方法上的标记，Interceptor 能直接取得目标信息，Filter 的调用参数通常只有请求、响应和后续链路，需额外配合才能完成同样判断。两者都能记录日志、决定是否继续，区别在接入位置、可直接获取的信息与覆盖范围，不能只按“权限／日志”等用途区分。对当前同步处理路径，前置顺序可记为 Filter → DispatcherServlet → Interceptor（若配置）→ Controller；请求可在中间被拒绝，并非每次都执行 Service／SQL。
 
 依据：[DispatcherServlet 请求处理](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/sequence.html)、[RequestBody 与参数校验](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-methods/requestbody.html)、[MVC 拦截器](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/handlermapping-interceptor.html)。本节按当前源码与框架契约讲解，未启动服务或执行登录请求。
