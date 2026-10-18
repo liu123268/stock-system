@@ -13,3 +13,5 @@
 - [BUG-009：研究目标变化后的旧写入回调](BUG-009-research-target-lifetime.md)
 - [BUG-010：无价格时丢失交易状态与旧状态冒充当前核实](BUG-010-trade-status-without-price.md)
 - [BUG-011：模型重试次数与首次请求次数混淆](BUG-011-spring-ai-retry-count.md)
+- [BUG-012：财务快照正确但模型正文金额或百分比单位出错](BUG-012-financial-answer-unit-conversion.md)
+- [BUG-013：报告引用正确但摘要扩大原文对象范围](BUG-013-report-scope-generalization.md)

@@ -180,6 +180,8 @@ Service 的返回值先在 Java 内存里；模型提出的工具请求和执行
 
 读测试时核对断言检查的对象：[财务工具测试](../../src/test/java/com/stock/system/agent/ResearchFinancialQuestionTest.java) 人为指定模型的工具请求和最终回复，用于检查 Java 往返、范围和依据；真实检查脚本中的 SUCCEEDED／answer 存在断言，只能证明相应程序条件，正文数值、单位、来源及是否回答本次问题仍需与快照对照。历史报价记录中无关的日 K 缺口已转为一次实际 Prompt 修正，证据见 [缺口聚焦](../specs/004-research-agent/tasks.md#20-报价回答的资料缺口聚焦2026-10-15)；输入规则已修改与真实输出已改善分别验收。
 
+报告六题的真实比较又发现，正确财务快照仍可能被模型在正文换算错。v7 在解析新回答时核对带财务引用段落的数字与原单位组合，拒绝模型自行换算、改数或未取得的百分比；源码入口为 ResearchFinancialAnswerNumbers。它检查“该数值／单位是否在引用材料内”，不证明科目归属、增减方向和整段语义，旧记录也不据此自动改写。真实错误、作用范围和复验见 [BUG-012](bugs/BUG-012-financial-answer-unit-conversion.md)；不能把新增单元测试当作真实模型复测。
+
 ## 8. 正式业务学习：断线后查原任务
 
 网络失败只说明浏览器没有收到回包，后端可能仍在执行，也可能已经完成并记账。直接用新编号再发，不能利用原请求去重。所以页面先保留 requestId；有 runId 就查询该运行，没有 runId 就按原 requestId 查找，恢复成功结果或准确失败原因，均不重新调用模型。暂未找到时保留编号，用户再次提交同一动作仍沿用它；确认终态后的新动作才换编号。
@@ -272,7 +274,7 @@ python -m venv .local/rag-preflight/venv
 
 ## 12. 报告检索如何进入正式助手
 
-以前报告文字只在 Python 预检中参与查询。现在 [导出脚本](../../scripts/rag-preflight/export_catalog.py) 从同一已审 PDF 与边界生成版本化正文目录，Java 加载并验证文字哈希和位置；提问时经 ResearchQuestionService → ResearchReportService → 本地 EmbeddingModel → Qdrant，取得最多三段候选，才进入回答模型。关键词相似、向量相似和材料能否支持结论是不同检查，不能用命中代替答案审查。完整机制与后续维护边界见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)。
+以前报告文字只在 Python 预检中参与查询。现在 [导出脚本](../../scripts/rag-preflight/export_catalog.py) 从同一已审 PDF 与边界生成版本化正文目录，Java 加载并验证文字哈希和位置；提问时经 ResearchQuestionService → ResearchReportService → ReportRetriever，在相同股票／年度内合并本地 BM25 与 EmbeddingModel／Qdrant 候选，取得最多三段，才进入回答模型。章节标题帮助精确词匹配，向量补足改写查询；两者的分数尺度不同，因此按排名融合。关键词相似、向量相似和材料能否支持结论是不同检查，不能用命中代替答案审查。完整机制与后续维护边界见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)。
 
 模型只传检索文字与可选年度，当前用户／空间／股票／周期由 Java 校验和绑定，观点日期不限制年报年份。向量库是可重建索引，本机受审发布记录是正文权威来源。回复只保存实际引用的 REPORT 依据，放进现有 agent_message.result_json，不新增聊天表；里面保留原文、报告哈希、章节和 PDF 页码。查看记录与引用重校验权限及对应已发布版本：正常更新保留旧依据，移除或记录损坏时不从聊天快照恢复原文，回看不新增模型调用。
 
@@ -283,6 +285,33 @@ python -m venv .local/rag-preflight/venv
 开发验收用 scripts/run-agent-report-probe.ps1：独立 test HTTP／真实 MySQL／Chrome、Java 本地向量和 Qdrant 服务端，回答模型是回环替身。先核对两条环境探针与真实 catalog，随机样本 finally 逐表清零，测试目录与 18082／18083／18084／16335／16336 五个端口一并清理；不会调用 DeepSeek 或占用其预算。单独验证 Java 检索时启用 REPORT_RAG_LOCAL_PROBE=true 后运行 LocalReportRetrievalProbeTest；普通回归跳过该本地资产依赖。真实回答质量与生产部署另验，最新结果只见 tasks。
 
 兼容排查：Python ONNX 可运行不证明 Java JNI 路径可用。本机首次 ORT Java 1.31 在 JDK17 的旧 msvcp140.dll 初始化崩溃；仅调整 Java 依赖后重新跑实际模型，不替换系统 DLL／JDK。Qdrant 集合名过长还会触发 Windows 段目录路径限制；用包含完整内容／编码身份的短哈希名解决，不能为缩短路径丢掉版本隔离。Windows ProcessHandle 不提供 arguments，子进程恢复以精确创建时刻、可执行路径、已退出的原父进程、数据目录、端口和独占锁联合校验。
+
+### 检索对照与报告回答评估
+
+默认混合检索，查询词覆盖重排关闭。需要定位差异时，可在临时后端启动参数中用 `--stock-system.agent.reports.retrieval-mode=VECTOR` 或 `KEYWORD` 切换，`--stock-system.agent.reports.rerank=true` 开启本地重排；日常开关和模型预算不随此变更。向量服务失败仍是检索故障，不把关键词结果冒充完整混合结果。
+
+在项目根目录运行下面的离线比较。本机依赖已缓存，所以 `-o` 禁止下载，指定 settings 沿用依赖缓存的仓库身份，避免全局镜像不一致导致误报缺依赖；测试加载真实本地向量模型并临时监听 16334，不连接业务 MySQL 或付费模型。运行前保证端口空闲。
+
+```powershell
+$env:REPORT_RAG_LOCAL_PROBE = 'true'
+mvn -o -s scripts/agent-compatibility-maven-settings.xml "-Dmaven.repo.local=D:\Java\stockweb\.m2repo" "-Dtest=ReportRetrievalEvaluationTest" test
+Remove-Item Env:REPORT_RAG_LOCAL_PROBE
+```
+
+输出 `target/report-retrieval-comparison.json`：逐题保存关键词、向量、混合、混合后重排的候选／位置、版本与题集哈希，分别统计首位／前三命中、MRR、无答案拒绝及单次耗时。所有策略共享同次向量查询，耗时含热身、顺序和共享编码影响，不能据此宣称生产提速。参数固定后才跑留出改写题，不根据留出结果继续调参。临时向量目录 finally 删除，16334 关闭；真实排名坏例子保留，不因加入重排就声称更好。
+
+[六题报告题库](../../scripts/agent-quality/report-cases.mjs) 将“候选命中”和“回答受到支持”继续拆开。覆盖营销驱动、未来渠道计划、观点＋财务＋原文组合、缺年度及两类无答案；每题保留应核对的语义清单。先只读打印计划，再运行默认替身模式：
+
+```powershell
+node frontend/e2e/research-agent-financial-probe.mjs --suite=reports --dry-run
+./scripts/run-agent-report-quality.ps1
+```
+
+报告与财务入口共用受保护的运行器；`--suite`／题目编号未知、重复或跨题库时在外部连接前拒绝。替身模式实际串联 test HTTP／MySQL、Java 向量／Qdrant、三工具组合、保存、幂等与恢复，`paidRequests=0`，不能据替身输出关闭真实模型语义质量。结果在 `target/agent-reports-fixture-*`，查看 `results.json` 的提问、输出、原文、工具轨迹及 `verification.json` 的清理结果。程序只验证原文身份、章节及引用关系，`semanticReview` 保持待人工检查。
+
+真实模式仅在已核对本轮问题、公开报告段落外发和预算授权后运行 `scripts/run-agent-report-quality.ps1 -Mode Real -ApprovedReportData`；可用 `-CaseIds` 限定题目，`-ContinueFrom` 仅复用相同题库／模式／范围的已通过部分，绝不重发已执行问题。仍沿原累计 10 元 JSONL，保留既有未知用量预留，新的未知用量或运行失败立即停，无自动付费重试；不新增预算、不覆盖旧账本。六题计划最大每题四次模型请求、三次工具尝试。默认财务入口及其授权开关保持，财务授权不能代替报告外发授权。真实结果必须逐项对照原文审查，代码和替身检查不自动填为通过。
+
+当前报告事实段落采用受审原文摘录交付，来源仍由模型按本次问题选择，Java 补真实原段／页码并保留限定词；成员观点和财务解释另按原规则核对。真实核对评估最终交付结果，不将 Java 摘录写成模型自由概括提高；取舍见 [BUG-013](bugs/BUG-013-report-scope-generalization.md)。已有获准结果可先离线回放：在项目根目录将 REPORT_ANSWER_REPLAY 设为 target 内对应 results.json，再定向运行 ResearchReportAnswerReplayTest，随后对生成的 target/report-answer-support-replay.json 执行同一题集程序契约和原文对照。输出记录输入哈希、旧模型版本、新流程版本及新增模型请求为 0，不覆盖原文件、不读取 Key；回放不替代新版本真实运行或授权。
 
 ### 本机报告维护
 

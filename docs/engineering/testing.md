@@ -70,6 +70,16 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 001R 的 [报告预检](../../scripts/rag-preflight/preflight.py) 在项目隔离 Python 环境中处理受审 PDF 与真实本地 Embedding，不调用回答模型、不写业务 MySQL。其边界单元检查使用 scripts/rag-preflight/test_preflight.py；完整 retrieve 阶段另验证实际 Qdrant 本地持久化、重复导入、版本／股票／模型过滤和移除后空结果。临时库使用本轮唯一目录和集合，finally 删除本轮片段、查询数量为 0，关闭句柄后核对绝对路径再移除目录；模型缓存保留。题集与候选成绩不等于回答质量，更不证明 Java／网页／服务端 Qdrant 已通过。操作只见 [实验说明第 11 节](agent-experiment.md#11-报告正文检索的本地预检)，成绩只见对应 tasks。
 
+Java 的 ReportRetrievalTest 检查有界词法检索、融合去重、重排、错误身份／股票／年度与关闭状态；ReportRetrievalEvaluationTest 由 REPORT_RAG_LOCAL_PROBE 显式启用，真实本地 ONNX／Qdrant 对同一冻结题集比较四种策略，分别保留命中、无答案、版本及耗时，finally 清理目录／16334。新报告六题及原财务选择／授权边界检查执行 `node --test scripts/agent-quality/financial-cases.test.mjs scripts/agent-quality/financial-probe-guard.test.mjs scripts/agent-quality/report-cases.test.mjs`。报告完整替身／真实入口的前置、数据外发、原累计账本及人工语义审查只维护在 [报告评估操作](agent-experiment.md#检索对照与报告回答评估)；仍执行本文件第 4／5 节的双环境探针、catalog、finally 清零与精确进程清理。
+
+财务正文数值保护由 ResearchFinancialAnswerNumbersTest 与 ResearchFinancialQuestionTest 检查，包含真实金额错误、百分比漏单位和共同引用中的同值数字。研究助手受控浏览器另用 invalid-financial-number／invalid-financial-percent 替身返回合法引用及错误金额／缺百分号，确认 INVALID_RESULT、旧答案保留、错误不入消息、不额外派发、费用已知；该项不占真实模型预算。人工／Codex 原文审查必须同时看正文和引用快照，SUCCEEDED 或工具金额正确不能自动判为语义通过，真实失败样本见 [BUG-012](bugs/BUG-012-financial-answer-unit-conversion.md)。
+
+ResearchQuestionModelTest 走实际框架 HTTP 序列化，覆盖工具可选轮次直接回答与原生 tool_calls：两者均须带 JSON 输出约束，后者由业务层执行。ResearchFinancialQuestionTest 的拒绝检查核对 JSON／引用校验的安全阶段、已知用量和无重试；Chrome 的错误财务段落进一步核对 QUESTION_REPLY_FINANCIAL 落库。不得为定位格式问题把原始响应或解析异常消息加入普通日志；历史没有保存的响应不能靠新诊断反推其确切失败原因。
+
+纯报告空查询的 Java 覆盖说明检查包括 NO_REPORT／NO_MATCH 去重、模型常识句不进入最终回复、混合财务材料不被替换，以及有工具参数错误时不冒充成功空检索；报告范围与真实性仍从实际 Service 结果核对，不由用户或模型声明的“没有资料”触发。
+
+ResearchReportAnswerSupportTest 检查报告事实段落交付完整受审原文、计划限定保留、去重及混引拒绝。ResearchReportAnswerReplayTest 只有显式指定 REPORT_ANSWER_REPLAY 为 target 内已有实验 results.json 时执行，不连模型或数据库，另存输入哈希、原始模型版本和新流程版本。回放后仍用原题程序契约与原文清单核对，不把零新增请求的回放写成新版本真实模型复测；实现取舍见 [BUG-013](bugs/BUG-013-report-scope-generalization.md)。
+
 ## 3. 前端测试
 
 - 类型检查：`npm.cmd run type-check`。

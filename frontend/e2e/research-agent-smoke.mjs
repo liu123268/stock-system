@@ -186,6 +186,34 @@ try {
   assert.equal((await fixtureState()).calls, beforeFinancialRestore)
   await page.keyboard.press('Escape')
   checks.push('financial-restore-and-source-access-without-paid-request')
+  for (const guard of [{ mode: 'invalid-financial-number', name: 'number' }, { mode: 'invalid-financial-percent', name: 'percentage' }]) {
+    await fixtureState(guard.mode)
+    const beforeNumberGuard = (await fixtureState()).calls
+    const previousAnswers = await page.locator('.agent-answer').count()
+    await questionInput.fill('年度财务数字按原报核对')
+    const financialPost = page.waitForRequest(request => request.url().endsWith('/agent/messages') && request.method() === 'POST')
+    await page.getByRole('button', { name: '发送问题', exact: true }).click()
+    const guardedRequestId = (await financialPost).postDataJSON().requestId
+    assert.match(guardedRequestId, /^[0-9a-f-]{36}$/)
+    await page.getByRole('alert').getByText('研究助手未返回可核对的完整结果', { exact: true }).waitFor()
+    assert.equal(await page.locator('.agent-answer').count(), previousAnswers)
+    assert.equal((await page.locator('.agent-panel').innerText()).includes('1688.3810251459'), false)
+    const numberGuard = JSON.parse(sql(`select json_object('runId', id, 'status', status, 'errorCode', error_code,
+      'modelCalls', model_calls, 'costKnown', cost_upper_yuan is not null, 'failure', cast(model_failure_json as json))
+      from agent_run where user_id=${owner.userId} and request_id='${guardedRequestId}'`))
+    assert.equal(numberGuard.status, 'FAILED')
+    assert.equal(numberGuard.errorCode, 'RESEARCH_AGENT_INVALID_RESULT')
+    assert.equal(numberGuard.modelCalls, 2)
+    assert.equal(numberGuard.costKnown, true)
+    assert.deepEqual(numberGuard.failure, { stage: 'QUESTION_REPLY_FINANCIAL', category: 'RESEARCH_AGENT_INVALID_RESULT',
+      upstreamStatus: 200, modelCall: 2, runId: numberGuard.runId, requestId: guardedRequestId })
+    assert.equal(sql(`select count(*) from agent_message where run_id=${numberGuard.runId}`), '0')
+    assert.equal((await fixtureState()).calls, beforeNumberGuard + 2)
+    await writeFile(`${output}/financial-${guard.name}-guard.json`, JSON.stringify(numberGuard, null, 2))
+    await page.locator('.agent-panel').screenshot({ path: `${output}/financial-${guard.name}-rejected.png` })
+    checks.push(`financial-original-unit-${guard.name}-guard-rejects-model-conversion-without-message-or-retry`)
+  }
+  await fixtureState('valid')
   if (process.env.AGENT_REPORT_RAG_PROBE === 'true') {
     const library = await api(`${base}/reports`, owner.accessToken)
     assert.equal(library.retrievalEnabled, true)
@@ -473,10 +501,14 @@ try {
   assert.equal(failure.status, 'FAILED')
   assert.equal(failure.errorCode, 'RESEARCH_AGENT_UNAVAILABLE')
   assert.equal((await fixtureState()).calls, beforeFailure + 1)
-  const diagnostic = JSON.parse(sql(`select model_failure_json from agent_run where id=${failure.runId} and user_id=${owner.userId}`))
-  assert.deepEqual(diagnostic, { stage: 'QUESTION_MODEL', category: 'UPSTREAM_HTTP', upstreamStatus: 503,
+  const diagnostic = JSON.parse(sql(`select json_object('failure', cast(model_failure_json as json),
+    'unknownCost', cost_upper_yuan is null, 'reservedYuan', reserved_yuan)
+    from agent_run where id=${failure.runId} and user_id=${owner.userId}`))
+  await writeFile(`${output}/model-failure-diagnostic.json`, JSON.stringify(diagnostic, null, 2))
+  assert.deepEqual(diagnostic.failure, { stage: 'QUESTION_MODEL', category: 'UPSTREAM_HTTP', upstreamStatus: 503,
     modelCall: 1, runId: failure.runId, requestId: failure.requestId })
-  assert.equal(sql(`select cost_upper_yuan is null and reserved_yuan > 0 from agent_run where id=${failure.runId}`), '1')
+  assert.equal(diagnostic.unknownCost, true)
+  assert.ok(Number(diagnostic.reservedYuan) > 0)
   assert.equal(JSON.stringify(failure).includes('offline fixture failure'), false)
   const denied = await fetch(`${backend}/api${base}/messages`, { method: 'POST', headers: {
     'Content-Type': 'application/json', Authorization: `Bearer ${owner.accessToken}`,

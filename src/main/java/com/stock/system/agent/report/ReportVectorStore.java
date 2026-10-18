@@ -53,11 +53,18 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
     public boolean enabled() { return enabled; }
 
     public synchronized List<ReportPassage> search(String query, String symbol, Integer year) {
-        // Internal filter values come only from the authorized business target and validated year.
-        String filter = "symbol == '" + symbol + "'" + (year == null ? "" : " && reportYear == " + year);
-        return similaritySearch(SearchRequest.builder().query(query).topK(3).similarityThreshold(0.45)
-                .filterExpression(filter).build()).stream().map(document -> indexedCatalog.require(document.getId())).toList();
+        return candidates(query, symbol, year, 3).stream().map(Candidate::passage).toList();
     }
+
+    public synchronized List<Candidate> candidates(String query, String symbol, Integer year, int limit) {
+        // Internal filter values come only from the authorized business target and validated year.
+        ReportRetrieval.validateScope(query, symbol, year);
+        String filter = "symbol == '" + symbol + "'" + (year == null ? "" : " && reportYear == " + year);
+        return similaritySearch(SearchRequest.builder().query(query).topK(limit).similarityThreshold(0.45)
+                .filterExpression(filter).build()).stream()
+                .map(document -> new Candidate(indexedCatalog.require(document.getId()), document.getScore())).toList();
+    }
+    public record Candidate(ReportPassage passage, double score) {}
 
     public synchronized void prepare(ReportCatalog candidate) { selectCatalog(candidate); ensureReady(); }
     private void selectCatalog(ReportCatalog candidate) {
@@ -67,7 +74,8 @@ public class ReportVectorStore implements VectorStore, AutoCloseable {
     }
 
     @Override public synchronized List<Document> similaritySearch(SearchRequest request) {
-        if (!enabled || request.getTopK() < 1 || request.getTopK() > 3 || request.getQuery().codePointCount(0, request.getQuery().length()) > 240)
+        if (!enabled || request.getTopK() < 1 || request.getTopK() > ReportRetrieval.CANDIDATE_LIMIT
+                || request.getQuery().isBlank() || request.getQuery().codePointCount(0, request.getQuery().length()) > 240)
             throw new IllegalArgumentException("Unsupported report search");
         var must = new ArrayList<Object>();
         stockFilters(request.getFilterExpression(), must);

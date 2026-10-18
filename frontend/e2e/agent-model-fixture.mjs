@@ -14,7 +14,7 @@ const server = createServer(async (request, response) => {
   }
   if (request.url === '/_test' && request.method === 'POST') {
     mode = JSON.parse(raw).mode
-    assert.ok(['valid', 'slow', 'invalid', 'failure'].includes(mode))
+    assert.ok(['valid', 'slow', 'invalid', 'failure', 'invalid-financial-number', 'invalid-financial-percent'].includes(mode))
   }
   if (request.url === '/_test') {
     response.setHeader('Content-Type', 'application/json')
@@ -27,6 +27,7 @@ const server = createServer(async (request, response) => {
   assert.equal(body.model, 'deepseek-flash')
   assert.equal(body.max_tokens, 2000)
   assert.equal(body.thinking.type, 'disabled')
+  assert.equal(body.response_format.type, 'json_object')
   const isQuestion = body.messages[0].content.includes('"paragraphs"')
   if (isQuestion) {
     const tools = body.tools ?? []
@@ -43,9 +44,13 @@ const server = createServer(async (request, response) => {
       if (question.includes('年度财务')) selected = question.includes('成员') ? ['read_cycle_opinions', 'read_latest_quote', 'read_financial_facts'] : ['read_financial_facts']
       if (/营业收入|归母净利润|应占盈利|2024年收入/.test(question)) selected = ['read_financial_facts']
       if (question.includes('报告原文')) selected = question.includes('成员') ? ['read_cycle_opinions', 'search_report_passages'] : ['search_report_passages']
+      if (question.includes('报告原文') && question.includes('营业收入') && question.includes('成员')) selected = ['read_cycle_opinions', 'read_financial_facts', 'search_report_passages']
       const financialArgs = question.includes('第三季度') ? { series: 'QUARTER', period: 'Q3 2025', metrics: ['REVENUE'] }
         : { series: 'ANNUAL', period: question.includes('2024年收入') ? 'FY 2024' : 'FY 2025', metrics: ['REVENUE', 'NET_PROFIT'] }
       const reportArgs = { query: question.includes('飞船') ? '载人飞船的发射时间和轨道高度' : '管理层怎样解释营销服务的收入增长', year: question.includes('2024') ? 2024 : 2025 }
+      if (question.includes('渠道')) reportArgs.query = '报告计划怎样结合线上线下销售渠道'
+      if (question.includes('采购销售')) reportArgs.query = '酿酒原料采购模式和销售渠道'
+      if (question.includes('合同余额')) reportArgs.query = '新增订单总金额和未交付合同余额分别是多少'
       message = { role: 'assistant', content: '', tool_calls: selected.map((name, index) => ({ id: `fixture-call-${calls}-${index}`, type: 'function', function: { name, arguments: name === 'read_daily_prices' ? '{"dateFrom":"2026-09-01","dateTo":"2026-09-04"}' : name === 'read_financial_facts' ? JSON.stringify(financialArgs) : name === 'search_report_passages' ? JSON.stringify(reportArgs) : '{}' } })) }
       finish = 'tool_calls'
     } else {
@@ -53,7 +58,11 @@ const server = createServer(async (request, response) => {
         if (result.opinions) return { text: `成员观点仍需权威资料核对：${result.opinions.map(item => item.reason).join('；')}`, sourceIds: result.opinions.slice(-8).map(item => item.sourceId) }
         if (result.quote) return { text: `本次取得的最新可用报价为${result.quote.price} ${result.quote.currency}，时间${result.quote.quoteTime}，来源${result.quote.source}，这是模拟行情。`, sourceIds: result.quote.status === 'AVAILABLE' ? [result.sourceId] : [] }
         if (result.dailyPrices) return { text: `本次区间名义收盘价差为${result.dailyPrices.nominalPriceDifference} ${result.dailyPrices.currency}，未复权，不代表投资回报。`, sourceIds: result.dailyPrices.status === 'AVAILABLE' ? [result.sourceId] : [] }
-        if (result.financialFacts) return { text: result.sourceId ? '已核对所选年度报告财务科目，数值与口径见本次依据；不能据此证明订单增长。' : '本次资料没有可核实的所问财务期间或科目，不用其他年度数字替代。', sourceIds: result.sourceId ? [result.sourceId] : [] }
+        if (result.financialFacts) return { text: result.sourceId ? usedMode === 'invalid-financial-number'
+          ? '2025年度营业收入为1688.3810251459亿元。'
+          : usedMode === 'invalid-financial-percent' ? `同比变化为${result.financialFacts.facts[0].change.percent}。`
+          : '已核对所选年度报告财务科目，数值与口径见本次依据；不能据此证明订单增长。'
+          : '本次资料没有可核实的所问财务期间或科目，不用其他年度数字替代。', sourceIds: result.sourceId ? [result.sourceId] : [] }
         if (result.passages) {
           const selected = result.passages.find(item => item.passage.section === 'tx-marketing') ?? result.passages[0]
           return { text: selected ? '本次报告原文候选已取得，具体表述与页码请查看原文；这是历史报告，不能证明当前订单增长。' : result.note, sourceIds: selected ? [selected.sourceId] : [] }

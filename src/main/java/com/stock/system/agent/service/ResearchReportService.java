@@ -3,7 +3,7 @@ package com.stock.system.agent.service;
 import com.stock.system.agent.mapper.ResearchAgentRecordMapper.Target;
 import com.stock.system.agent.report.ReportCatalog;
 import com.stock.system.agent.report.ReportPassage;
-import com.stock.system.agent.report.ReportVectorStore;
+import com.stock.system.agent.report.ReportRetriever;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.mapper.WorkspaceStockMapper;
@@ -19,11 +19,11 @@ public class ResearchReportService {
     private final StockResearchSourceService access;
     private final WorkspaceStockMapper stocks;
     private final ReportCatalog catalog;
-    private final ReportVectorStore vectors;
+    private final ReportRetriever retrieval;
 
     public ResearchReportService(StockResearchSourceService access, WorkspaceStockMapper stocks,
-                                 ReportCatalog catalog, ReportVectorStore vectors) {
-        this.access = access; this.stocks = stocks; this.catalog = catalog; this.vectors = vectors;
+                                 ReportCatalog catalog, ReportRetriever retrieval) {
+        this.access = access; this.stocks = stocks; this.catalog = catalog; this.retrieval = retrieval;
     }
     private String symbol(Target target) {
         access.verifyReadAccess(target.user(), target.workspace(), target.stock(), target.cycle());
@@ -41,7 +41,7 @@ public class ResearchReportService {
                     parts.stream().map(ReportPassage::sectionTitle).distinct().toList(),
                     parts.stream().map(ReportPassage::pdfPage).distinct().sorted().toList());
         }).toList();
-        return new Library(vectors.enabled(), reports, "仅检索已核对的文字章节，不覆盖整份年报或全部最新披露。观点日期范围不限制报告年份。", catalog.statuses(symbol));
+        return new Library(retrieval.enabled(), reports, "仅检索已核对的文字章节，不覆盖整份年报或全部最新披露。观点日期范围不限制报告年份。", catalog.statuses(symbol));
     }
     @Transactional(propagation = Propagation.NEVER)
     public Search search(Target target, String query, Integer year) {
@@ -50,9 +50,9 @@ public class ResearchReportService {
         String symbol = symbol(target);
         var rows = catalog.forSymbol(symbol).stream().filter(row -> year == null || row.reportYear() == year).toList();
         if (rows.isEmpty()) return new Search("NO_REPORT", List.of(), "当前股票或指定年份没有已入库的报告章节，未查询其他股票或年份。");
-        if (!vectors.enabled()) return new Search("UNAVAILABLE", List.of(), "报告段落检索尚未启用。");
+        if (!retrieval.enabled()) return new Search("UNAVAILABLE", List.of(), "报告段落检索尚未启用。");
         List<ReportPassage> hits;
-        try { hits = vectors.search(query, symbol, year); }
+        try { hits = retrieval.search(query, symbol, year); }
         catch (RuntimeException failure) { return new Search("UNAVAILABLE", List.of(), "报告检索暂时不可用，未返回未经核对的原文。"); }
         if (!symbol.equals(symbol(target))) throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED);
         hits.forEach(row -> verify(target, row));

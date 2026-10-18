@@ -19,7 +19,7 @@ class ResearchReportServiceTest {
     final Target target = new Target(1L, 2L, 3L, 4L);
     final StockResearchSourceService access = mock(StockResearchSourceService.class);
     final WorkspaceStockMapper stocks = mock(WorkspaceStockMapper.class);
-    final ReportVectorStore vectors = mock(ReportVectorStore.class);
+    final ReportRetriever vectors = mock(ReportRetriever.class);
     final ReportCatalog catalog = new ReportCatalog();
     final ResearchReportService service = new ResearchReportService(access, stocks, catalog, vectors);
     ResearchReportServiceTest() throws Exception {}

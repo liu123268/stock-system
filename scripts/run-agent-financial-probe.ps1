@@ -4,13 +4,16 @@ param(
     [ValidateSet('Fixture', 'Real')][string]$Mode = 'Fixture',
     [switch]$ApprovedFinancialData,
     [string]$ContinueFrom,
-    [string[]]$CaseIds
+    [string[]]$CaseIds,
+    [ValidateSet('Financial', 'Reports')][string]$Suite = 'Financial',
+    [switch]$ApprovedReportData
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $nodePath = (Get-Command node.exe -ErrorAction Stop).Source
 $probeArguments = @('e2e/research-agent-financial-probe.mjs')
 $planArguments = @((Join-Path $projectRoot 'frontend/e2e/research-agent-financial-probe.mjs'), '--dry-run')
+if ($Suite -eq 'Reports') { $probeArguments += '--suite=reports'; $planArguments += '--suite=reports' }
 if ($PSBoundParameters.ContainsKey('CaseIds')) {
     $selection = '--cases=' + ($CaseIds -join ',')
     $probeArguments += $selection
@@ -33,18 +36,23 @@ $ledgerPath = Join-Path $projectRoot '.local/agent-experiment/budget.jsonl'
 if ($ContinueFrom) { $ContinueFrom = (Resolve-Path -LiteralPath $ContinueFrom -ErrorAction Stop).Path }
 $modelKey = 'offline-financial-fixture-key'
 if ($Mode -eq 'Real') {
-    if (-not $ApprovedFinancialData) { throw 'Real mode requires the financial data scope to have been explicitly authorized' }
+    if ($Suite -eq 'Reports') {
+        if (-not $ApprovedReportData) { throw 'Real mode requires the bounded report passages and question scope to have been explicitly authorized' }
+    } elseif (-not $ApprovedFinancialData) { throw 'Real mode requires the financial data scope to have been explicitly authorized' }
     if (-not (Test-Path -LiteralPath $ledgerPath)) { throw 'The original experiment ledger is required; it must not be recreated' }
     $keyPath = Join-Path $projectRoot '.env.deepseek-local.properties'
     $keyLine = Get-Content -LiteralPath $keyPath | Where-Object { $_ -match '^deepseek\.api-key\s*=' } | Select-Object -First 1
     $modelKey = ($keyLine -replace '^deepseek\.api-key\s*=', '').Trim()
     if ($modelKey -notmatch '^sk-\S+$') { throw 'A valid local DeepSeek Key is required; it is never printed or passed on the command line' }
 }
-$occupied = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -in 18082, 18083, 18084)
+$testPorts = @(18082, 18083, 18084)
+if ($Suite -eq 'Reports') { $testPorts += 16335 }
+$occupied = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -in $testPorts)
 if ($occupied.Count) { throw 'A test port is occupied; no existing service will be stopped' }
 $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
 $logRoot = Join-Path $projectRoot ".local/financial-quality-$stamp"
-$outputRoot = Join-Path $projectRoot "target/agent-financial-$($Mode.ToLowerInvariant())-$stamp"
+$outputRoot = Join-Path $projectRoot "target/agent-$($Suite.ToLowerInvariant())-$($Mode.ToLowerInvariant())-$stamp"
+$reportRuntime = Join-Path $projectRoot ('target/rq-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $logRoot, $outputRoot | Out-Null
 $owned = [System.Collections.Generic.List[object]]::new()
 function Start-Owned([string]$role, [string]$file, [string[]]$arguments, [string]$workingDirectory, [hashtable]$variables) {
@@ -76,6 +84,10 @@ try {
     if ($Mode -eq 'Real') {
         $arguments += @('--spring.ai.deepseek.base-url=https://api.deepseek.com', "--stock-system.agent.experiment-ledger=$ledgerPath")
     } else { $arguments += @('--spring.ai.deepseek.base-url=http://127.0.0.1:18084', '--stock-system.agent.experiment-ledger=false') }
+    if ($Suite -eq 'Reports') {
+        $arguments += @('--stock-system.agent.reports.enabled=true', '--stock-system.agent.reports.port=16335',
+            "--stock-system.agent.reports.storage-directory=$reportRuntime", "--stock-system.agent.reports.catalog-directory=$(Join-Path $reportRuntime 'library')")
+    }
     $null = Start-Owned 'backend' $javaPath $arguments $projectRoot @{ DEEPSEEK_API_KEY = $modelKey; SPRING_AI_DEEPSEEK_API_KEY = $modelKey }
     $null = Start-Owned 'frontend' $nodePath @('node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '18083', '--strictPort') (Join-Path $projectRoot 'frontend') @{ VITE_API_TARGET = 'http://localhost:18082'; VITE_DEV_PORT = '18083' }
     foreach ($origin in @('http://localhost:18082', 'http://localhost:18083')) {
@@ -91,7 +103,8 @@ try {
     $runner = Start-Owned 'probe' $nodePath $probeArguments (Join-Path $projectRoot 'frontend') @{
         AGENT_FINANCIAL_PROBE_MODE = $Mode.ToLowerInvariant(); AGENT_FINANCIAL_MODEL_PROBE = if ($Mode -eq 'Real') { 'true' } else { 'false' };
         AGENT_FINANCIAL_PROBE_OUTPUT = $outputRoot; MYSQL_CLIENT_PATH = $mysqlPath;
-        AGENT_FINANCIAL_CONTINUE_FROM = $ContinueFrom
+        AGENT_FINANCIAL_CONTINUE_FROM = $ContinueFrom;
+        AGENT_REPORT_MODEL_PROBE = if ($Mode -eq 'Real' -and $Suite -eq 'Reports') { 'true' } else { 'false' }
     }
     $runner.WaitForExit()
     $null = $owned[-1].OutTask.GetAwaiter().GetResult(); $null = $owned[-1].ErrTask.GetAwaiter().GetResult()
@@ -115,7 +128,26 @@ try {
         $null = $entry.OutTask.GetAwaiter().GetResult(); $null = $entry.ErrTask.GetAwaiter().GetResult()
         $entry.Out.Dispose(); $entry.Err.Dispose(); $entry.Process.Dispose()
     }
-    $remaining = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -in 18082, 18083, 18084)
+    if ($Suite -eq 'Reports' -and (Test-Path -LiteralPath $reportRuntime)) {
+        $record = Join-Path $reportRuntime 'owned-process.json'
+        if (Test-Path -LiteralPath $record) {
+            $saved = Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
+            $current = Get-Process -Id $saved.pid -ErrorAction SilentlyContinue
+            $backendOwner = $owned | Where-Object Role -eq 'backend'
+            if ($current) {
+                if ($saved.parentPid -ne $backendOwner.Pid -or $saved.dataDirectory -ne $reportRuntime -or
+                    $current.Path -ne (Join-Path $projectRoot '.local/report-rag/qdrant-1.19.2/qdrant.exe') -or
+                    [Math]::Abs(($current.StartTime.ToUniversalTime() - [datetime]$saved.startedAt).TotalMilliseconds) -gt 1) { throw 'Report process ownership changed; it was not stopped' }
+                Stop-Process -Id $current.Id; $current.WaitForExit(5000) | Out-Null
+            }
+        }
+        $resolved = (Resolve-Path -LiteralPath $reportRuntime).Path
+        if ([System.IO.Path]::GetDirectoryName($resolved) -ne (Join-Path $projectRoot 'target') -or
+            [System.IO.Path]::GetFileName($resolved) -notmatch '^rq-[a-f0-9]{8}$') { throw 'Unsafe report quality cleanup target' }
+        Remove-Item -LiteralPath $resolved -Recurse -Force
+        Write-Output 'REPORT_QUALITY_VECTORS_CLEANED vectorsRemaining=0'
+    }
+    $remaining = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object LocalPort -in $testPorts)
     if ($remaining.Count) { throw 'A test port remains occupied after closing this run processes' }
     Write-Output 'FINANCIAL_PROBE_SERVICES_CLOSED testPortsReleased=true'
 }

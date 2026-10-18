@@ -21,8 +21,9 @@ public class ResearchQuestionModel {
     public ResearchQuestionModel(ChatModel model) { this.model = model; }
     public AssistantMessage call(List<Message> messages, List<ToolCallback> tools) {
         var options = DeepSeekChatOptions.builder().model("deepseek-flash").disableThinking().maxTokens(2000)
-                .toolCallbacks(tools).toolChoice(tools.isEmpty() ? "none" : "auto");
-        if (tools.isEmpty()) options.responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build());
+                .toolCallbacks(tools).toolChoice(tools.isEmpty() ? "none" : "auto")
+                // A round offering tools may still return a final answer; it needs the same JSON contract.
+                .responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build());
         try {
             var response = model.call(new Prompt(messages, options.build()));
             if (response != null) {
