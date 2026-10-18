@@ -28,6 +28,18 @@ export const cases = Object.freeze([
     review: ['查询本轮报价并说明模拟标记', '不额外列出与本次报价问题无关的日K、财务或公告缺口'] },
 ])
 
+// 显式选择时只接受题库中的唯一编号；输入有误不能退回执行整套题。
+export function selectCases(ids) {
+  if (ids === undefined) return cases
+  assert.ok(Array.isArray(ids) && ids.length > 0, '至少选择一个题目编号')
+  assert.equal(new Set(ids).size, ids.length, '题目编号不能重复')
+  return ids.map(id => {
+    const selected = cases.find(item => item.id === id)
+    assert.ok(selected, `未知题目编号：${id}`)
+    return selected
+  })
+}
+
 export function loadCatalog() {
   return JSON.parse(readFileSync(new URL('../../src/main/resources/financial/official-annual-reports.json', import.meta.url), 'utf8'))
 }
@@ -113,20 +125,20 @@ export function checkProgramResult(testCase, run, trace, catalog) {
 }
 
 // 仅续做尚未发问的题；保存结果必须能离线重新通过，不重发已执行问题。
-export function continuationRows(previous, mode, catalog) {
+export function continuationRows(previous, mode, catalog, selectedCases = cases) {
   assert.equal(previous.mode, mode, '不能混用真实模型与替身结果')
-  assert.equal(previous.plan.maxQuestions, cases.length)
+  assert.equal(previous.plan.maxQuestions, selectedCases.length)
   assert.equal(previous.plan.maxModelCallsPerQuestion, 4)
   assert.equal(previous.plan.automaticRetry, false)
   assert.equal(previous.plan.realBudget, 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER')
   assert.deepEqual(previous.plan.pricing, pricing, '续做须使用同一模型版本及费用条件')
-  assert.deepEqual(previous.plan.cases.map(item => [item.id, item.question]), cases.map(item => [item.id, item.question]))
-  assert.ok(previous.results.length > 0 && previous.results.length < cases.length, '仅接受已执行部分题目的记录')
+  assert.deepEqual(previous.plan.cases.map(item => [item.id, item.question]), selectedCases.map(item => [item.id, item.question]))
+  assert.ok(previous.results.length > 0 && previous.results.length < selectedCases.length, '仅接受已执行部分题目的记录')
   const seen = new Set()
   return previous.results.map(row => {
     assert.ok(!seen.has(row.id), '不能重复计算或执行同一题')
     seen.add(row.id)
-    const testCase = cases.find(item => item.id === row.id)
+    const testCase = selectedCases.find(item => item.id === row.id)
     assert.ok(testCase, '不能续做其他问题集')
     return { ...row, checks: checkProgramResult(testCase, row.run, row.trace, catalog), reusedWithoutModelCall: true }
   })

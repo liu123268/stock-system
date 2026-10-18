@@ -229,6 +229,8 @@ node frontend/e2e/research-agent-financial-probe.mjs --dry-run
 ./scripts/run-agent-financial-probe.ps1 -Mode Fixture
 ```
 
+需要只检查题库中的部分问题时，在项目根目录用 `node frontend/e2e/research-agent-financial-probe.mjs --dry-run --cases=moutai-annual,tencent-original-currency` 先确认计划；随后给启动脚本增加 `-CaseIds @('moutai-annual','tencent-original-currency')`。未指定时仍是原六题；显式空选择、未知或重复编号直接拒绝，不回退执行整套。计划、执行、股票 fixture 与续做均沿同一选择范围；续做时须传相同 CaseIds，禁止混用其他题集结果。定向真实复测仍需对应的新增调用授权，选题参数不代替授权。
+
 [启动脚本](../../scripts/run-agent-financial-probe.ps1) 建立独立 test 后端与前端代理，Fixture 只用回环模型和模拟行情，不触碰真实实验账本。执行前检查测试端口空闲，写入前检查前后端探针及实际 SQL catalog；每题保存、恢复和相同 requestId 去重后，核对另一成员看不到本人记录。finally 只清理本轮随机账号及关联数据，并关闭自己记录的 PID／启动时间对应服务。成功输出 FINANCIAL_PROBE_OK 和 FINANCIAL_PROBE_SERVICES_CLOSED，结果位于忽略的 target/agent-financial-fixture-*。
 
 真实模式另需本轮数据范围及费用授权，命令中的开关只表达执行意图，不能代替授权：
@@ -240,6 +242,8 @@ node frontend/e2e/research-agent-financial-probe.mjs --dry-run
 Real 从本地忽略文件读取既有 Key，仅经子进程环境传递，固定 DeepSeek 官方接口，沿用第 3 节原累计 10 元实验 JSONL；不创建新账本、不动正式页面的独立预算，不自动付费重试。单题最多四次模型请求、三次工具尝试。results.json 保存期望、回答、工具轨迹、提示版本与用量，verification.json 区分程序检查和待人工语义审查；完整结果与坏例子归档于 [当前任务证据](../specs/004-research-agent/tasks.md#21-财务六题真实检查与问答存储说明2026-10-17)。
 
 中途失败须先核对保存结果和已发生费用。只有确认是检查器误判、已执行答案能够离线重新通过时，才使用 -ContinueFrom 指向该轮 results.json，继续尚未发问的题。该入口核对相同题集、模型／价格条件、真实／替身模式并拒绝重复项；已执行问题复用保存输出，不发新请求。真正的失败答案不能借续做重新付费。修正提示词后的真实复测须单独安排，不能把旧输出重新标为新版本的效果。
+
+已派发但没有取得用量的请求，即使最终没有回答，也不能当成零费用或随 fixture 清理释放原账本占用。先保留预留并查明用量，再决定后续调用；一次定向复测中部分成功、部分无回答，应逐题记录，不能把一次成功扩大为整套质量通过。实际例子见 [两题 v4 复测](../specs/004-research-agent/tasks.md#23-定向财务复测与-v4-部分结果2026-10-18)。
 
 ## 11. 报告正文检索的本地预检
 
@@ -263,3 +267,17 @@ python -m venv .local/rag-preflight/venv
 ```
 
 问题集分校准与留出改写两组。门槛只用前一组确定，后者运行后不据其结果继续调参；参数变更保留前后结果。当前 0.45 只适用于本轮小语料候选，不作为通用答案可信度或全市场默认值。检索失败先检查原文是否可读、边界是否完整、输入是否被截断及元数据过滤，再检查排名；无相关片段时反馈缺口，不用模型记忆补报告。已验证范围、实际成绩和未完成事项只见 [001R 任务证据](../specs/004-research-agent/tasks.md#22-中文报告解析与本地检索预检2026-10-17)。
+
+## 12. 报告检索如何进入正式助手
+
+以前报告文字只在 Python 预检中参与查询。现在 [导出脚本](../../scripts/rag-preflight/export_catalog.py) 从同一已审 PDF 与边界生成版本化正文目录，Java 加载并验证文字哈希和位置；提问时经 ResearchQuestionService → ResearchReportService → 本地 EmbeddingModel → Qdrant，取得最多三段候选，才进入回答模型。关键词相似、向量相似和材料能否支持结论是不同检查，不能用命中代替答案审查。完整机制与后续维护边界见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)。
+
+模型只传检索文字与可选年度，当前用户／空间／股票／周期由 Java 校验和绑定，观点日期不限制年报年份。向量库是可重建索引，受审目录才是本阶段的正文权威来源。回复只保存实际引用的 REPORT 依据，放进现有 agent_message.result_json，不新增聊天表；里面保留原文、报告哈希、章节和 PDF 页码。查看记录与引用会重校验当前权限及同一版本，失效时不展示旧正文，回看不新增模型调用。当前目录由版本发布维护，在线状态机与增删任务仍待 008 完成。
+
+本机资产准备在项目根目录运行 scripts/setup-report-rag.ps1 -EnableLocal：核对固定公共权重及官方 Qdrant 文件，写入被忽略的本机开启配置，不启动服务，也不调用回答模型。当前机器已完成这一步；IDEA 重新加载 Maven 后重启 dev 后端，Vue 开发页由 Vite 更新。Java 在首次需要报告检索时启动自己的回环 Qdrant，正常关闭时释放；端口占用不接管其他服务。强制结束后的恢复先核对文件锁及进程身份，不按进程名批量清理。默认与生产仍关闭，其他操作系统需单独落实服务与验证。
+
+页面入口：研究详情 → 研究助手 → “可查询的资料与报告”，查看当前股票已入库的具体章节。可以在腾讯问“2025年年报怎样解释营销服务收入增长”，在茅台问“2025年年报列举了哪些经营风险”。点回答中的“查看报告原文依据”能看实际段落和 PDF 页码，再打开官方原报对应页；没有对应股票／年份、无相关候选和检索故障分别说明。只覆盖受审文字，不等于整份报告或全部最新披露。
+
+开发验收用 scripts/run-agent-report-probe.ps1：独立 test HTTP／真实 MySQL／Chrome、Java 本地向量和 Qdrant 服务端，回答模型是回环替身。先核对两条环境探针与真实 catalog，随机样本 finally 逐表清零，测试向量目录与四个端口一并清理；不会调用 DeepSeek 或占用其预算。单独验证 Java 检索时启用 REPORT_RAG_LOCAL_PROBE=true 后运行 LocalReportRetrievalProbeTest；普通回归跳过该本地资产依赖。真实回答质量与生产部署另验，最新结果只见 tasks。
+
+兼容排查：Python ONNX 可运行不证明 Java JNI 路径可用。本机首次 ORT Java 1.31 在 JDK17 的旧 msvcp140.dll 初始化崩溃；仅调整 Java 依赖后重新跑实际模型，不替换系统 DLL／JDK。Qdrant 集合名过长还会触发 Windows 段目录路径限制；用包含完整内容／编码身份的短哈希名解决，不能为缩短路径丢掉版本隔离。Windows ProcessHandle 不提供 arguments，子进程恢复以精确创建时刻、可执行路径、已退出的原父进程、数据目录、端口和独占锁联合校验。

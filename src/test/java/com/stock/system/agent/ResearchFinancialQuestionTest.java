@@ -32,11 +32,12 @@ class ResearchFinancialQuestionTest {
     private final StockResearchSourceService sources = mock(StockResearchSourceService.class);
     private final ResearchMarketDataService market = mock(ResearchMarketDataService.class);
     private final StockFinancialService financials = mock(StockFinancialService.class);
+    private final ResearchReportService reports = mock(ResearchReportService.class);
     private final ResearchQuestionModel model = mock(ResearchQuestionModel.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<@NonNull ResearchQuestionModel> models = mock(ObjectProvider.class);
     private final ObjectMapper json = new ObjectMapper();
-    private final ResearchQuestionService questions = new ResearchQuestionService(sources, market, models, json, financials);
+    private final ResearchQuestionService questions = new ResearchQuestionService(sources, market, models, json, financials, reports);
     private final Target target = new Target(1L, 2L, 20L, 30L);
     private final FinancialFacts facts = new OfficialFinancialReportCatalog().read("600519.SH", FinancialPeriod.ANNUAL,
             "FY 2025", List.of(FinancialMetric.REVENUE, FinancialMetric.NET_PROFIT));
@@ -113,6 +114,26 @@ class ResearchFinancialQuestionTest {
         assertThat(toolResponses.get(3)).contains("TOOL_LIMIT");
     }
 
+    @Test void reportToolKeepsCanonicalTextPositionAndCitationsInSavedJson() throws Exception {
+        var passage = new com.stock.system.agent.report.ReportCatalog().forSymbol("600519.SH").get(0);
+        when(reports.search(target, "公司主要业务", 2025)).thenReturn(new ResearchReportService.Search("AVAILABLE", List.of(passage), "仅为已核对章节"));
+        respondWith(List.of(call("r1", "search_report_passages", "{\"query\":\"公司主要业务\",\"year\":2025}")));
+        var answer = answer();
+        assertThat(answer.followUp().reply().paragraphs().get(0).sourceIds()).containsExactly("report-" + passage.id());
+        assertThat(answer.followUp().evidence().get(0).reportPassage()).isEqualTo(passage);
+        var restored = json.readValue(json.writeValueAsString(answer), com.stock.system.agent.vo.ResearchAgentResponseVO.Answer.class);
+        questions.verifyEvidence(target, restored.followUp().evidence());
+        verify(reports, atLeastOnce()).verify(target, passage);
+    }
+    @ParameterizedTest
+    @ValueSource(strings = {"{\"query\":\"主营业务\",\"symbol\":\"00700.HK\"}", "{\"query\":\"主营业务\",\"url\":\"https://other.invalid\"}"})
+    void reportArgumentsCannotChooseAnotherStockOrUrl(String args) {
+        respondWith(List.of(call("r1", "search_report_passages", args)));
+        assertThat(answer().followUp().evidence()).isEmpty();
+        verifyNoInteractions(reports);
+        assertThat(toolResponses.get(0)).contains("INVALID_TOOL_ARGUMENTS");
+    }
+
     @Test void withdrawnReportVersionStopsGenerationBeforeAnotherModelRequest() {
         doNothing().doThrow(new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCES_CHANGED))
                 .when(financials).verifySnapshot(anyLong(), anyLong(), anyLong(), any());
@@ -145,6 +166,7 @@ class ResearchFinancialQuestionTest {
                 toolResponses.add(item.responseData());
                 var data = json.readTree(item.responseData());
                 if (data.has("sourceId")) ids.add(data.path("sourceId").asString());
+                else if (data.has("passages") && !data.path("passages").isEmpty()) ids.add(data.path("passages").get(0).path("sourceId").asString());
                 else if (data.has("opinions")) ids.add(data.path("opinions").get(0).path("sourceId").asString());
             }
             return new AssistantMessage(json.writeValueAsString(new ResearchReply(

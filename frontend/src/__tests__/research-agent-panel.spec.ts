@@ -6,7 +6,7 @@ import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentRun } from '@/api/agent'
 
-const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), askAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
+const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), askAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentReports: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
 vi.mock('@/api/agent', () => api)
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn<() => void>() }) }))
 vi.mock('@/utils/workspace-access', () => ({ handleWorkspaceApiError: vi.fn<() => Promise<boolean>>(async () => false) }))
@@ -42,6 +42,20 @@ beforeEach(() => {
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers = []; vi.useRealTimers() })
 
 describe('研究助手的个人记录与迟到响应', () => {
+  it('按需读取当前股票报告范围，迟到目录不覆盖新周期', async () => {
+    let resolveLibrary!: (value: unknown) => void
+    api.readAgentReports.mockImplementationOnce(() => new Promise(resolve => { resolveLibrary = resolve }))
+    const { wrapper } = create(); await flushPromises()
+    expect(api.readAgentReports).not.toHaveBeenCalled()
+    const details = wrapper.find('details')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    expect(api.readAgentReports).toHaveBeenCalledWith(target)
+    await wrapper.setProps({ target: { ...target, cycleId: 99 } }); await flushPromises()
+    resolveLibrary({ data: { data: { retrievalEnabled: true, reports: [{ title: '旧股票报告', sections: [] }] } } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('旧股票报告')
+  })
   it('独立问答按时间顺序展示，历史与输入区分开', async () => {
     api.restoreAgent.mockResolvedValue(session([answer(12), answer(10)]))
     const { wrapper } = create(createPinia(), true); await flushPromises()

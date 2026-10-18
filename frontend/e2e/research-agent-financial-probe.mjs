@@ -2,8 +2,13 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { cases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } from '../../scripts/agent-quality/financial-cases.mjs'
+import { selectCases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } from '../../scripts/agent-quality/financial-cases.mjs'
 
+const args = process.argv.slice(2)
+assert.ok(args.every(arg => arg === '--dry-run' || arg.startsWith('--cases=')), '不接受未知检查参数')
+const selectors = args.filter(arg => arg.startsWith('--cases='))
+assert.ok(selectors.length <= 1, '只能指定一次题目范围')
+const cases = selectCases(selectors.length ? selectors[0].slice('--cases='.length).split(',') : undefined)
 const catalog = loadCatalog()
 const mode = process.env.AGENT_FINANCIAL_PROBE_MODE ?? 'real'
 assert.ok(['real', 'fixture'].includes(mode), '只能显式选择真实模型或本地替身')
@@ -11,14 +16,14 @@ const plan = { cases: cases.map(item => ({ ...item, expected: expectedFor(item, 
   maxQuestions: cases.length, maxModelCallsPerQuestion: 4, automaticRetry: false,
   data: 'SELF_MADE_OPINIONS_MOCK_MARKET_AND_REVIEWED_PUBLIC_FINANCIAL_FACTS',
   realBudget: 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER', semanticReview: 'REQUIRED' }
-if (process.argv.includes('--dry-run')) {
+if (args.includes('--dry-run')) {
   process.stdout.write(JSON.stringify(plan, null, 2) + '\n')
   process.exit(0)
 }
 if (mode === 'real') assert.equal(process.env.AGENT_FINANCIAL_MODEL_PROBE, 'true', '真实财务资料检查须另行显式启用，并核对该轮授权')
 const continuationPath = process.env.AGENT_FINANCIAL_CONTINUE_FROM
 const previous = continuationPath ? JSON.parse(await readFile(resolve(continuationPath), 'utf8')) : null
-const results = previous ? continuationRows(previous, mode, catalog) : []
+const results = previous ? continuationRows(previous, mode, catalog, cases) : []
 const alreadyRun = new Set(results.map(item => item.id))
 const pendingCases = cases.filter(item => !alreadyRun.has(item.id))
 const continuation = previous ? { source: resolve(continuationPath), reusedCases: [...alreadyRun],

@@ -3,11 +3,22 @@
 param(
     [ValidateSet('Fixture', 'Real')][string]$Mode = 'Fixture',
     [switch]$ApprovedFinancialData,
-    [string]$ContinueFrom
+    [string]$ContinueFrom,
+    [string[]]$CaseIds
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $nodePath = (Get-Command node.exe -ErrorAction Stop).Source
+$probeArguments = @('e2e/research-agent-financial-probe.mjs')
+$planArguments = @((Join-Path $projectRoot 'frontend/e2e/research-agent-financial-probe.mjs'), '--dry-run')
+if ($PSBoundParameters.ContainsKey('CaseIds')) {
+    $selection = '--cases=' + ($CaseIds -join ',')
+    $probeArguments += $selection
+    $planArguments += $selection
+}
+# 在读取 Key、启动服务或写测试数据之前核对本轮问题范围。
+$null = & $nodePath @planArguments
+if ($LASTEXITCODE -ne 0) { throw 'Invalid question selection; no service or model request was started' }
 $javaPath = if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin/java.exe'))) {
     Join-Path $env:JAVA_HOME 'bin/java.exe'
 } else { 'D:\Program Files\Java\jdk-17\bin\java.exe' }
@@ -77,7 +88,7 @@ try {
             throw 'Protected test environment did not become ready; no sample data was submitted'
         }
     }
-    $runner = Start-Owned 'probe' $nodePath @('e2e/research-agent-financial-probe.mjs') (Join-Path $projectRoot 'frontend') @{
+    $runner = Start-Owned 'probe' $nodePath $probeArguments (Join-Path $projectRoot 'frontend') @{
         AGENT_FINANCIAL_PROBE_MODE = $Mode.ToLowerInvariant(); AGENT_FINANCIAL_MODEL_PROBE = if ($Mode -eq 'Real') { 'true' } else { 'false' };
         AGENT_FINANCIAL_PROBE_OUTPUT = $outputRoot; MYSQL_CLIENT_PATH = $mysqlPath;
         AGENT_FINANCIAL_CONTINUE_FROM = $ContinueFrom

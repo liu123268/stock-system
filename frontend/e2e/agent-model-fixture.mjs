@@ -36,15 +36,17 @@ const server = createServer(async (request, response) => {
     let finish = 'stop'
     if (tools.length && !toolResponses.length && usedMode !== 'invalid') {
       const names = tools.map(tool => tool.function.name)
-      assert.deepEqual(new Set(names), new Set(['read_cycle_opinions', 'read_latest_quote', 'read_daily_prices', 'read_financial_facts']))
+      assert.deepEqual(new Set(names), new Set(['read_cycle_opinions', 'read_latest_quote', 'read_daily_prices', 'read_financial_facts', 'search_report_passages']))
       let selected = ['read_cycle_opinions']
       if (question.includes('最新可用价')) selected = question.includes('成员') ? ['read_cycle_opinions', 'read_latest_quote'] : ['read_latest_quote']
       if (question.includes('名义收盘价')) selected = ['read_daily_prices']
       if (question.includes('年度财务')) selected = question.includes('成员') ? ['read_cycle_opinions', 'read_latest_quote', 'read_financial_facts'] : ['read_financial_facts']
       if (/营业收入|归母净利润|应占盈利|2024年收入/.test(question)) selected = ['read_financial_facts']
+      if (question.includes('报告原文')) selected = question.includes('成员') ? ['read_cycle_opinions', 'search_report_passages'] : ['search_report_passages']
       const financialArgs = question.includes('第三季度') ? { series: 'QUARTER', period: 'Q3 2025', metrics: ['REVENUE'] }
         : { series: 'ANNUAL', period: question.includes('2024年收入') ? 'FY 2024' : 'FY 2025', metrics: ['REVENUE', 'NET_PROFIT'] }
-      message = { role: 'assistant', content: '', tool_calls: selected.map((name, index) => ({ id: `fixture-call-${calls}-${index}`, type: 'function', function: { name, arguments: name === 'read_daily_prices' ? '{"dateFrom":"2026-09-01","dateTo":"2026-09-04"}' : name === 'read_financial_facts' ? JSON.stringify(financialArgs) : '{}' } })) }
+      const reportArgs = { query: question.includes('飞船') ? '载人飞船的发射时间和轨道高度' : '管理层怎样解释营销服务的收入增长', year: question.includes('2024') ? 2024 : 2025 }
+      message = { role: 'assistant', content: '', tool_calls: selected.map((name, index) => ({ id: `fixture-call-${calls}-${index}`, type: 'function', function: { name, arguments: name === 'read_daily_prices' ? '{"dateFrom":"2026-09-01","dateTo":"2026-09-04"}' : name === 'read_financial_facts' ? JSON.stringify(financialArgs) : name === 'search_report_passages' ? JSON.stringify(reportArgs) : '{}' } })) }
       finish = 'tool_calls'
     } else {
       const paragraphs = toolResponses.map(result => {
@@ -52,6 +54,10 @@ const server = createServer(async (request, response) => {
         if (result.quote) return { text: `本次取得的最新可用报价为${result.quote.price} ${result.quote.currency}，时间${result.quote.quoteTime}，来源${result.quote.source}，这是模拟行情。`, sourceIds: result.quote.status === 'AVAILABLE' ? [result.sourceId] : [] }
         if (result.dailyPrices) return { text: `本次区间名义收盘价差为${result.dailyPrices.nominalPriceDifference} ${result.dailyPrices.currency}，未复权，不代表投资回报。`, sourceIds: result.dailyPrices.status === 'AVAILABLE' ? [result.sourceId] : [] }
         if (result.financialFacts) return { text: result.sourceId ? '已核对所选年度报告财务科目，数值与口径见本次依据；不能据此证明订单增长。' : '本次资料没有可核实的所问财务期间或科目，不用其他年度数字替代。', sourceIds: result.sourceId ? [result.sourceId] : [] }
+        if (result.passages) {
+          const selected = result.passages.find(item => item.passage.section === 'tx-marketing') ?? result.passages[0]
+          return { text: selected ? '本次报告原文候选已取得，具体表述与页码请查看原文；这是历史报告，不能证明当前订单增长。' : result.note, sourceIds: selected ? [selected.sourceId] : [] }
+        }
         return { text: '本次查询未取得可用资料。', sourceIds: [] }
       })
       message = { role: 'assistant', content: usedMode === 'invalid' ? 'invalid-json' : JSON.stringify({ paragraphs: paragraphs.length ? paragraphs : [{ text: '这是通用概念说明。', sourceIds: [] }], missingInformation: [toolResponses.some(result => result.financialFacts) ? '未读取订单资料，财务数字不证明订单变化。' : '未读取财报与公告，无法确认实际增长。'] }) }

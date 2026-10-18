@@ -6,6 +6,7 @@ import com.stock.system.agent.service.ResearchMarketDataService;
 import com.stock.system.agent.service.ResearchSummaryService;
 import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO;
 import com.stock.system.stock.financial.FinancialFacts;
+import com.stock.system.agent.report.ReportPassage;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,10 +31,15 @@ public final class ResearchAgentResponseVO {
         }
     }
     public record Evidence(String sourceId, String type, String label, ResearchMarketDataService.Quote quote,
-                           ResearchMarketDataService.DailyPrices dailyPrices, FinancialFacts financialFacts) {
+                           ResearchMarketDataService.DailyPrices dailyPrices, FinancialFacts financialFacts,
+                           ReportPassage reportPassage) {
+        public Evidence(String sourceId, String type, String label, ResearchMarketDataService.Quote quote,
+                        ResearchMarketDataService.DailyPrices dailyPrices, FinancialFacts financialFacts) {
+            this(sourceId, type, label, quote, dailyPrices, financialFacts, null);
+        }
         public Evidence(String sourceId, String type, String label, ResearchMarketDataService.Quote quote,
                         ResearchMarketDataService.DailyPrices dailyPrices) {
-            this(sourceId, type, label, quote, dailyPrices, null);
+            this(sourceId, type, label, quote, dailyPrices, null, null);
         }
     }
     public record FollowUp(String question, ResearchReply reply, List<Evidence> evidence, boolean historyOmitted) {}

@@ -168,7 +168,7 @@ public class ResearchAgentService {
                 for (var dependency : dependencies(row.dependenciesJson())) changed |= sources.revalidate(target.user(), target.workspace(),
                         target.stock(), target.cycle(), dependency).newOpinionsAvailable();
                 var stored = json.readValue(row.answerJson(), Answer.class);
-                if (stored.followUp() != null) questions.verifyFinancialEvidence(target, stored.followUp().evidence());
+                if (stored.followUp() != null) questions.verifyEvidence(target, stored.followUp().evidence());
                 answer = new Answer(stored.summary(), stored.scope(), stored.references(),
                         stored.newOpinionsAvailable() || changed, stored.generatedAt(), stored.quote(), stored.followUp());
             } catch (BusinessException failure) {

@@ -1,6 +1,6 @@
 # 项目实际技术栈
 
-更新时间：2026-10-17（同步报告检索本地预检、财务／会话采用状态与模型价格；云端尚未发布本轮构建）
+更新时间：2026-10-18（明确 MQ 尚无实施计划，接入本地报告检索首段；云端尚未发布本轮构建）
 
 本文档记录项目技术的真实状态。用户最初提供的学习目标和候选技术清单保存在 [技术目标与选型参考](../project/technology-reference.md)，两者不得混淆。
 
@@ -57,7 +57,7 @@
 | 行情适配层                      | 目录、Mock、Longbridge | 已使用       | 三个 provider 分别管理标准身份／最新报价、K 线和分时；隔离业务与供应商 DTO |
 | Redis / Spring Data Redis / Lettuce | 已使用 | 只读行情共享缓存、同 Key 请求合并和故障降级 | 依赖、网关装饰器和开关已接入；单元、真实 Redis 与页面验收的范围见 [任务证据](../specs/002-stock-research/tasks.md)；不与 WebSocket/SSE 捆绑 |
 | 定时任务                        | 已使用（systemd timer） | 每日股票目录同步与 HTTPS 证书续期 | 已安装、首轮目录同步及证书续期 dry-run 通过；目录任务使用幂等导入、锁和运行回执。长期运行／主动告警未验收，见 [部署说明](../engineering/deployment.md) |
-| MQ（RocketMQ / Kafka 优先评估） | 候选         | 活动动态、提醒、数据同步等非核心异步任务       | 出现真实异步事件后再根据可靠性、顺序、吞吐和学习目标选一种，不同时引入多种 |
+| MQ（RocketMQ / Kafka 为原候选） | 未接入；无确定实施计划 | 使用场景尚待评估 | 下一次评估落在 [报告处理的异步方案](../product/backlog.md#9-报告处理的异步方案与-mq)，先比较同步、受控线程池／任务表与 MQ，再决定是否采用；V1 近期动态由业务记录查询生成 |
 | Actuator                        | 计划         | 健康检查和运行状态                             | 部署与可观测性阶段                                                         |
 | 结构化日志 / 请求追踪 ID        | 计划         | 定位跨层请求问题                               | 核心业务闭环后                                                             |
 | Docker Compose                  | 已使用       | 统一运行云端数据库、缓存、后端和前端代理       | 配置、发布与隔离故障验收见 [部署说明](../engineering/deployment.md#2-当前云端部署) |
@@ -67,8 +67,8 @@
 | SSE                             | 计划，尚未接入 | Agent 流式结果和状态反馈                       | 先验证同步模型／工具闭环，再补流式、鉴权、中断和取消行为                   |
 | WebSocket                       | 候选         | 有真实需要时的双向通信或行情推送               | 不与 SSE 或当前行情轮询绑定                                               |
 | LLM API + 结构化输出            | 独立实验及正式业务已接入 | 观点整理、工具追问与资料缺口                 | 个人权限、会话、独立助手页及有限财务工具已接；分项真实质量见 SPEC-004 tasks，不代表完整 V2       |
-| Spring AI                       | 2.0.1，框架已接入，版本默认模型关闭 | V2 主框架：模型调用、Tool Calling、会话、RAG 与观测 | 正式研究生成、原生受限工具及保存恢复已接；检索契约预检不代表业务 RAG 或 MCP 已完成 |
-| 向量数据库                      | Qdrant Python 本地模式已预检；正式服务待接 | V2 必做受控文档 RAG 的候选检索 | 001R 已验证真实向量、持久化与过滤；本地模式不证明 Java／Qdrant 服务端接入，不替换 MySQL |
+| Spring AI                       | 2.0.1，框架已接入，版本默认模型关闭 | V2 主框架：模型调用、Tool Calling、会话、RAG 与观测 | 生成、受限工具及保存恢复已接；报告首段沿 EmbeddingModel／VectorStore 接入，完整 RAG 与 MCP 分别验收 |
+| 向量数据库                      | Qdrant 1.19.2 本机 Windows 服务端已接 | 当前股票有限年报段落的语义检索 | Java 回环 REST、持久化重开与页面引用已接；在线状态维护及生产部署另验，不替换 MySQL |
 | 本地文本向量模型                | BGE-small-zh-v1.5 ONNX，512 维，预检已使用 | 中文报告段落与问题向量化 | 固定模型提交／文件哈希与编码依赖，CPU 运行，不等同于 DeepSeek 回答模型；正式业务适配待验 |
 
 ### 3.1 外部行情调用与密钥边界
@@ -86,13 +86,13 @@
 | Java 与服务端 | Java 17／Boot 4.1.1，已在本地源码升级 | 已核对安全、Mapper、JSON／时间、Flyway、行情传输回归与关闭模型的 API；具体证据沿 AG-CODE-002，云端发布另验 |
 | AI 框架 | Spring AI 2.0.1 已接入，默认 `spring.ai.model.chat=none`；直接 Java HTTP API 保留为能力实验路径 | 无密钥可运行原功能；正式 DeepSeek 失败零重试由 Agent 配置控制。框架不代替授权、会话、引用或预算；LangChain4j 仍为候选 |
 | 模型与输出 | 用户已选 DeepSeek；`deepseek-flash` 已完成独立及正式页面四组自造资料核对，见 [005 证据](../specs/004-research-agent/tasks.md#14-ag-code-005工具追问与真实样本核对2026-10-14) | 用相同问题核对正确性、时延与费用；JSON／DTO 校验只证明结构，不自动证明内容正确。密钥仅在服务端配置；总体真实质量仍分项验收 |
-| 工具与上下文 | 观点／报价／日 K／限定财务四类工具与有限原生循环已接入；ChatModel 负责一次传输，Java 显式执行工具 | 资料 Service 按选定周期及成员／日期读取完整／超限范围并重校验。工具从业务 Service 取数据，用户身份与可访问对象由 Java 确定，模型不能自行扩大；数值计算由 Java 完成。财务仅已核实原报科目，正文检索尚未接入 |
+| 工具与上下文 | 观点／报价／日 K／限定财务／报告段落五类工具与有限原生循环已接入；ChatModel 负责一次传输，Java 显式执行工具 | 工具从业务 Service 取数据，可信对象由 Java 绑定并重校验；观点按成员／日期，报告按当前股票及可选年度。每轮仍最多三次工具尝试、四次模型调用；有限年报章节不等于任意全文 |
 | 会话存储 | 已用 MySQL 保存个人 session／message／run 和独立费用 budget；不为当前功能另建 Redis 聊天存储 | 同对象个人记录、有效历史整条裁剪、清空版本及恢复已接入；完整变化／断线场景沿 006，运行明细保留期限上线前落实。保存会话与独立报告分开，不机械建立两份状态存储 |
 | 页面与响应 | Vue／TypeScript 的同步梳理／追问及恢复已实现；SSE 沿 007 | 先同步得到结果，再以 fetch 流或支持认证头的客户端处理流式鉴权、中断与取消；原生 EventSource 不支持任意认证头。长任务恢复或 MQ 按实际需要评估 |
 | 观测与可靠性 | 运行版本、模型／工具次数、有限轨迹、耗时、Token／费用已保存；Micrometer／OpenTelemetry 的额外平台按需要接入 | 输入、总超时、零重试、并发、幂等与预算已门控。费用日志不保存完整提示词／工具正文或密钥，未知用量保留占用；整体观测平台不作当前页面前置 |
 | 质量验证 | 复用 JUnit／Mockito 与隔离业务测试，加固定问题集和独立真实模型评测，增量计划 | 替身测试验证工具、权限和错误边界；真实模型检查工具选择、归纳和引用。评分结合程序与人工，保留运行条件、版本、执行记录、坏例子与修改前后比较；具体验收沿 AG-CODE-007／008，不以文案完全相同作为正确标准 |
 
-2026-10-11 的独立组件预检及教学工程撤回事宜保留为历史记录。2026-10-12 主工程已锁定 Java 17／Boot 4.1.1／Spring AI 2.0.1／MyBatis-Plus 3.5.17，兼容接入证据见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。梳理、个人页面及观点／报价／日 K 已沿 004／005 接入，限定财务沿 001F／005F，实际效果见各任务证据；正式向量库、报告正文 RAG、更广财务覆盖及总体质量仍待完成。
+2026-10-11 的独立组件预检及教学工程撤回事宜保留为历史记录。2026-10-12 主工程已锁定 Java 17／Boot 4.1.1／Spring AI 2.0.1／MyBatis-Plus 3.5.17，兼容接入证据见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。梳理、个人页面及观点／报价／日 K 沿 004／005，限定财务沿 001F／005F；008 首段已接 Java 本地向量、Qdrant 服务端和报告引用。完整报告维护、混合／重排、真实回答质量、更广财务覆盖仍待完成。
 
 版本依据：官方 [Spring AI 兼容矩阵](https://github.com/spring-projects/spring-ai#getting-started) 列出 2.x 对应 Boot 4.x、1.1.x 对应 Boot 3.5.x；但 [Boot 3.5.16 发布说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 已声明 3.5.x 结束开源支持。因此 3.5／AI 1.1 只作为历史兼容关系或迁移中间步骤，不能默认当作新的长期目标。[Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html) 允许 Java 17；[MyBatis-Plus 官方说明](https://baomidou.com/getting-started/) 提供自 3.5.13 起的 Boot 4 starter，原项目的 Boot 3 starter 3.5.5 已更换为 Boot 4 starter 3.5.17。业务 ObjectMapper 已迁移到 Jackson 3；注入／序列化和时间行为按 [官方迁移说明](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide) 验证，不能由官方组合存在推断项目已经兼容。
 
@@ -172,7 +172,7 @@ MCP 负责统一工具发现和调用，不提供数据许可或实时性保证�
 
 学习顺序、阶段深度与本人产出沿 [V2 地图](../project/roadmap.md#v2-功能与学习地图)，目标岗位的语言／框架／资格差距沿 [岗位分流](../project/roadmap.md#岗位分流与学习优先级)。原始完整目标保留在 [技术参考](../project/technology-reference.md#用户原始文字)；本表不另设课表或个人掌握记录。
 
-RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)、[资料读取与分块管线](https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html) 和 [Embedding API](https://docs.spring.io/spring-ai/reference/api/embeddings.html)。回答模型和文本向量模型职责不同；现有 DeepSeek 真实回答实验没有验证向量化能力，Embedding 服务或本地模型、中文检索质量及成本需独立确认。分别对照检索及回答，不能将默认 similaritySearch 调用或空检索后的流畅回答当作通过。MCP 发现／调用与 Java 实现路径依据 [MCP 官方架构](https://modelcontextprotocol.io/docs/learn/architecture) 和 [Spring AI MCP](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html)。当前 RAG／MCP 尚未接入，官方组件存在不证明本项目实际兼容。
+RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)、[资料读取与分块管线](https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html) 和 [Embedding API](https://docs.spring.io/spring-ai/reference/api/embeddings.html)。回答模型和文本向量模型职责不同；现有 DeepSeek 真实回答实验没有验证向量化能力，Embedding 服务或本地模型、中文检索质量及成本需独立确认。分别对照检索及回答，不能将默认 similaritySearch 调用或空检索后的流畅回答当作通过。MCP 发现／调用与 Java 实现路径依据 [MCP 官方架构](https://modelcontextprotocol.io/docs/learn/architecture) 和 [Spring AI MCP](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html)。当前 RAG 仅接入有限章节的本机首段，完整 008 与 MCP 仍未完成，官方组件存在不证明本项目实际兼容。
 
 ### 3.5 首轮模型与费用安排
 
@@ -190,13 +190,15 @@ RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.sprin
 
 2026-10-08 模式参数补核：[官方思考模式](https://api-docs.deepseek.com/guides/thinking_mode/) 说明默认开启思考。首轮 HTTP 请求显式设置 `thinking: {"type": "disabled"}`，不能只在提示词里要求“不思考”；以后启用思考工具调用时，另验 reasoning_content 的协议回传要求。补核时仅有文档证据；2026-10-09 独立真实实验已使用这一参数，业务接入仍待后续任务。
 
-### 3.6 报告检索预检的本地候选
+### 3.6 报告检索预检与 Java 首段接入
 
 001R 先解决中文报告能否准确读出、定位及检索的问题。当前本机没有 Docker，预检选择已有公共 PDF、隔离 Python 与本地 CPU 中文模型，采用 [Qdrant 官方支持的本地模式](https://qdrant.tech/documentation/tutorials-basics/generate-embeddings-fastembed/)验证持久化／过滤；不为这一步安装 Docker 或新增远程服务。候选替代是服务端 Embedding API 与正式 Qdrant 服务，但外发、费用和 Java 通信需分别落实，不默认借用原 DeepSeek 实验预算。
 
 [BGE-small-zh-v1.5 原模型说明](https://huggingface.co/BAAI/bge-small-zh-v1.5) 给出中文用途、512 维及查询指令；本轮使用 Qdrant 仓库固定提交的 ONNX 文件，资产约 95 MB，模型清单与哈希只维护在 [model.json](../../scripts/rag-preflight/model.json)。FastEmbed 0.9.0、ONNX Runtime 1.31.0、tokenizers 0.23.3 和 Qdrant client 1.19.1 仅进入 [隔离预检依赖](../../scripts/rag-preflight/requirements.txt)，不加入 Spring 运行依赖或自动建立 Python 服务。实际资源及成绩只见 [任务第 22 节](../specs/004-research-agent/tasks.md#22-中文报告解析与本地检索预检2026-10-17)。
 
 解析候选采用 PyMuPDF 1.28.2，已核对腾讯中文原版能恢复原 pypdf 6.11.0 未读出的汉字；原有英文财务提取路径保留。哈希、页数、受审段落哨兵与码点定位共同检查，失败不猜原文。模型、分词器或编码依赖变化必须重建相应索引，未知维度／截断／零向量拒绝。候选门槛按固定题校准并留出改写验证，不把分数当答案证据；关键词基线保留，正式混合／重排与回答质量沿 008。若中文解析或检索不能成立，先缩到可读章节或验证替代，不能仅以组件能安装标为业务 RAG 可用。
+
+2026-10-18 的 008 首段在主工程沿用同一权重和受审正文，加入 ONNX Runtime Java 1.20.0、DJL tokenizers 0.38.0 与 Spring AI VectorStore 运行依赖，由 Java 直接本地编码并查询 Qdrant 1.19.2 官方 Windows 服务端，未引入 Python 常驻服务。选择该 ONNX 版本是因为 1.31.0 在当前 JDK17 附带的旧 MSVC 库初始化时发生原生崩溃；更换兼容版本后实读问题集及浏览器，未修改系统 DLL 或 JDK。Python 预检的 1.31.0 保留，不能混称两条运行路径。BGE 需要 CLS 池化，自建薄适配实现 EmbeddingModel；不直接使用默认平均池化的通用 Transformer 适配。技术依据见 [Spring AI 本地 ONNX](https://docs.spring.io/spring-ai/reference/api/embeddings/onnx.html)、[ONNX Java](https://onnxruntime.ai/docs/get-started/with-java.html)、[Windows 运行库要求](https://onnxruntime.ai/docs/install/) 和 [Qdrant 固定发布](https://github.com/qdrant/qdrant/releases/tag/v1.19.2)。当前方案及完整边界只见 [报告接入设计](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)；本机开关、安装资产与复现见工程笔记，不代表生产部署或完整 008。
 
 ## 4. 当前明确不采用
 

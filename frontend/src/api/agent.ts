@@ -23,8 +23,14 @@ export interface AgentFinancialFacts {
   reports: { metric: string; title: string; url: string; sha256: string; reportPeriod: string; pdfPages: number[] }[]
 }
 export interface AgentEvidence {
-  sourceId: string; type: 'QUOTE' | 'DAILY_PRICES' | 'FINANCIAL'; label: string; quote: AgentQuote | null
+  sourceId: string; type: 'QUOTE' | 'DAILY_PRICES' | 'FINANCIAL' | 'REPORT'; label: string; quote: AgentQuote | null
   dailyPrices: AgentDailyPrices | null; financialFacts?: AgentFinancialFacts | null
+  reportPassage?: { id: string; symbol: string; reportVersion: string; reportTitle: string; reportYear: number
+    sourceUrl: string; sectionTitle: string; pdfPage: number; text: string; textSha256: string } | null
+}
+export interface AgentReportLibrary {
+  retrievalEnabled: boolean; note: string
+  reports: { title: string; year: number; url: string; version: string; sections: string[]; pdfPages: number[] }[]
 }
 export interface AgentAnswer {
   summary: { overview: AgentItem; changes: AgentItem[]; members: (AgentItem & { authorId: string })[]; pendingItems: AgentItem[] } | null
@@ -52,6 +58,9 @@ function base(target: AgentTarget) {
 }
 export function restoreAgent(target: AgentTarget, beforeRunId?: number) {
   return http.get<ApiResult<AgentSession>>(`${base(target)}/agent`, { params: { beforeRunId } })
+}
+export function readAgentReports(target: AgentTarget) {
+  return http.get<ApiResult<AgentReportLibrary>>(`${base(target)}/agent/reports`)
 }
 export function generateAgent(target: AgentTarget, requestId: string, filter: AgentFilter) {
   return http.post<ApiResult<AgentRun>>(`${base(target)}/agent/summaries`, { requestId, ...filter }, { timeout: 65_000 })

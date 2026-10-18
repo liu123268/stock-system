@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } from './financial-cases.mjs'
+import { cases, selectCases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } from './financial-cases.mjs'
 
 const catalog = loadCatalog()
 const annual = cases.find(item => item.id === 'tencent-original-currency')
@@ -85,6 +85,29 @@ function partial() {
     automaticRetry: false, realBudget: 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER' },
   results: [{ id: annual.id, run: sample(), trace }] }
 }
+
+test('只执行显式选择的题目，单题与默认完整题集均可用', () => {
+  assert.deepEqual(selectCases(['tencent-original-currency']).map(item => item.id), ['tencent-original-currency'])
+  assert.deepEqual(selectCases(['moutai-annual', 'tencent-original-currency']).map(item => item.id),
+    ['moutai-annual', 'tencent-original-currency'])
+  assert.equal(selectCases(), cases)
+})
+
+test('题目选择为空、未知或重复时拒绝，不回退成整套执行', () => {
+  for (const ids of [[], [''], ['unknown'], ['moutai-annual', 'moutai-annual'], ['moutai-annual', '']])
+    assert.throws(() => selectCases(ids))
+})
+
+test('定向续做限定同一题集，拒绝范围变化及夹带其他题目结果', () => {
+  const selected = selectCases(['moutai-annual', 'tencent-original-currency'])
+  const previous = partial()
+  previous.plan = { ...previous.plan, cases: selected, maxQuestions: 2 }
+  assert.equal(continuationRows(previous, 'real', catalog, selected)[0].reusedWithoutModelCall, true)
+  assert.throws(() => continuationRows(previous, 'real', catalog))
+  const changed = structuredClone(previous)
+  changed.results[0].id = 'missing-comparable-year'
+  assert.throws(() => continuationRows(changed, 'real', catalog, selected), /其他问题集/)
+})
 
 test('续做复用已核对答案，并拒绝跨模式、换题和重复记录', () => {
   const previous = partial()

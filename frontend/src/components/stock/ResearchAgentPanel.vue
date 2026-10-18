@@ -5,8 +5,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useAgentDraftStore } from '@/stores/agent-draft'
 import { ApiError } from '@/api/http'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
-import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentRequest, readAgentRun, restoreAgent } from '@/api/agent'
-import type { AgentAnswer, AgentEvidence, AgentItem, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
+import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentReports, readAgentRequest, readAgentRun, restoreAgent } from '@/api/agent'
+import type { AgentAnswer, AgentEvidence, AgentItem, AgentReportLibrary, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
 import { readPendingAgent, writePendingAgent, removePendingAgent } from '@/utils/agent-pending'
 import type { PendingAgentRequest } from '@/utils/agent-pending'
 
@@ -50,6 +50,23 @@ async function showLatest() {
 }
 watch(() => messages.value[0]?.runId, () => void showLatest())
 const evidence = ref<AgentEvidence | null>(null)
+const reportLibrary = ref<AgentReportLibrary | null>(null)
+const libraryLoading = ref(false)
+const libraryError = ref('')
+const capabilities = ref<HTMLDetailsElement>()
+async function loadLibrary(event: Event) {
+  if (!(event.target as HTMLDetailsElement).open || reportLibrary.value || libraryLoading.value || accessLost.value) return
+  const request = capture()
+  libraryLoading.value = true; libraryError.value = ''
+  try {
+    const library = (await readAgentReports(request.target)).data.data
+    if (current(request)) reportLibrary.value = library
+  } catch (cause) {
+    if (!current(request)) return
+    libraryError.value = '报告范围暂时无法读取，收起后可重新打开。'
+    if (cause instanceof ApiError && accessErrors.includes(cause.code)) await fail(cause, request)
+  } finally { if (current(request)) libraryLoading.value = false }
+}
 const reportLinks = computed(() => {
   const reports = new Map<string, { title: string; url: string; pages: number[] }>()
   for (const report of evidence.value?.financialFacts?.reports ?? []) {
@@ -118,6 +135,8 @@ function hidePrivateContent() {
   version++; originalVersion++; stopPoll()
   busy.value = false; loading.value = false; notices.value = ''
   messages.value = []; original.value = null; evidence.value = null
+  reportLibrary.value = null; libraryLoading.value = false; libraryError.value = ''
+  if (capabilities.value) capabilities.value.open = false
   originalDialog.value?.close(); enabled.value = false; accessLost.value = true
   drafts.remove(draftTarget); question.value = ''; dateFrom.value = ''; dateTo.value = ''
   if (pending.value) forgetRequest(pending.value.requestId)
@@ -177,7 +196,7 @@ async function load(reset = true, older = false) {
       if (history.value) history.value.scrollTop = previousScroll.top + history.value.scrollHeight - previousScroll.height
     }
     busy.value = !!session.activeRun
-    if (session.invalidated) notices.value = '部分结果依赖的观点已经撤回或变化，需要重新梳理。'
+    if (session.invalidated) notices.value = '部分结果依赖的资料已经撤回或变化，需要重新查询。'
     else if (reset) notices.value = ''
     if (!older && pending.value) {
       const requestId = pending.value.requestId
@@ -348,6 +367,8 @@ watch([() => props.target.workspaceId, () => props.target.stockId, () => props.t
   accessLost.value = false
   version++; originalVersion++; stopPoll(); messages.value = []; original.value = null
   originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''; question.value = ''; evidence.value = null
+  reportLibrary.value = null; libraryLoading.value = false; libraryError.value = ''
+  if (capabilities.value) capabilities.value.open = false
   restoreDraft()
   if (accountChanged && !auth.isAuthenticated) { hidePrivateContent(); return }
   void load()
@@ -372,6 +393,24 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
       <button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled">{{ busy ? '正在梳理…' : latest ? '重新梳理' : '开始梳理' }}</button>
     </form>
     <p v-if="!standalone || dateExpanded" class="agent-note">日期留空时读取完整周期。成员的推测仍需权威资料核对。</p>
+    <details ref="capabilities" class="agent-capabilities" @toggle="loadLibrary"><summary>可查询的资料与报告</summary>
+        <div class="agent-library-content">
+          <p class="agent-note">可查询本周期成员观点、最新可用报价和短期日 K。已核实财务仅覆盖茅台、腾讯 2025 年报及 2024 比较列。</p>
+          <p v-if="libraryLoading" class="agent-note" role="status">正在读取当前股票的报告范围…</p>
+          <p v-else-if="libraryError" class="agent-note" role="alert">{{ libraryError }}</p>
+          <template v-else-if="reportLibrary">
+            <p v-if="!reportLibrary.reports.length" class="agent-note">当前股票还没有入库的报告文字。可继续询问观点或行情。</p>
+            <template v-else>
+              <p v-if="!reportLibrary.retrievalEnabled" class="agent-note">当前可查看以下范围，报告段落检索尚未开启。</p>
+              <div v-for="report in reportLibrary.reports" :key="report.version" class="agent-library-report">
+                <a :href="financialReportUrl(report.url, report.pdfPages[0])" target="_blank" rel="noopener noreferrer">{{ report.title }}</a>
+                <p class="agent-note">可查章节：{{ report.sections.join('、') }}。</p>
+              </div>
+              <p class="agent-note">{{ reportLibrary.note }}</p>
+            </template>
+          </template>
+        </div>
+      </details>
     <div v-if="clearConfirming" class="agent-confirm">
       <p>清空这个周期的个人结果？正在生成的迟到结果也不会重新保存。</p>
       <button class="ui-button" type="button" :disabled="clearing" @click="clearConfirming = false">保留记录</button>
@@ -426,16 +465,23 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
     </div>
     <form class="agent-question" @submit.prevent="ask">
       <label>继续提问<textarea v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || accessLost" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
-      <div><details class="agent-capabilities"><summary>可查询的资料</summary><p class="agent-note">可查询成员观点、最新可用报价和短期日 K。已核实财务仅覆盖茅台、腾讯 2025 年报及 2024 比较列；公告正文检索尚未接入。</p></details><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
+      <div><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
     </form>
     <dialog ref="originalDialog" class="agent-original" :class="{ 'agent-financial-dialog': !!evidence?.financialFacts }" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
-      <header><h3 id="agent-original-title">{{ evidence?.financialFacts ? '财务依据' : evidence ? '行情依据' : '观点原文' }}</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">{{ evidence ? '关闭依据' : '关闭原文' }}</button></header>
+      <header><h3 id="agent-original-title">{{ evidence?.reportPassage ? '报告原文' : evidence?.financialFacts ? '财务依据' : evidence ? '行情依据' : '观点原文' }}</h3><button class="ui-button" type="button" autofocus @click="originalDialog?.close()">{{ evidence ? '关闭依据' : '关闭原文' }}</button></header>
       <p v-if="originalLoading" role="status">正在读取当前可见原文…</p>
       <p v-else-if="originalError" role="alert">{{ originalError }}</p>
       <template v-else-if="original">
         <p class="agent-note">{{ original.authorNickname }} · {{ time(original.createdAt) }} · {{ { BULLISH: '看多', NEUTRAL: '中性', BEARISH: '看空' }[original.stance] }}</p>
         <h4>判断理由</h4><p class="agent-prose">{{ original.reason }}</p>
         <template v-if="original.observationNote"><h4>观察条件</h4><p class="agent-prose">{{ original.observationNote }}</p></template>
+      </template>
+      <template v-else-if="evidence?.reportPassage">
+        <h4>{{ evidence.reportPassage.reportTitle }}</h4>
+        <p class="agent-note">{{ evidence.reportPassage.sectionTitle }} · PDF 第 {{ evidence.reportPassage.pdfPage }} 页</p>
+        <p class="agent-prose agent-report-passage">{{ evidence.reportPassage.text }}</p>
+        <p class="agent-note">这是回答生成时实际检索的片段，只展示已核对的文字范围。页码按 PDF 文件计数。</p>
+        <p><a :href="financialReportUrl(evidence.reportPassage.sourceUrl, evidence.reportPassage.pdfPage)" target="_blank" rel="noopener noreferrer">打开官方报告对应页</a></p>
       </template>
       <template v-else-if="evidence?.quote">
         <h4>{{ evidence.label }}</h4><p class="agent-prose">{{ evidence.quote.price }} {{ evidence.quote.currency }} · {{ time(evidence.quote.quoteTime) }}</p>
@@ -472,6 +518,12 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
 </template>
 
 <style scoped>
+.agent-library-content { max-height: 140px; overflow-y: auto; max-width: 68ch; padding: 8px 4px 4px 0; }
+.agent-question > div { flex-wrap: wrap; }
+.agent-question > div > button { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+.agent-capabilities[open] { flex-basis: 100%; width: 100%; }
+.agent-library-report { margin-block: 12px; }
+.agent-report-passage { overflow-wrap: anywhere; }
 .agent-panel { padding: 22px; border-bottom: 1px solid var(--color-border); min-width: 0; scroll-margin-top: 100px; }
 .agent-panel button { min-height: 44px; padding: 8px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-action); background: var(--color-surface); color: var(--color-ink); font-size: 12px; cursor: pointer; }
 .agent-panel button:disabled { opacity: 0.55; cursor: default; }

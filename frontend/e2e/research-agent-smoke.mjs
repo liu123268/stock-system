@@ -177,6 +177,67 @@ try {
   assert.equal((await fixtureState()).calls, beforeFinancialRestore)
   await page.keyboard.press('Escape')
   checks.push('financial-restore-and-source-access-without-paid-request')
+  if (process.env.AGENT_REPORT_RAG_PROBE === 'true') {
+    const library = await api(`${base}/reports`, owner.accessToken)
+    assert.equal(library.retrievalEnabled, true)
+    assert.equal(library.reports.length, 1)
+    assert.ok(library.reports[0].title.includes('腾讯'))
+    assert.equal((await fetch(`${backend}/api${base}/reports`)).status, 401)
+    await page.locator('.agent-capabilities summary').click()
+    await page.locator('.agent-library-report').waitFor()
+    assert.ok((await page.locator('.agent-library-content').innerText()).includes('营销服务'))
+    for (const width of [1440, 960, 390, 320]) {
+      await page.setViewportSize({ width, height: 1000 })
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+      assert.ok(await questionInput.isVisible())
+      const sendBounds = await page.getByRole('button', { name: '发送问题', exact: true }).boundingBox()
+      assert.ok(sendBounds && sendBounds.y >= 0 && sendBounds.y + sendBounds.height <= 1000)
+      assert.ok(await page.getByRole('button', { name: '发送问题', exact: true }).evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+      }))
+      await page.screenshot({ path: `${output}/report-library-${width}.png` })
+    }
+    await page.locator('.agent-capabilities summary').click()
+    const reportQuestion = '请结合成员观点与2025年报告原文，说明营销服务收入增长的解释'
+    const beforeReport = (await fixtureState()).calls
+    await questionInput.fill(reportQuestion)
+    await page.getByRole('button', { name: '发送问题', exact: true }).click()
+    await page.getByText(`你的问题：${reportQuestion}`, { exact: true }).waitFor()
+    assert.equal((await fixtureState()).calls, beforeReport + 2)
+    const reportRun = (await api(base, owner.accessToken)).messages[0]
+    const cited = reportRun.answer.followUp.evidence.filter(item => item.type === 'REPORT')
+    assert.ok(cited.length > 0 && cited.length <= 3)
+    assert.ok(cited.every(item => item.reportPassage.symbol === '00700.HK' && item.reportPassage.reportYear === 2025))
+    assert.ok(reportRun.answer.references.length > 0)
+    assert.ok(sql(`select result_json from agent_message where run_id=${reportRun.runId}`).includes('reportPassage'))
+    await page.getByRole('button', { name: '查看报告原文依据', exact: true }).click()
+    const reportDialog = page.getByRole('dialog')
+    await reportDialog.getByText('报告原文', { exact: true }).waitFor()
+    assert.ok((await reportDialog.innerText()).includes('PDF 第 9 页'))
+    assert.ok((await reportDialog.locator('.agent-report-passage').innerText()).includes('營銷服務'))
+    assert.ok((await reportDialog.locator('a').getAttribute('href')).endsWith('#page=9'))
+    await capture('report-original', [1440, 960, 390, 320])
+    await page.keyboard.press('Escape')
+    assert.equal(await page.getByRole('button', { name: '查看报告原文依据', exact: true }).evaluate(element => document.activeElement === element), true)
+    const beforeReportRestore = (await fixtureState()).calls
+    await page.reload()
+    await page.getByRole('button', { name: '查看报告原文依据', exact: true }).click()
+    await reportDialog.getByText('报告原文', { exact: true }).waitFor()
+    assert.equal((await fixtureState()).calls, beforeReportRestore)
+    await page.keyboard.press('Escape')
+    for (const [question, status] of [['请在2024年报告原文中查询营销服务', 'NO_REPORT'], ['报告原文是否说明飞船发射时间', 'NO_MATCH']]) {
+      const absent = await api(`${base}/messages`, owner.accessToken, 'POST', { requestId: crypto.randomUUID(), question })
+      assert.equal(absent.status, 'SUCCEEDED')
+      assert.equal(absent.answer.followUp.evidence.filter(item => item.type === 'REPORT').length, 0)
+      assert.ok(absent.answer.followUp.reply.paragraphs[0].text.includes(status === 'NO_REPORT' ? '没有已入库' : '未找到足够相关'))
+    }
+    checks.push('real-java-qdrant-retrieval-with-loopback-answer-model')
+    checks.push('report-library-current-stock-and-unauthenticated-refusal')
+    checks.push('report-and-opinion-combination-with-canonical-text-and-pdf-page')
+    checks.push('report-database-snapshot-restore-and-read-without-model-call')
+    checks.push('missing-report-year-and-no-match-do-not-fabricate-citations')
+  }
   // 先产生足够的自造问答，再只读加载上一页，实际覆盖长记录与分页。
   for (let index = 1; index <= 8; index++) {
     const question = `分页样本 ${index}：现在最新可用价是多少？`
@@ -341,7 +402,7 @@ try {
   const originalId = (await api(base, owner.accessToken)).messages[0].answer.references[0].opinionId
   await api(`/workspaces/${workspace}/stocks/${stock}/opinions/${originalId}`, owner.accessToken, 'DELETE')
   await page.reload()
-  await page.getByText('部分结果依赖的观点已经撤回或变化，需要重新梳理。', { exact: true }).waitFor()
+  await page.getByText('部分结果依赖的资料已经撤回或变化，需要重新查询。', { exact: true }).waitFor()
   assert.equal(await page.locator('.agent-prose').count(), 0)
   assert.equal(await page.locator('.source-link').count(), 0)
   await capture('withdrawn', [1440, 390])
