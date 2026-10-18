@@ -80,6 +80,7 @@ try {
   await page.goto(researchUrl)
   await page.getByRole('link', { name: '研究助手', exact: true }).click()
   await page.getByRole('button', { name: '开始梳理', exact: true }).waitFor()
+  const assistantUrl = page.url()
   await capture('empty')
   const trigger = page.getByRole('button', { name: '开始梳理', exact: true })
   await page.setViewportSize({ width: 1440, height: 1000 })
@@ -191,7 +192,7 @@ try {
     const beforeNumberGuard = (await fixtureState()).calls
     const previousAnswers = await page.locator('.agent-answer').count()
     await questionInput.fill('年度财务数字按原报核对')
-    const financialPost = page.waitForRequest(request => request.url().endsWith('/agent/messages') && request.method() === 'POST')
+    const financialPost = page.waitForRequest(request => request.url().endsWith('/agent/messages/stream') && request.method() === 'POST')
     await page.getByRole('button', { name: '发送问题', exact: true }).click()
     const guardedRequestId = (await financialPost).postDataJSON().requestId
     assert.match(guardedRequestId, /^[0-9a-f-]{36}$/)
@@ -329,11 +330,14 @@ try {
   const beforeEarlier = (await fixtureState()).calls
   await page.getByRole('button', { name: '查看更早记录', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.agent-answer').length > 6)
+  await page.locator('.agent-panel[aria-busy="false"]').waitFor()
   assert.equal((await fixtureState()).calls, beforeEarlier)
   checks.push('read-earlier-chat-page-without-model-request')
   // 长记录只滚动助手内部；输入区始终可见，主页面不被聊天撑长。
   for (const width of [1440, 960, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 })
+    await page.waitForFunction(expected => innerWidth === expected, width)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const bounds = await page.evaluate(() => {
       const history = document.querySelector('.agent-history')
       const composer = document.querySelector('.agent-question').getBoundingClientRect()
@@ -345,7 +349,8 @@ try {
       }
       return { documentHeight: document.documentElement.scrollHeight, viewport: innerHeight,
         historyHeight: history.clientHeight, historyScroll: history.scrollHeight,
-        composerTop: composer.top, composerBottom: composer.bottom, ancestors }
+        composerTop: composer.top, composerBottom: composer.bottom, ancestors,
+        answerHeights: [...document.querySelectorAll('.agent-answer')].map(item => item.clientHeight) }
     })
     assert.ok(bounds.documentHeight <= bounds.viewport + 1, JSON.stringify(bounds))
     assert.ok(bounds.historyScroll > bounds.historyHeight, JSON.stringify(bounds))
@@ -366,7 +371,7 @@ try {
   assert.equal((await fixtureState()).calls, beforeReturn)
   checks.push('return-to-opinions-without-chat-body-and-restore-unsent-draft')
   // Chrome 丢掉服务端已经完成的 POST 回包，页面只能 GET 原编号恢复。
-  const messagesRoute = '**/agent/messages'
+  const messagesRoute = '**/agent/messages/stream'
   let lostQuestionId
   const loseReply = async route => {
     lostQuestionId = route.request().postDataJSON().requestId
@@ -402,7 +407,7 @@ try {
 
   // 请求未交给服务端时，用户再次提交仍用原编号，实际只执行一次。
   await fixtureState('valid')
-  const summariesRoute = '**/agent/summaries'
+  const summariesRoute = '**/agent/summaries/stream'
   let missingRequestId
   const loseBeforeServer = async route => {
     missingRequestId = route.request().postDataJSON().requestId
@@ -414,7 +419,7 @@ try {
   await page.getByRole('alert').getByText(/暂未找到本次任务/).waitFor()
   assert.equal((await fixtureState()).calls, beforeMissing)
   await page.unroute(summariesRoute, loseBeforeServer)
-  const retriedPost = page.waitForRequest(request => request.url().endsWith('/agent/summaries') && request.method() === 'POST')
+  const retriedPost = page.waitForRequest(request => request.url().endsWith('/agent/summaries/stream') && request.method() === 'POST')
   await page.locator('.agent-controls button[type="submit"]').click()
   assert.equal((await retriedPost).postDataJSON().requestId, missingRequestId)
   await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') === null)
@@ -437,6 +442,58 @@ try {
   await page.locator('.agent-panel').screenshot({ path: `${output}/reload-restored-panel-320.png` })
   checks.push('reload-during-question-restores-original-run-without-new-model-call')
 
+  // SSE 的真实阶段先于正文到达；停止只结束本轮，已发出的调用仍计入用量。
+  const beforeStop = (await fixtureState()).calls
+  const answersBeforeStop = await page.locator('.agent-answer').count()
+  const stoppedPost = page.waitForRequest(request => request.url().endsWith('/agent/messages/stream') && request.method() === 'POST')
+  await questionInput.fill('停止后保留的最新报价问题')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  const stoppedRequestId = (await stoppedPost).postDataJSON().requestId
+  await page.getByRole('status').filter({ hasText: '正在整理回答…' }).waitFor()
+  assert.equal(await page.locator('.agent-answer').count(), answersBeforeStop)
+  checks.push('sse-progress-arrives-before-validated-body')
+  const stop = page.getByRole('button', { name: '停止生成', exact: true })
+  await stop.focus()
+  assert.ok(await stop.evaluate(element => document.activeElement === element && element.getBoundingClientRect().height >= 44))
+  await stop.screenshot({ path: `${output}/sse-stop-focus-320.png` })
+  await stop.hover()
+  await stop.screenshot({ path: `${output}/sse-stop-hover-320.png` })
+  await stop.dispatchEvent('pointerdown', { pointerId: 22, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 })
+  await stop.dispatchEvent('pointercancel', { pointerId: 22, pointerType: 'touch', isPrimary: true })
+  assert.equal((await api(`${base}/requests/${stoppedRequestId}`, owner.accessToken)).cancelRequested, false)
+  checks.push('stop-focus-touch-size-and-touch-cancel-do-not-submit')
+  await stop.click()
+  await page.getByRole('button', { name: '正在停止…', exact: true }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.agent-stop') === null)
+  const stoppedRun = await api(`${base}/requests/${stoppedRequestId}`, owner.accessToken)
+  assert.equal(stoppedRun.status, 'CANCELLED')
+  assert.equal(stoppedRun.answer, null)
+  assert.equal(await questionInput.inputValue(), '停止后保留的最新报价问题')
+  assert.equal(await questionInput.evaluate(element => element === document.activeElement), true)
+  assert.equal(await page.locator('.agent-answer').count(), answersBeforeStop)
+  assert.equal((await fixtureState()).calls, beforeStop + 1)
+  const stoppedUsage = JSON.parse(sql(`select json_object('models', model_calls, 'tools', tool_calls, 'cost', cost_upper_yuan) from agent_run where id=${stoppedRun.runId} and user_id=${owner.userId}`))
+  assert.equal(stoppedUsage.models, 1); assert.equal(stoppedUsage.tools, 0)
+  assert.equal(Number(stoppedUsage.cost), 0.00084)
+  await page.locator('.agent-panel').screenshot({ path: `${output}/sse-stopped-draft-320.png` })
+  checks.push('stop-prevents-next-model-and-tools-settles-usage-keeps-draft-and-focus')
+
+  const beforeStopReload = (await fixtureState()).calls
+  const stopReloadPost = page.waitForRequest(request => request.url().endsWith('/agent/messages/stream') && request.method() === 'POST')
+  await questionInput.fill('停止中刷新仍保留的问题')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  const stopReloadId = (await stopReloadPost).postDataJSON().requestId
+  await page.getByRole('status').filter({ hasText: '正在整理回答…' }).waitFor()
+  await page.getByRole('button', { name: '停止生成', exact: true }).click()
+  await page.getByRole('button', { name: '正在停止…', exact: true }).waitFor()
+  await page.reload()
+  await page.getByRole('status').filter({ hasText: '本次生成已停止' }).waitFor()
+  assert.equal((await api(`${base}/requests/${stopReloadId}`, owner.accessToken)).status, 'CANCELLED')
+  assert.equal((await fixtureState()).calls, beforeStopReload + 1)
+  // 草稿沿既有规则只存登录会话内存；刷新仅恢复运行状态，不把问题加入 sessionStorage。
+  assert.equal(await questionInput.inputValue(), '')
+  checks.push('reload-during-stop-restores-persisted-cancellation-without-model-retry')
+
   // 本轮自造账号在模型第一轮期间失权；即使随后恢复 GET 被阻断也立即隐藏正文。
   const beforeAccessLoss = (await fixtureState()).calls
   const preventRestore = async route => {
@@ -450,14 +507,15 @@ try {
     await page.waitForTimeout(50)
   assert.equal((await fixtureState()).calls, beforeAccessLoss + 1)
   sql(`update workspace_member set status='LEFT',last_inactive_at=current_timestamp(3) where workspace_id=${workspace} and user_id=${owner.userId}`)
-  await page.getByRole('alert').getByText('当前空间成员关系已失效', { exact: true }).waitFor()
+  await page.waitForURL(/\/workspaces\?reason=access-lost$/)
+  await page.getByRole('alert').getByText('当前空间访问权已经失效，请选择仍可访问的空间。', { exact: true }).waitFor()
   assert.equal(await page.locator('.agent-answer').count(), 0)
   assert.equal(await page.locator('.source-link').count(), 0)
   assert.equal((await fixtureState()).calls, beforeAccessLoss + 1)
-  await page.locator('.agent-panel').screenshot({ path: `${output}/access-lost-panel-320.png` })
+  await page.screenshot({ path: `${output}/access-lost-panel-320.png`, fullPage: true })
   await page.unroute('**/agent', preventRestore)
   sql(`update workspace_member set status='ACTIVE',last_inactive_at=null where workspace_id=${workspace} and user_id=${owner.userId}`)
-  await page.reload()
+  await page.goto(assistantUrl)
   await page.locator('.agent-answer').first().waitFor()
   checks.push('inflight-access-loss-clears-private-body-even-if-restore-disconnects')
   await fixtureState('valid')

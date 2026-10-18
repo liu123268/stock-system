@@ -5,7 +5,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useAgentDraftStore } from '@/stores/agent-draft'
 import { ApiError } from '@/api/http'
 import { handleWorkspaceApiError } from '@/utils/workspace-access'
-import { askAgent, clearAgent, generateAgent, readAgentOriginal, readAgentReports, readAgentRequest, readAgentRun, restoreAgent } from '@/api/agent'
+import { askAgent, cancelAgent, clearAgent, generateAgent, readAgentOriginal, readAgentReports, readAgentRequest, readAgentRun, restoreAgent } from '@/api/agent'
+import type { AgentStage } from '@/api/agent-stream'
 import type { AgentAnswer, AgentEvidence, AgentItem, AgentReportLibrary, AgentRun, AgentTarget, OpinionOriginal } from '@/api/agent'
 import { readPendingAgent, writePendingAgent, removePendingAgent } from '@/utils/agent-pending'
 import type { PendingAgentRequest } from '@/utils/agent-pending'
@@ -17,6 +18,23 @@ const drafts = useAgentDraftStore()
 const accessErrors = ['WORKSPACE_NOT_FOUND', 'WORKSPACE_MEMBERSHIP_INACTIVE', 'WORKSPACE_ACCESS_DENIED', 'UNAUTHORIZED']
 const loading = ref(true)
 const busy = ref(false)
+const cancelRequested = ref(false)
+const cancelling = ref(false)
+let streamController: AbortController | undefined
+const progressText: Record<AgentStage, string> = {
+  READING: '正在读取本周期资料…', QUERYING: '正在查询问题所需资料…', GENERATING: '正在整理回答…',
+  VALIDATING: '正在核对正文和引用…', SAVING: '正在结算并保存运行状态…',
+}
+function detachStream() { streamController?.abort(); streamController = undefined }
+function streamOptions(request: ReturnType<typeof capture>) {
+  detachStream()
+  streamController = new AbortController()
+  cancelRequested.value = false
+  cancelling.value = false; returnFocusAfterCancel = false
+  return { signal: streamController.signal, onProgress: (progress: { stage: AgentStage }) => {
+    if (current(request) && !cancelRequested.value) notices.value = progressText[progress.stage]
+  } }
+}
 const clearing = ref(false)
 const enabled = ref(false)
 const accessLost = ref(false)
@@ -27,6 +45,8 @@ const hasEarlier = ref(false)
 const dateFrom = ref('')
 const dateTo = ref('')
 const question = ref('')
+const questionInput = ref<HTMLTextAreaElement>()
+let returnFocusAfterCancel = false
 const dateExpanded = ref(false)
 const history = ref<HTMLElement>()
 const displayMessages = computed(() => props.standalone ? [...messages.value].reverse() : messages.value)
@@ -132,6 +152,7 @@ async function fail(cause: unknown, request: ReturnType<typeof capture>) {
   error.value = cause instanceof ApiError ? cause.message : '暂时无法连接。可以恢复运行状态；重试不会自动再次调用模型。'
 }
 function hidePrivateContent() {
+  detachStream(); cancelRequested.value = false; cancelling.value = false; returnFocusAfterCancel = false
   version++; originalVersion++; stopPoll()
   busy.value = false; loading.value = false; notices.value = ''
   messages.value = []; original.value = null; evidence.value = null
@@ -149,13 +170,17 @@ function schedulePoll(runId: number, request: ReturnType<typeof capture>) {
     try {
       const run = (await readAgentRun(request.target, runId)).data.data
       if (!current(request)) return
-      if (run.status === 'RUNNING') schedulePoll(runId, request)
+      if (run.status === 'RUNNING') {
+        cancelRequested.value = !!run.cancelRequested
+        if (cancelRequested.value) notices.value = '正在停止，等待已发出的调用结束…'
+        schedulePoll(runId, request)
+      }
       else {
         busy.value = false; accept(run); forgetRequest(run.requestId)
         if (accessLost.value) return
         if (run.answer?.followUp?.question === question.value) question.value = ''
         await load(false)
-        if (run.message && current(request)) error.value = run.message
+        if (run.message && run.status !== 'CANCELLED' && current(request)) error.value = run.message
       }
     } catch (cause) {
       if (!current(request)) return
@@ -164,11 +189,18 @@ function schedulePoll(runId: number, request: ReturnType<typeof capture>) {
   }, 1500)
 }
 function accept(run: AgentRun) {
+  cancelRequested.value = !!run.cancelRequested && run.status === 'RUNNING'
   // 进行中失权可能以 FAILED 运行回包抵达；即使后续 GET 断线也先清正文。
   if (run.errorCode && accessErrors.includes(run.errorCode)) hidePrivateContent()
   if (run.answer) {
     messages.value = [run, ...messages.value.filter((message) => message.runId !== run.runId)]
     notices.value = '本次结果已保存到你的个人记录。'
+  } else if (run.status === 'CANCELLED') {
+    notices.value = question.value ? '本次生成已停止，已有结果和问题草稿已保留。' : '本次生成已停止，已有结果仍保留。'; error.value = ''
+    if (returnFocusAfterCancel) {
+      returnFocusAfterCancel = false
+      void nextTick(() => { if (!disposed && !busy.value) questionInput.value?.focus({ preventScroll: true }) })
+    }
   } else if (run.status !== 'RUNNING') {
     if (run.status === 'INVALIDATED' || run.status === 'CLEARED')
       messages.value = messages.value.map(item => item.runId === run.runId ? run : item)
@@ -196,6 +228,7 @@ async function load(reset = true, older = false) {
       if (history.value) history.value.scrollTop = previousScroll.top + history.value.scrollHeight - previousScroll.height
     }
     busy.value = !!session.activeRun
+    cancelRequested.value = !!session.activeRun?.cancelRequested
     if (session.invalidated) notices.value = '部分结果依赖的资料已经撤回或变化，需要重新查询。'
     else if (reset) notices.value = ''
     if (!older && pending.value) {
@@ -205,7 +238,8 @@ async function load(reset = true, older = false) {
         if (!current(request)) return
         if (run.status === 'RUNNING') {
           busy.value = true
-          notices.value = '本次任务仍在进行，正在恢复结果。'
+          cancelRequested.value = !!run.cancelRequested
+          notices.value = run.cancelRequested ? '正在停止，等待已发出的调用结束…' : '本次任务仍在进行，正在恢复结果。'
           schedulePoll(run.runId, request)
         } else {
           accept(run); forgetRequest(requestId)
@@ -219,7 +253,13 @@ async function load(reset = true, older = false) {
         } else await fail(cause, request)
       }
     }
-    if (session.activeRun && current(request)) schedulePoll(session.activeRun.runId, request)
+    if (session.activeRun && current(request)) {
+      if (!pending.value) {
+        pending.value = { requestId: session.activeRun.requestId, target: request.target, userId: request.user }
+        writePendingAgent(pending.value)
+      }
+      schedulePoll(session.activeRun.runId, request)
+    }
   } catch (cause) { await fail(cause, request) }
   finally { if (current(request)) loading.value = false }
 }
@@ -233,11 +273,12 @@ async function generate() {
   busy.value = true
   error.value = ''
   notices.value = '正在核对本周期资料并整理观点，请稍候。'
+  const stream = streamOptions(request)
   try {
     const run = (await generateAgent(request.target, requestId, {
       ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}),
       ...(dateTo.value ? { dateTo: dateTo.value } : {}),
-    })).data.data
+    }, stream)).data.data
     if (!current(request)) return
     accept(run)
     if (accessLost.value) return
@@ -245,8 +286,9 @@ async function generate() {
     forgetRequest(requestId)
     busy.value = false
     await load(false)
-    if (run.message && current(request)) error.value = run.message
+    if (run.message && run.status !== 'CANCELLED' && current(request)) error.value = run.message
   } catch (cause) {
+    if (stream.signal.aborted) return
     if (!current(request)) return
     busy.value = false
     await fail(cause, request)
@@ -265,10 +307,11 @@ async function ask() {
   busy.value = true
   error.value = ''
   notices.value = '正在根据问题核对所需资料，请稍候。'
+  const stream = streamOptions(request)
   try {
     const run = (await askAgent(request.target, requestId, question.value, {
       ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}), ...(dateTo.value ? { dateTo: dateTo.value } : {}),
-    })).data.data
+    }, stream)).data.data
     if (!current(request)) return
     accept(run)
     if (accessLost.value) return
@@ -277,8 +320,9 @@ async function ask() {
     busy.value = false
     if (run.answer?.followUp?.question === question.value) question.value = ''
     await load(false)
-    if (run.message && current(request)) error.value = run.message
+    if (run.message && run.status !== 'CANCELLED' && current(request)) error.value = run.message
   } catch (cause) {
+    if (stream.signal.aborted) return
     if (!current(request)) return
     busy.value = false
     await fail(cause, request)
@@ -288,6 +332,23 @@ async function ask() {
     }
   }
 }
+async function cancel() {
+  if (!busy.value || !pending.value || cancelRequested.value || cancelling.value) return
+  const request = capture()
+  const requestId = pending.value.requestId
+  cancelling.value = true
+  returnFocusAfterCancel = true
+  try {
+    const result = (await cancelAgent(request.target, requestId)).data.data
+    if (!current(request) || pending.value?.requestId !== requestId) return
+    cancelRequested.value = true
+    notices.value = '正在停止，等待已发出的调用结束…'
+    if (result.run && result.run.status !== 'RUNNING') {
+      detachStream(); busy.value = false; accept(result.run); forgetRequest(requestId)
+    } else if (result.run) schedulePoll(result.run.runId, request)
+  } catch (cause) { await fail(cause, request) }
+  finally { if (current(request)) cancelling.value = false }
+}
 async function clear() {
   if (clearing.value) return
   const request = capture()
@@ -296,6 +357,7 @@ async function clear() {
     await clearAgent(request.target)
     if (!current(request)) return
     version++
+    detachStream(); cancelRequested.value = false
     originalVersion++
     stopPoll()
     messages.value = []
@@ -364,6 +426,7 @@ watch([() => props.target.workspaceId, () => props.target.stockId, () => props.t
   const accountChanged = next[3] !== previous[3] || next[4] !== previous[4]
   if (accountChanged && pending.value) forgetRequest(pending.value.requestId)
   pending.value = null
+  detachStream(); cancelRequested.value = false; cancelling.value = false; returnFocusAfterCancel = false
   accessLost.value = false
   version++; originalVersion++; stopPoll(); messages.value = []; original.value = null
   originalDialog.value?.close(); busy.value = false; dateFrom.value = ''; dateTo.value = ''; question.value = ''; evidence.value = null
@@ -374,11 +437,11 @@ watch([() => props.target.workspaceId, () => props.target.stockId, () => props.t
   void load()
 })
 onMounted(() => void load())
-onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion++; stopPoll(); originalDialog.value?.close() })
+onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion++; stopPoll(); detachStream(); originalDialog.value?.close() })
 </script>
 
 <template>
-  <section class="agent-panel" :class="{ 'agent-panel--standalone': standalone }" aria-label="个人研究助手" :aria-busy="busy || loading">
+  <section class="agent-panel" :class="{ 'agent-panel--standalone': standalone }" aria-label="个人研究助手" :aria-busy="loading">
     <div class="agent-tools">
     <header class="agent-heading">
       <div><h3>{{ standalone ? '个人问答' : '研究梳理' }}</h3><p>整理本周期的成员观点，结果仅你可见。</p></div>
@@ -424,7 +487,10 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
       <p class="agent-note" role="status">研究助手暂未开启回答功能。可以先写下问题；已有记录仍可查看。</p>
       <button class="ui-button" type="button" :disabled="busy || clearing" @click="load(false)">重新检查</button>
     </div>
-    <p v-if="notices" role="status" class="agent-note">{{ notices }}</p>
+    <div v-if="notices || busy" class="agent-progress">
+      <p role="status" aria-atomic="true" class="agent-note">{{ notices }}</p>
+      <button v-if="busy" class="ui-button agent-stop" type="button" :disabled="cancelling || cancelRequested || clearing" @click="cancel">{{ cancelRequested || cancelling ? '正在停止…' : '停止生成' }}</button>
+    </div>
     <div v-if="error" class="agent-error" role="alert"><p>{{ error }}</p><button class="ui-button" type="button" :disabled="loading" @click="load(false)">恢复运行状态</button></div>
     </div>
     <div ref="history" class="agent-history" role="region" aria-label="个人问答记录" :tabindex="standalone ? 0 : undefined">
@@ -467,7 +533,7 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
     <button v-if="hasEarlier && !standalone" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早记录</button>
     </div>
     <form class="agent-question" @submit.prevent="ask">
-      <label>继续提问<textarea v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || accessLost" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
+      <label>继续提问<textarea ref="questionInput" v-model="question" maxlength="1000" rows="3" :disabled="busy || clearing || accessLost" placeholder="例如：成员甲的最新判断是什么？现在最新可用价是多少？" /></label>
       <div><button class="ui-button" type="submit" :disabled="busy || loading || clearing || !enabled || !question.trim()">{{ busy ? '正在回答…' : '发送问题' }}</button></div>
     </form>
     <dialog ref="originalDialog" class="agent-original" :class="{ 'agent-financial-dialog': !!evidence?.financialFacts }" aria-labelledby="agent-original-title" @close="closeOriginal" @click="event => { if (event.target === originalDialog) originalDialog?.close() }">
@@ -521,6 +587,8 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
 </template>
 
 <style scoped>
+.agent-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.agent-stop { min-height: 44px; }
 .agent-library-content { max-height: 140px; overflow-y: auto; max-width: 68ch; padding: 8px 4px 4px 0; }
 .agent-question > div { flex-wrap: wrap; }
 .agent-question > div > button { margin-left: auto; flex-shrink: 0; white-space: nowrap; }

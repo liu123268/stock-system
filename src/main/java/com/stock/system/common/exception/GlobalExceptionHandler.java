@@ -11,11 +11,18 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleDisconnectedStream(AsyncRequestNotUsableException exception) {
+        // 客户端已离开，容器正在结束该响应；不能再向已提交的 SSE 写入 JSON 错误。
+        LOGGER.debug("Async response disconnected");
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusinessException(BusinessException exception) {

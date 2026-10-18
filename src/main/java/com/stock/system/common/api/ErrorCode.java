@@ -64,6 +64,7 @@ public enum ErrorCode {
     RESEARCH_AGENT_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "研究梳理记录不存在"),
     RESEARCH_AGENT_TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "研究梳理已超时，请查看运行状态后再决定是否重试"),
     RESEARCH_AGENT_CLEARED(HttpStatus.CONFLICT, "个人记录已清空，本次结果不再保存"),
+    RESEARCH_AGENT_CANCELLED(HttpStatus.CONFLICT, "本次生成已停止，已有结果仍保留"),
     RESEARCH_AGENT_EXECUTION_LIMIT(HttpStatus.UNPROCESSABLE_ENTITY, "本轮查询次数已达上限，请缩小问题后重新发起"),
     RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED(HttpStatus.UNPROCESSABLE_ENTITY, "研究资料超出本次范围上限，请缩小范围"),
     RESEARCH_AGENT_SOURCES_CHANGED(HttpStatus.CONFLICT, "本次使用的研究资料已经失效或变化，请重新梳理"),

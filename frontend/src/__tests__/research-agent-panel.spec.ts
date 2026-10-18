@@ -7,7 +7,8 @@ import { useAuthStore } from '@/stores/auth'
 import type { AgentRun } from '@/api/agent'
 
 const api = vi.hoisted(() => ({ restoreAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), generateAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), askAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRun: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(), clearAgent: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentOriginal: vi.fn<(...args: unknown[]) => Promise<unknown>>(), readAgentReports: vi.fn<(...args: unknown[]) => Promise<unknown>>() }))
-vi.mock('@/api/agent', () => api)
+const cancellation = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>())
+vi.mock('@/api/agent', () => ({ ...api, cancelAgent: cancellation }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn<() => void>() }) }))
 vi.mock('@/utils/workspace-access', () => ({ handleWorkspaceApiError: vi.fn<() => Promise<boolean>>(async () => false) }))
 const target = { workspaceId: 1, stockId: 2, cycleId: 3 }
@@ -42,6 +43,73 @@ beforeEach(() => {
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers = []; vi.useRealTimers() })
 
 describe('研究助手的个人记录与迟到响应', () => {
+  it('逐步展示真实进度，停止后保留草稿和已有答案并恢复焦点', async () => {
+    let finish!: (value: unknown) => void
+    api.askAgent.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    api.restoreAgent.mockResolvedValue(session([answer()]))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('停止后继续编辑的问题')
+    await wrapper.find('.agent-question').trigger('submit')
+    const requestId = api.askAgent.mock.calls[0]![1]
+    const options = api.askAgent.mock.calls[0]![4] as { signal: AbortSignal; onProgress: (value: { stage: string }) => void }
+    options.onProgress({ stage: 'GENERATING' }); await flushPromises()
+    expect(wrapper.text()).toContain('正在整理回答…')
+    cancellation.mockResolvedValueOnce({ data: { data: { requestId, run: { ...answer(11), requestId, status: 'RUNNING', answer: null, cancelRequested: true } } } })
+    await wrapper.find('.agent-stop').trigger('click'); await flushPromises()
+    expect(cancellation).toHaveBeenCalledExactlyOnceWith(target, requestId)
+    expect(wrapper.find('.agent-stop').text()).toBe('正在停止…')
+    options.onProgress({ stage: 'SAVING' }); await flushPromises()
+    expect(wrapper.text()).toContain('等待已发出的调用结束')
+    finish({ data: { data: { ...answer(11), requestId, status: 'CANCELLED', answer: null, cancelRequested: true,
+      errorCode: 'RESEARCH_AGENT_CANCELLED', message: '本次生成已停止' } } }); await flushPromises()
+    expect(wrapper.find('textarea').element.value).toBe('停止后继续编辑的问题')
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(1)
+    expect(wrapper.find('.agent-stop').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.find('textarea').element)
+    expect(api.askAgent).toHaveBeenCalledOnce()
+  })
+
+  it('切换周期会中断连接并忽略旧进度，不自动停止服务端运行', async () => {
+    api.askAgent.mockImplementationOnce(() => new Promise(() => {}))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('旧周期')
+    await wrapper.find('.agent-question').trigger('submit')
+    const options = api.askAgent.mock.calls[0]![4] as { signal: AbortSignal; onProgress: (value: { stage: string }) => void }
+    await wrapper.setProps({ target: { ...target, cycleId: 4 } }); await flushPromises()
+    expect(options.signal.aborted).toBe(true)
+    options.onProgress({ stage: 'GENERATING' }); await flushPromises()
+    expect(wrapper.text()).not.toContain('正在整理回答…')
+    expect(cancellation).not.toHaveBeenCalled()
+  })
+
+  it('停止请求遇到失权后清除旧连接，重新获得访问时停止按钮不会锁死', async () => {
+    api.askAgent.mockImplementationOnce(() => new Promise(() => {})).mockImplementationOnce(() => new Promise(() => {}))
+    cancellation.mockRejectedValueOnce(new ApiError('WORKSPACE_MEMBERSHIP_INACTIVE', '成员关系已失效', 403))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('旧请求')
+    await wrapper.find('.agent-question').trigger('submit')
+    const oldStream = api.askAgent.mock.calls[0]![4] as { signal: AbortSignal }
+    await wrapper.find('.agent-stop').trigger('click'); await flushPromises()
+    expect(oldStream.signal.aborted).toBe(true)
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(0)
+    await wrapper.find('.agent-error button').trigger('click'); await flushPromises()
+    await wrapper.find('textarea').setValue('恢复访问后的请求')
+    await wrapper.find('.agent-question').trigger('submit')
+    expect(wrapper.find('.agent-stop').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.agent-stop').text()).toBe('停止生成')
+  })
+
+  it('恢复已请求停止的运行只读轮询，不重新生成或重复取消', async () => {
+    const active = { ...answer(11), requestId: crypto.randomUUID(), status: 'RUNNING', answer: null, cancelRequested: true }
+    api.restoreAgent.mockResolvedValue({ data: { data: { ...session().data.data, activeRun: active } } })
+    const { wrapper } = create(); await flushPromises()
+    expect(wrapper.find('.agent-stop').text()).toBe('正在停止…')
+    expect(wrapper.find('.agent-stop').attributes('disabled')).toBeDefined()
+    expect(api.askAgent).not.toHaveBeenCalled()
+    expect(cancellation).not.toHaveBeenCalled()
+  })
+
   it('按需读取当前股票报告范围，迟到目录不覆盖新周期', async () => {
     let resolveLibrary!: (value: unknown) => void
     api.readAgentReports.mockImplementationOnce(() => new Promise(resolve => { resolveLibrary = resolve }))

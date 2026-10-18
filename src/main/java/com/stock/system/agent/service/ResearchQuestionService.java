@@ -124,6 +124,7 @@ public class ResearchQuestionService {
             boolean allowTools = round < MAX_MODEL_CALLS - 1 && attempts < MAX_TOOL_ATTEMPTS;
             AssistantMessage response = model.call(List.copyOf(messages), allowTools ? definitions() : List.of());
             if (!response.hasToolCalls()) {
+                ResearchModelExecution.current().stage(ResearchAgentProgress.Stage.VALIDATING);
                 ResearchReply reply = parseReply(response.getText(), context);
                 boolean changed = revalidate(context);
                 stateCheck.run();
@@ -149,6 +150,7 @@ public class ResearchQuestionService {
                 Object result;
                 if (attempts >= MAX_TOOL_ATTEMPTS) result = error("TOOL_LIMIT", "本轮查询次数已达上限，使用已取得资料或说明未完成范围。");
                 else {
+                    ResearchModelExecution.current().stage(ResearchAgentProgress.Stage.QUERYING);
                     attempts++;
                     ResearchModelExecution.current().toolCalls++;
                     try {

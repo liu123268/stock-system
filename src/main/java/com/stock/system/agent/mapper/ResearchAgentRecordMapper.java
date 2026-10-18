@@ -81,7 +81,8 @@ public class ResearchAgentRecordMapper {
         tx.executeWithoutResult(unused -> {
             lockBudget();
             jdbc.update("update agent_run r join agent_session s on s.id = r.session_id"
-                    + " set r.status = 'INTERRUPTED', r.error_code = 'RESEARCH_AGENT_TIMEOUT', r.finished_at = current_timestamp(3)"
+                    + " set r.status = if(r.cancel_requested, 'CANCELLED', 'INTERRUPTED'),"
+                    + " r.error_code = if(r.cancel_requested, 'RESEARCH_AGENT_CANCELLED', 'RESEARCH_AGENT_TIMEOUT'), r.finished_at = current_timestamp(3)"
                     + " where s.user_id = ? and s.workspace_id = ? and s.workspace_stock_id = ? and s.research_cycle_id = ?"
                     + " and r.status = 'RUNNING' and r.started_at < current_timestamp(3) - interval 120 second",
                     target.user(), target.workspace(), target.stock(), target.cycle());
@@ -100,7 +101,8 @@ public class ResearchAgentRecordMapper {
         return tx.execute(unused -> {
             lockBudget();
             // 已超过网络上限且未正常结束的旧运行只收敛状态，用量未知的占用继续保留。
-            jdbc.update("update agent_run set status = 'INTERRUPTED', error_code = 'RESEARCH_AGENT_TIMEOUT',"
+            jdbc.update("update agent_run set status = if(cancel_requested, 'CANCELLED', 'INTERRUPTED'),"
+                    + " error_code = if(cancel_requested, 'RESEARCH_AGENT_CANCELLED', 'RESEARCH_AGENT_TIMEOUT'),"
                     + " finished_at = current_timestamp(3) where status = 'RUNNING'"
                     + " and started_at < current_timestamp(3) - interval 120 second");
             RunRow duplicate = request(target.user(), requestId);
@@ -140,6 +142,9 @@ public class ResearchAgentRecordMapper {
             String status = "FAILED";
             ErrorCode finalError = error;
             if (version != run.version()) { status = "CLEARED"; finalError = ErrorCode.RESEARCH_AGENT_CLEARED; }
+            else if (current.cancelRequested() || error == ErrorCode.RESEARCH_AGENT_CANCELLED) {
+                status = "CANCELLED"; finalError = ErrorCode.RESEARCH_AGENT_CANCELLED;
+            }
             else if (answer != null && error == null) {
                 try {
                     finalAccessCheck.get();
@@ -147,15 +152,18 @@ public class ResearchAgentRecordMapper {
                     status = "SUCCEEDED";
                 } catch (BusinessException failure) { finalError = failure.getErrorCode(); }
             }
+            if (finalError == ErrorCode.RESEARCH_AGENT_CANCELLED) status = "CANCELLED";
             BigDecimal cost = settle(execution, run.reserved());
             jdbc.update("update agent_run set status = ?, error_code = ?, finished_at = current_timestamp(3),"
                             + " dispatched = ?, model = ?, input_tokens = ?, output_tokens = ?, cost_upper_yuan = ?,"
-                            + " model_calls = ?, tool_calls = ?, tool_trace_json = ?, model_failure_json = ? where id = ?",
+                            + " model_calls = ?, tool_calls = ?, tool_trace_json = ?, model_failure_json = ?,"
+                            + " cancel_requested = cancel_requested or ? where id = ?",
                     status, finalError == null ? null : finalError.name(), execution.dispatched,
                     execution.model == null ? null : execution.model.substring(0, Math.min(100, execution.model.length())),
                     safeTokens(execution.inputTokens), safeTokens(execution.outputTokens), cost,
                     execution.modelCalls, execution.toolCalls, json.writeValueAsString(execution.toolTrace),
-                    execution.failure == null ? null : json.writeValueAsString(execution.failure), run.id());
+                    execution.failure == null ? null : json.writeValueAsString(execution.failure),
+                    finalError == ErrorCode.RESEARCH_AGENT_CANCELLED, run.id());
             if (status.equals("SUCCEEDED")) {
                 jdbc.update("insert into agent_message(session_id, run_id, result_json, dependencies_json) values (?, ?, ?, ?)",
                         run.sessionId(), run.id(), json.writeValueAsString(answer), json.writeValueAsString(dependencies));
@@ -192,7 +200,8 @@ public class ResearchAgentRecordMapper {
     private Integer safeTokens(Integer tokens) { return tokens != null && tokens >= 0 ? tokens : null; }
 
     private void lockBudget() {
-        jdbc.update("insert ignore into agent_budget(id, occupied_yuan) values (1, 0)");
+        // 重复主键直接取得排他锁，避免并发 INSERT IGNORE 的共享锁同时升级为 FOR UPDATE。
+        jdbc.update("insert into agent_budget(id, occupied_yuan) values (1, 0) on duplicate key update id = id");
         jdbc.queryForObject("select occupied_yuan from agent_budget where id = 1 for update", BigDecimal.class);
     }
 
@@ -204,7 +213,7 @@ public class ResearchAgentRecordMapper {
                 rs.getLong("context_version"), rs.getLong("current_version"), rs.getString("status"),
                 rs.getString("error_code"), rs.getTimestamp("started_at").toLocalDateTime(),
                 date(rs.getTimestamp("finished_at")), rs.getBigDecimal("reserved_yuan"),
-                rs.getString("result_json"), rs.getString("dependencies_json")), args);
+                rs.getString("result_json"), rs.getString("dependencies_json"), rs.getBoolean("cancel_requested")), args);
     }
 
     private long insertId(String sql, Object... args) {
@@ -224,10 +233,19 @@ public class ResearchAgentRecordMapper {
         RunRow current = run(target, expected.id());
         if (!current.status().equals("RUNNING") || current.currentVersion() != expected.version())
             throw new BusinessException(ErrorCode.RESEARCH_AGENT_CLEARED);
+        if (current.cancelRequested()) throw new BusinessException(ErrorCode.RESEARCH_AGENT_CANCELLED);
+    }
+    public void requestCancellation(Target target, long runId) {
+        tx.executeWithoutResult(unused -> {
+            lockBudget();
+            RunRow row = run(target, runId);
+            if (row.status().equals("RUNNING") && row.version() == row.currentVersion())
+                jdbc.update("update agent_run set cancel_requested = true where id = ?", row.id());
+        });
     }
     public record SessionRow(long id, long version) {}
     public record Start(RunRow run, boolean created) {}
     public record RunRow(long id, long sessionId, String requestId, String hash, long version, long currentVersion,
                          String status, String errorCode, LocalDateTime startedAt, LocalDateTime finishedAt,
-                         BigDecimal reserved, String answerJson, String dependenciesJson) {}
+                         BigDecimal reserved, String answerJson, String dependenciesJson, boolean cancelRequested) {}
 }

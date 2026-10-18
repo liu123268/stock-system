@@ -21,6 +21,8 @@ public final class ResearchModelExecution implements AutoCloseable {
     private Long runId;
     private String requestId;
     private Integer upstreamStatus;
+    private ResearchAgentProgress progress = ResearchAgentProgress.NONE;
+    private Runnable continuationCheck = () -> {};
     public ResearchModelFailure.Diagnostic failure;
     public final java.util.List<ToolTrace> toolTrace = new java.util.ArrayList<>();
 
@@ -36,12 +38,21 @@ public final class ResearchModelExecution implements AutoCloseable {
 
     public static ResearchModelExecution current() { return CURRENT.get(); }
     public void bind(long runId, String requestId) { this.runId = runId; this.requestId = requestId; }
+    public void observe(ResearchAgentProgress progress, Runnable continuationCheck) {
+        this.progress = progress;
+        this.continuationCheck = continuationCheck;
+    }
+    public void stage(ResearchAgentProgress.Stage stage) {
+        remainingMillis();
+        progress.stage(stage);
+    }
     public Long runId() { return runId; }
     public String requestId() { return requestId; }
     public Integer upstreamStatus() { return upstreamStatus; }
     public void upstreamStatus(int status) { upstreamStatus = status; }
 
     public int remainingMillis() {
+        continuationCheck.run();
         long millis = (deadline - System.nanoTime()) / 1_000_000L;
         if (millis <= 0) throw new BusinessException(ErrorCode.RESEARCH_AGENT_TIMEOUT);
         return (int) millis;
@@ -65,6 +76,7 @@ public final class ResearchModelExecution implements AutoCloseable {
 
     public void dispatch(ResearchExperimentBudget experimentBudget, int inputBytes) {
         remainingMillis();
+        progress.stage(ResearchAgentProgress.Stage.GENERATING);
         if (modelCalls >= maxModelCalls) throw new BusinessException(ErrorCode.RESEARCH_AGENT_EXECUTION_LIMIT);
         if (waitingForUsage) unknownUsage = true;
         this.experimentBudget = experimentBudget;

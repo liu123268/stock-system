@@ -44,7 +44,12 @@ public final class ResearchAgentResponseVO {
     }
     public record FollowUp(String question, ResearchReply reply, List<Evidence> evidence, boolean historyOmitted) {}
     public record Run(Long runId, String requestId, String status, String errorCode, String message,
-                      LocalDateTime startedAt, LocalDateTime finishedAt, Answer answer) {}
+                      LocalDateTime startedAt, LocalDateTime finishedAt, Answer answer, boolean cancelRequested) {
+        public Run(Long runId, String requestId, String status, String errorCode, String message,
+                   LocalDateTime startedAt, LocalDateTime finishedAt, Answer answer) {
+            this(runId, requestId, status, errorCode, message, startedAt, finishedAt, answer, false);
+        }
+    }
     public record Session(boolean enabled, long contextVersion, List<Run> messages, Run activeRun,
                           boolean hasEarlierMessages, boolean invalidated) {}
 }

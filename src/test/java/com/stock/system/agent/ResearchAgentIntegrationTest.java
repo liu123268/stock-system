@@ -483,6 +483,134 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
         assertThat(questionInputs.get(0).stream().filter(AssistantMessage.class::isInstance)).hasSize(1);
     }
 
+    @Test void cancellationWaitsForUsageThenStopsWithoutSavingAndIsIdempotent() throws Exception {
+        mode.set("blocked");
+        executor = Executors.newSingleThreadExecutor();
+        String id = UUID.randomUUID().toString();
+        var running = executor.submit(() -> agent.summarize(owner, id, ResearchSourceFilter.fullCycle()));
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        var acknowledged = agent.cancel(owner, id);
+        assertThat(acknowledged.status()).isEqualTo("RUNNING");
+        assertThat(acknowledged.cancelRequested()).isTrue();
+        assertThat(acknowledged.answer()).isNull();
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id=?", BigDecimal.class, acknowledged.runId())).isNull();
+        release.countDown();
+        var stopped = running.get(6, TimeUnit.SECONDS);
+        assertThat(stopped.status()).isEqualTo("CANCELLED");
+        assertThat(stopped.answer()).isNull();
+        assertThat(agent.restore(owner, null).messages()).isEmpty();
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id=?", BigDecimal.class, stopped.runId()))
+                .isEqualByComparingTo("0.0006");
+        assertThat(agent.cancel(owner, id).status()).isEqualTo("CANCELLED");
+        assertThat(agent.summarize(owner, id, ResearchSourceFilter.fullCycle()).status()).isEqualTo("CANCELLED");
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test void cancellationWithUnknownUsageRetainsReservation() throws Exception {
+        mode.set("blocked");
+        executor = Executors.newSingleThreadExecutor();
+        String id = UUID.randomUUID().toString();
+        var running = executor.submit(() -> agent.summarize(owner, id, ResearchSourceFilter.fullCycle()));
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        agent.cancel(owner, id);
+        mode.set("unknown"); release.countDown();
+        var stopped = running.get(6, TimeUnit.SECONDS);
+        assertThat(stopped.status()).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id=?", BigDecimal.class, stopped.runId())).isNull();
+        assertThat(jdbc.queryForObject("select reserved_yuan from agent_run where id=?", BigDecimal.class, stopped.runId()))
+                .isEqualByComparingTo(ResearchAgentRecordMapper.RESERVE);
+    }
+
+    @Test void cancellationBetweenModelAndToolsPreventsAllFurtherCalls() {
+        afterFirstQuestionResponse = () -> agent.cancel(owner, ResearchModelExecution.current().requestId());
+        var run = ask("成员怎么看？");
+        assertThat(run.status()).isEqualTo("CANCELLED");
+        assertThat(run.answer()).isNull();
+        assertThat(questionCalls).hasValue(1);
+        assertThat(jdbc.queryForObject("select tool_calls from agent_run where id=?", Integer.class, run.runId())).isZero();
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id=?", BigDecimal.class, run.runId()))
+                .isEqualByComparingTo("0.00084");
+    }
+
+    @Test void stoppingBeforeRunBindingAvoidsModelAndReleasesWholeReservation() {
+        var progress = new ResearchAgentProgress() { @Override public boolean cancellationRequested() { return true; } };
+        var run = agent.summarize(owner, UUID.randomUUID().toString(), ResearchSourceFilter.fullCycle(), progress);
+        assertThat(run.status()).isEqualTo("CANCELLED");
+        assertThat(run.cancelRequested()).isTrue();
+        assertThat(calls).hasValue(0);
+        assertThat(jdbc.queryForObject("select cost_upper_yuan from agent_run where id=?", BigDecimal.class, run.runId())).isZero();
+    }
+
+    @Test void cancellationCannotChangeOtherUsersOrCompletedRuns() {
+        var completed = generate();
+        assertThatThrownBy(() -> agent.cancel(member, completed.requestId())).isInstanceOfSatisfying(BusinessException.class,
+                failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_RUN_NOT_FOUND));
+        assertThatThrownBy(() -> agent.cancel(new Target(owner.user(), owner.workspace(), owner.stock(), owner.cycle() + 10000),
+                completed.requestId())).isInstanceOf(BusinessException.class);
+        assertThat(agent.cancel(owner, completed.requestId()).status()).isEqualTo("SUCCEEDED");
+        assertThat(agent.restore(owner, null).messages()).hasSize(1);
+    }
+
+    @Test void sseRequiresAuthenticationAndSendsProgressBeforeValidatedFinalResult() throws Exception {
+        String id = UUID.randomUUID().toString();
+        String body = json.writeValueAsString(Map.of("requestId", id));
+        mvc.perform(post(base() + "/summaries/stream").contentType("application/json").content(body))
+                .andExpect(status().isUnauthorized());
+        mode.set("blocked");
+        var stream = mvc.perform(post(base() + "/summaries/stream").header("Authorization", "Bearer " + ownerToken)
+                .contentType("application/json").content(body)).andExpect(request().asyncStarted()).andReturn();
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(stream.getResponse().getContentAsString()).contains("event:progress", "GENERATING").doesNotContain("event:result", "成员提出");
+        mvc.perform(post(base() + "/requests/" + id + "/cancel").header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(base() + "/requests/" + id + "/cancel").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.run.cancelRequested").value(true));
+        release.countDown();
+        stream.getAsyncResult(6000);
+        mvc.perform(asyncDispatch(stream)).andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("text/event-stream"));
+        assertThat(stream.getResponse().getContentAsString()).contains("event:result", "CANCELLED").doesNotContain("成员提出", "tool_trace", "arguments");
+        assertThat(agent.restore(owner, null).messages()).isEmpty();
+    }
+
+    @Test void duplicateStreamSharesOneGenerationAndRejectsDifferentPayload() throws Exception {
+        mode.set("blocked");
+        String id = UUID.randomUUID().toString();
+        String body = json.writeValueAsString(Map.of("requestId", id));
+        var first = mvc.perform(post(base() + "/summaries/stream").header("Authorization", "Bearer " + ownerToken)
+                .contentType("application/json").content(body)).andExpect(request().asyncStarted()).andReturn();
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        var second = mvc.perform(post(base() + "/summaries/stream").header("Authorization", "Bearer " + ownerToken)
+                .contentType("application/json").content(body)).andExpect(request().asyncStarted()).andReturn();
+        mvc.perform(post(base() + "/messages/stream").header("Authorization", "Bearer " + ownerToken)
+                .contentType("application/json").content(json.writeValueAsString(Map.of("requestId", id, "question", "另一问题"))))
+                .andExpect(status().isConflict());
+        release.countDown();
+        first.getAsyncResult(6000); second.getAsyncResult(6000);
+        mvc.perform(asyncDispatch(first)).andExpect(status().isOk());
+        mvc.perform(asyncDispatch(second)).andExpect(status().isOk());
+        assertThat(first.getResponse().getContentAsString()).contains("SUCCEEDED");
+        assertThat(second.getResponse().getContentAsString()).contains("SUCCEEDED");
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test void concurrentRecoveryReadsDoNotDeadlockOrChangeSettledBudget() throws Exception {
+        var completed = generate();
+        BigDecimal occupied = jdbc.queryForObject("select occupied_yuan from agent_budget where id=1", BigDecimal.class);
+        executor = Executors.newFixedThreadPool(4);
+        var barrier = new CyclicBarrier(4);
+        var readers = new ArrayList<Future<?>>();
+        for (int reader = 0; reader < 4; reader++) readers.add(executor.submit(() -> {
+            for (int attempt = 0; attempt < 12; attempt++) {
+                barrier.await(5, TimeUnit.SECONDS);
+                assertThat(agent.requestStatus(owner, completed.requestId()).status()).isEqualTo("SUCCEEDED");
+            }
+            return null;
+        }));
+        for (var reader : readers) reader.get(12, TimeUnit.SECONDS);
+        assertThat(jdbc.queryForObject("select occupied_yuan from agent_budget where id=1", BigDecimal.class)).isEqualByComparingTo(occupied);
+        assertThat(calls).hasValue(1);
+    }
+
     private com.stock.system.agent.vo.ResearchAgentResponseVO.Run ask(String question) {
         return agent.ask(owner, UUID.randomUUID().toString(), question, ResearchSourceFilter.fullCycle());
     }

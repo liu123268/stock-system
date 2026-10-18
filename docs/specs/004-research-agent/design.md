@@ -212,7 +212,7 @@ v10 对实际带 REPORT 引用的事实段落采用受审原文摘录交付：[R
 
 简易个人记录及主动清空沿 AG-015、AG-016、AG-019。首次／重新梳理和追问均保存在本人记录；每页读取最近 6 条成功消息，可按 beforeRunId 读取更早记录。005 向模型提供最近最多 6 条仍有效、同一成员／日期筛选的完整问答，历史包最多 16 KiB；无效、不同筛选或超限的整条略过并标 historyOmitted，不静默截断正文、不自动付费压缩。当前最新问题放在历史之后；旧行情明确是历史快照，当前价格仍要求新查。完整上下文和中断场景继续沿 006，RAG 依赖沿 008。
 
-MySQL 的 session／message／run 与独立 budget 职责见 [数据模型 3.13](../../architecture/data-model.md#313-v2-个人助手记录与费用账本)，字段和约束以 V13／V14 为准。GET 无记录时返回空，不创建会话。相同用户 requestId＋相同对象／操作／提问／日期／成员条件复用原运行，不重新读取后再次调用模型；换内容返回冲突。原结果恢复时仍核对当前权限和来源。
+MySQL 的 session／message／run 与独立 budget 职责见 [数据模型 3.13](../../architecture/data-model.md#313-v2-个人助手记录与费用账本)，字段和约束以 V13～V16 为准。GET 无记录时返回空，不创建会话。相同用户 requestId＋相同对象／操作／提问／日期／成员条件复用原运行，不重新读取后再次调用模型；换内容返回冲突。原结果恢复时仍核对当前权限和来源。
 
 保存回答时记录实际输入资料依赖，包含承接历史问答的依赖，而不只保存最终文案中出现的引用；RAG 资料进入后还包含文档版本与片段依赖。返回历史、构造新上下文和打开原文时批量核对这些依赖及当前权限；受撤回影响的回答提示需重新梳理，不返还原正文，不再进入模型消息。依赖集合也须有界，超限时少带历史或开始新的上下文，不无限继承整段聊天。失去空间读取权限时不返回该对象的个人消息；页面收到权限失效清空对应显示，不能承诺已发送到客户端的文本能远程收回。
 
@@ -220,7 +220,7 @@ MySQL 的 session／message／run 与独立 budget 职责见 [数据模型 3.13]
 
 ### 6.2 API 与当前接入
 
-路径统一绑定空间、空间股票和周期，例如基础路径 `/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/cycles/{cycleId}/agent`。均使用现有认证与 Result 格式，登录用户由服务端取得，不接受 callerUserId。
+路径统一绑定空间、空间股票和周期，例如基础路径 `/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/cycles/{cycleId}/agent`。均使用现有认证，JSON 接口沿 Result 格式，SSE 事件沿下文契约；登录用户由服务端取得，不接受 callerUserId。
 
 | 操作 | 拟用接口与关键契约 |
 | --- | --- |
@@ -250,7 +250,15 @@ MySQL 的 session／message／run 与独立 budget 职责见 [数据模型 3.13]
 
 待使用、读取资料、整理中、完成、资料超限、失败／超时、无权限分别有明确反馈。生成按钮锁定，输入问题在失败后保留；已有有效回答不被一次失败替换。股票／周期切换后只展示该对象消息，关闭原文弹窗保留输入和聊天位置。旧结果标读取范围与日期，检查到新资料时显示“重新梳理”入口，不自动调用模型。
 
-SSE 在同步闭环后单独实施，使用带认证头的 fetch 流或对应客户端，处理取消、事件归属与迟到消息。工具参数、原始 JSON 和模型思考内容不作为用户进度；结构化段落与引用校验后再交付，未完成内容不能入库为完成结果。逐段／逐字展示、部分结果及取消的真实行为需额外验收，未验收前不标已接入。
+007 的 SSE 工程接入使用带 Bearer 认证头的 POST fetch，分别调用 `/summaries/stream` 和 `/messages/stream`；原同步 JSON 接口继续供独立检查使用。Servlet 的异步分派从本次请求属性恢复安全上下文，不创建登录 Session，也不放行匿名异步接口。连接使用 no-store／X-Accel-Buffering: no，8 秒心跳、75 秒通道上限，工作流仍为 60 秒。实现沿 [Spring MVC 异步说明](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html)及 [Spring Security 分派鉴权](https://docs.spring.io/spring-security/reference/servlet/authorization/authorize-http-requests.html)。
+
+事件只包含 `progress`、`result`、`failure`。每项带 requestId、递增 sequence 和已绑定时的 runId；阶段固定为 READING／QUERYING／GENERATING／VALIDATING／SAVING，由实际资料读取、工具执行、模型派发、校验和结算触发。进度没有参数、原始响应、模型思考或未校验正文。`result.result` 沿已有 Run 契约，正文经完整校验、来源复核、成功保存及发送前权限复核后一次交付；失败／停止只有运行状态，不保存或显示半成品。这是实时阶段加最终结构，尚未实现逐字或逐段模型正文流式展示。
+
+每个进程至多两个工作线程、零等待队列，与数据库总并发上限一致。同用户同 requestId 的相同命令在运行中共享执行，至多四个连接订阅；不同对象／操作／内容拒绝。连接关闭只解除订阅，任务保留；刷新通过既有 GET 恢复，不重发模型。前端按 UTF-8 和 SSE 行边界解析，核对事件归属与序号，并限制单事件 256 KiB、总流 512 KiB。切换对象／账号、清空或卸载会中断旧连接并用版本守卫丢弃迟到事件。协议边界沿 [MDN SSE 格式](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)。
+
+预算锁入口使用单行主键 upsert 直接取得排他锁，再读 FOR UPDATE；不先 INSERT IGNORE 取得共享锁再升级。Chrome 并行恢复中曾观察到旧入口的锁升级死锁，修复后用四线程、十二轮实际状态读取核对费用不变。锁语义依据 [MySQL InnoDB 语句加锁规则](https://dev.mysql.com/doc/refman/8.0/en/innodb-locks-set.html)；不据此承诺所有数据库路径永不死锁。
+
+主动停止调用 `POST /requests/{requestId}/cancel`，仍核对当前用户、研究对象和权限。运行已创建时持久化 cancel_requested；尚在资料读取时由同一执行记住取消。停止请求不提前释放并发或费用：运行保持 RUNNING 并显示“正在停止”，已发出的 HTTP 返回后先记录用量，再阻止后续工具／模型，结算为 CANCELLED，且不写 agent_message。已知用量按原规则结算；未知保留原预留。清空版本优先，已完成答案不会被迟到停止覆盖。取消不是供应商已撤单或费用退还的承诺。页面内保留输入、旧答案并在停止完成后恢复输入焦点；草稿仍只存会话内存，刷新不承诺保留正文。007 的真实模型总体质量仍须等待 005F 先决项，不由受控 SSE 验证直接关闭。
 
 ## 7. 最早实验与退出路径
 

@@ -2,6 +2,9 @@ package com.stock.system.agent.controller;
 
 import com.stock.system.agent.mapper.ResearchAgentRecordMapper.Target;
 import com.stock.system.agent.service.ResearchAgentService;
+import com.stock.system.agent.service.ResearchAgentStreamService;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.stock.system.agent.vo.ResearchAgentResponseVO.Run;
 import com.stock.system.agent.vo.ResearchAgentResponseVO.Session;
 import com.stock.system.common.api.Result;
@@ -10,6 +13,7 @@ import com.stock.system.stock.dto.ResearchSourceFilter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
@@ -18,7 +22,35 @@ import java.time.LocalDate;
 @RequestMapping("/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/cycles/{researchCycleId}/agent")
 public class ResearchAgentController {
     private final ResearchAgentService service;
-    public ResearchAgentController(ResearchAgentService service) { this.service = service; }
+    private final ResearchAgentStreamService streams;
+    public ResearchAgentController(ResearchAgentService service, ResearchAgentStreamService streams) {
+        this.service = service; this.streams = streams;
+    }
+
+    @PostMapping(value = "/summaries/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter summarizeStream(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
+                                      @PathVariable long workspaceStockId, @PathVariable long researchCycleId,
+                                      @Valid @RequestBody SummaryRequest request, HttpServletResponse response) {
+        streamHeaders(response);
+        return streams.open(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId), request.requestId(),
+                null, new ResearchSourceFilter(request.authorUserId(), request.dateFrom(), request.dateTo()));
+    }
+
+    @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter askStream(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
+                                @PathVariable long workspaceStockId, @PathVariable long researchCycleId,
+                                @Valid @RequestBody QuestionRequest request, HttpServletResponse response) {
+        streamHeaders(response);
+        return streams.open(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId), request.requestId(),
+                request.question(), new ResearchSourceFilter(request.authorUserId(), request.dateFrom(), request.dateTo()));
+    }
+
+    @PostMapping("/requests/{requestId}/cancel")
+    public Result<ResearchAgentStreamService.Cancellation> cancel(@AuthenticationPrincipal LoginUser user,
+            @PathVariable long workspaceId, @PathVariable long workspaceStockId, @PathVariable long researchCycleId,
+            @PathVariable String requestId) {
+        return Result.success(streams.cancel(new Target(user.userId(), workspaceId, workspaceStockId, researchCycleId), requestId));
+    }
 
     @GetMapping
     public Result<Session> restore(@AuthenticationPrincipal LoginUser user, @PathVariable long workspaceId,
@@ -63,4 +95,8 @@ public class ResearchAgentController {
     public record QuestionRequest(@NotBlank @Size(min = 36, max = 36) String requestId,
                                   @NotBlank @Size(max = 2000) String question,
                                   Long authorUserId, LocalDate dateFrom, LocalDate dateTo) {}
+    private void streamHeaders(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("X-Accel-Buffering", "no");
+    }
 }

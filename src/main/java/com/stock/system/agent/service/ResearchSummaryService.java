@@ -59,7 +59,10 @@ public class ResearchSummaryService {
             throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
         }
         ResearchSummaryPrompt.Input input = prompt.build(sources);
+        var execution = ResearchModelExecution.current();
+        if (execution != null) execution.stage(ResearchAgentProgress.Stage.QUERYING);
         ResearchMarketDataService.Quote quote = marketData.readLatestQuote(userId, workspaceId, workspaceStockId);
+        if (execution != null) execution.remainingMillis();
         ResearchSummaryModel.Result generated;
         if (sources.opinions().isEmpty()) {
             generated = new ResearchSummaryModel.Result(new ResearchSummary(
@@ -68,6 +71,7 @@ public class ResearchSummaryService {
         } else {
             generated = model.generate(input);
         }
+        if (execution != null) execution.stage(ResearchAgentProgress.Stage.VALIDATING);
         ResearchSummary checked = validator.validate(generated.summary(), input.sources());
         StockResearchSourceService.SourceValidity validity = sourceService.revalidate(
                 userId, workspaceId, workspaceStockId, researchCycleId, sources);

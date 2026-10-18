@@ -14,6 +14,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -32,17 +33,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final UserService userService;
     private final SuperAdminService superAdminService;
+    private final SecurityContextRepository requestSecurityContextRepository;
 
     public JwtAuthenticationFilter(
             RestAuthenticationEntryPoint authenticationEntryPoint,
             JwtUtil jwtUtil,
             UserService userService,
-            SuperAdminService superAdminService
+            SuperAdminService superAdminService,
+            SecurityContextRepository requestSecurityContextRepository
     ) {
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.jwtUtil = jwtUtil;
         this.userService = userService;
         this.superAdminService = superAdminService;
+        this.requestSecurityContextRepository = requestSecurityContextRepository;
     }
 
     @Override
@@ -71,7 +75,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             List.of(new SimpleGrantedAuthority("ROLE_" + principal.accountType()))
                     );
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            var context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            SecurityContextHolder.setContext(context);
+            // 只存本次请求属性，供 Servlet ASYNC 分派读取，不创建登录 Session。
+            requestSecurityContextRepository.saveContext(context, request, response);
             filterChain.doFilter(request, response);
         } catch (JwtException | IllegalArgumentException exception) {
             SecurityContextHolder.clearContext();

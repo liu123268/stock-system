@@ -231,6 +231,8 @@ V10 只保存无法由当前周期状态还原的普通／重点关注切换：`
 
 [V15](../../src/main/resources/db/migration/V15__record_agent_model_failure.sql) 给 `agent_run` 增加可空 `model_failure_json`，保存固定字段的模型失败诊断：运行／请求编号、阶段、调用轮次、HTTP 状态与类别。不保存原始异常消息、响应、Header 或密钥；旧记录为空，不补造历史原因。该迁移不调整 Token、预留或消息正文。公开报告的本机发布状态另由原子文件维护，范围和选择理由只见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)，不将它描述为已新增 MySQL 报告表。
 
+[V16](../../src/main/resources/db/migration/V16__add_research_agent_cancellation.sql) 增加 cancel_requested（默认 false）及 CANCELLED 终态。收到停止先置标记，RUNNING 继续占用并发和预留；已发出的调用完成／失败后仍结算用量，再转 CANCELLED，不写成功消息。若清空已改变 context_version，则以 CLEARED 为准。进程重启后超过 120 秒的旧运行按标记收敛到 CANCELLED 或 INTERRUPTED，未知预留不释放。停止、完成和清空均按预算行→会话／运行检查的顺序处理；已完成运行不被停止请求改写。该迁移不删除历史消息、不重置预算，也不插入演示数据。
+
 `agent_message.result_json` 兼容旧固定梳理，并增加 `followUp`（问题、段落／引用、缺口、行情依据、历史省略标记）。`dependencies_json` 兼容旧单快照，追问使用有界快照列表保存实际依赖；模型上下文只继承当前仍有效且同筛选的历史，主快照覆盖其观点依赖。行情依据保存生成时实际取得的 QUOTE／DAILY_PRICES 快照，查看时重新授权，不把它存入全局股票行情表。
 
 ## 4. 阶段 1 约束与索引终审

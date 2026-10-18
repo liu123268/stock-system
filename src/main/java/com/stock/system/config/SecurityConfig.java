@@ -10,19 +10,28 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
 
     @Bean
+    public SecurityContextRepository requestSecurityContextRepository() {
+        return new RequestAttributeSecurityContextRepository();
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            RestAuthenticationEntryPoint authenticationEntryPoint
+            RestAuthenticationEntryPoint authenticationEntryPoint,
+            SecurityContextRepository requestSecurityContextRepository
     ) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
+                .securityContext(context -> context.securityContextRepository(requestSecurityContextRepository))
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exception ->

@@ -62,6 +62,10 @@ public class ResearchAgentService {
     }
 
     public Run summarize(Target target, String requestId, ResearchSourceFilter filter) {
+        return summarize(target, requestId, filter, ResearchAgentProgress.NONE);
+    }
+
+    public Run summarize(Target target, String requestId, ResearchSourceFilter filter, ResearchAgentProgress progress) {
         authorize(target);
         String normalized = normalize(requestId);
         String hash = hash(target + ":" + json.writeValueAsString(filter));
@@ -70,6 +74,7 @@ public class ResearchAgentService {
         if (!enabled()) throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
         // 总时限从资料读取开始，不从模型调用开始。
         try (var execution = new ResearchModelExecution()) {
+            progress.stage(ResearchAgentProgress.Stage.READING);
             var material = sources.readCycle(target.user(), target.workspace(), target.stock(), target.cycle(), filter);
             if (material.scope().coverage() != ResearchCycleSourcesResponseVO.Coverage.COMPLETE)
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED);
@@ -80,11 +85,14 @@ public class ResearchAgentService {
             Answer answer = null;
             ErrorCode error = null;
             try {
+                observe(execution, target, started.run(), progress);
+                execution.remainingMillis();
                 var result = summaries.summarizePrepared(target.user(), target.workspace(), target.stock(), target.cycle(), material);
                 answer = Answer.from(result);
                 execution.remainingMillis();
             } catch (BusinessException failure) { error = failure.getErrorCode(); }
             catch (RuntimeException failure) { error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
+            progress.stage(ResearchAgentProgress.Stage.SAVING);
             records.finish(target, started.run(), execution, material, answer, error, () -> sources.revalidate(
                     target.user(), target.workspace(), target.stock(), target.cycle(), material));
             return present(target, records.run(target, started.run().id()));
@@ -107,6 +115,10 @@ public class ResearchAgentService {
     }
 
     public Run ask(Target target, String requestId, String question, ResearchSourceFilter filter) {
+        return ask(target, requestId, question, filter, ResearchAgentProgress.NONE);
+    }
+
+    public Run ask(Target target, String requestId, String question, ResearchSourceFilter filter, ResearchAgentProgress progress) {
         authorize(target);
         if (question == null || question.isBlank() || question.codePointCount(0, question.length()) > 1000)
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
@@ -116,6 +128,7 @@ public class ResearchAgentService {
         if (existing != null) return reuse(target, existing, hash);
         if (!enabled() || !questions.enabled()) throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
         try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            progress.stage(ResearchAgentProgress.Stage.READING);
             var material = sources.readCycle(target.user(), target.workspace(), target.stock(), target.cycle(), filter);
             if (material.scope().coverage() != ResearchCycleSourcesResponseVO.Coverage.COMPLETE)
                 throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED);
@@ -142,9 +155,14 @@ public class ResearchAgentService {
             execution.bind(started.run().id(), normalized);
             Answer answer = null;
             ErrorCode error = null;
-            try { answer = questions.answer(context, question, () -> records.ensureRunning(target, started.run())); }
+            try {
+                observe(execution, target, started.run(), progress);
+                execution.remainingMillis();
+                answer = questions.answer(context, question, execution::remainingMillis);
+            }
             catch (BusinessException failure) { error = failure.getErrorCode(); }
             catch (RuntimeException failure) { error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
+            progress.stage(ResearchAgentProgress.Stage.SAVING);
             records.finish(target, started.run(), execution, context.dependencies(), answer, error, () -> questions.revalidate(context));
             return present(target, records.run(target, started.run().id()));
         }
@@ -153,6 +171,24 @@ public class ResearchAgentService {
     public void clear(Target target) {
         authorize(target);
         records.clear(target, () -> { authorize(target); return null; });
+    }
+
+    private void observe(ResearchModelExecution execution, Target target, RunRow row, ResearchAgentProgress progress) {
+        execution.observe(progress, () -> {
+            if (progress.cancellationRequested()) throw new BusinessException(ErrorCode.RESEARCH_AGENT_CANCELLED);
+            records.ensureRunning(target, row);
+        });
+        progress.bound(row.id());
+    }
+
+    public void verifyAccess(Target target) { authorize(target); }
+
+    public Run cancel(Target target, String requestId) {
+        authorize(target);
+        var row = records.request(target.user(), normalize(requestId));
+        if (row == null) throw new BusinessException(ErrorCode.RESEARCH_AGENT_RUN_NOT_FOUND);
+        records.requestCancellation(target, records.run(target, row.id()).id());
+        return status(target, row.id());
     }
 
     private Run reuse(Target target, RunRow row, String hash) {
@@ -181,7 +217,7 @@ public class ResearchAgentService {
             }
         }
         return new Run(row.id(), row.requestId(), status, error,
-                error == null ? null : ErrorCode.valueOf(error).message(), row.startedAt(), row.finishedAt(), answer);
+                error == null ? null : ErrorCode.valueOf(error).message(), row.startedAt(), row.finishedAt(), answer, row.cancelRequested());
     }
 
     private boolean enabled() { return summaries.enabled() && records.funded(); }

@@ -60,6 +60,10 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 ### 2.5 研究助手的受控与真实模型检查
 
+007 的 SSE 检查仍用本地 HTTP 模型替身，不新增付费调用。`ResearchAgentIntegrationTest` 验证初始认证／异步分派、重复订阅只有一次执行、停止前后状态、已知／未知用量、取消归属、工具轮次和停止前绑定；继续复用真实 JDBC catalog 守卫与精确清理。前端 `agent-stream.spec.ts` 检查 UTF-8 分块、CRLF／多行 data、心跳、序号／对象归属、截断、事件大小、权限错误及 AbortSignal；`research-agent-panel.spec.ts` 检查进度、停止后的草稿／焦点、换周期迟到事件及停止恢复。Chrome 的 `research-agent-smoke.mjs` 同时验证早于正文的进度、停止阻止下一轮工具／模型、刷新停止状态及旧恢复／报告行为，沿现有 `scripts/run-agent-report-probe.ps1` 的拥有进程与数据清理入口。
+
+本地停止为协作式：等待当前 HTTP 结束再结算，测试不能只断开浏览器就声称已停止供应商调用；已发出但无用量仍占原预留。页面刷新只恢复 pending 编号与服务端状态，不把会话内存草稿当成已持久化。初轮 Chrome 若只因草稿刷新期望写错失败，保留失败证据并修正测试边界；正常 SSE 断开应由 AsyncRequestNotUsableException 专用处理收尾，不再尝试往流写 JSON 错误。实际结果、次数和证据只见 [任务第 29 节](../specs/004-research-agent/tasks.md#29-sse-进度最终结果与主动停止2026-10-18)。
+
 助手后端定向测试覆盖范围／撤回、固定输出、工具配对与次数、个人记录／幂等／费用。ResearchExperimentBudgetTest 使用临时 JSONL，核对原累计导入、文件锁及未知用量保留，不读取实际 Key、不修改真实实验账本。报告数量从本次完整 Maven 命令取，不把未运行的外部探测算通过。
 
 `frontend/e2e/research-agent-smoke.mjs` 配合回环 `agent-model-fixture.mjs` 使用真实 test HTTP／MySQL 和 Chrome，验证页面及原生工具循环；paidRequests 为 0。006 增加 Chrome 丢弃成功／失败 POST 回包、提交前阻断和查询期间刷新，对照替身请求数，确认恢复没有新模型请求、未知状态下手动提交复用原编号。默认证据目录为 `target/agent-recovery-browser-20261014/`，可用 AGENT_E2E_OUTPUT 指定独立目录，保留旧阶段证据。仍执行第 4 节双路径探针和 catalog 检查、finally 按本轮 ID 清理，不证明真实模型或真实行情效果；受控断线不等于物理网络故障覆盖全部。

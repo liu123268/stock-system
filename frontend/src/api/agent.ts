@@ -1,6 +1,8 @@
 import { http } from './http'
 import type { ApiResult } from './auth'
 import type { StockStance } from './stock'
+import { agentStream } from './agent-stream'
+import type { AgentStreamOptions } from './agent-stream'
 
 export interface AgentTarget { workspaceId: number; stockId: number; cycleId: number }
 export interface AgentFilter { authorUserId?: number; dateFrom?: string; dateTo?: string }
@@ -45,6 +47,7 @@ export interface AgentAnswer {
 export interface AgentRun {
   runId: number; requestId: string; status: string; errorCode: string | null; message: string | null
   startedAt: string; finishedAt: string | null; answer: AgentAnswer | null
+  cancelRequested?: boolean
 }
 export interface AgentSession {
   enabled: boolean; contextVersion: number; messages: AgentRun[]; activeRun: AgentRun | null
@@ -63,10 +66,12 @@ export function restoreAgent(target: AgentTarget, beforeRunId?: number) {
 export function readAgentReports(target: AgentTarget) {
   return http.get<ApiResult<AgentReportLibrary>>(`${base(target)}/agent/reports`)
 }
-export function generateAgent(target: AgentTarget, requestId: string, filter: AgentFilter) {
+export function generateAgent(target: AgentTarget, requestId: string, filter: AgentFilter, stream?: AgentStreamOptions) {
+  if (stream) return agentStream(`${base(target)}/agent/summaries/stream`, { requestId, ...filter }, stream).then(run => ({ data: { data: run } }))
   return http.post<ApiResult<AgentRun>>(`${base(target)}/agent/summaries`, { requestId, ...filter }, { timeout: 65_000 })
 }
-export function askAgent(target: AgentTarget, requestId: string, question: string, filter: AgentFilter) {
+export function askAgent(target: AgentTarget, requestId: string, question: string, filter: AgentFilter, stream?: AgentStreamOptions) {
+  if (stream) return agentStream(`${base(target)}/agent/messages/stream`, { requestId, question, ...filter }, stream).then(run => ({ data: { data: run } }))
   return http.post<ApiResult<AgentRun>>(`${base(target)}/agent/messages`, { requestId, question, ...filter }, { timeout: 65_000 })
 }
 export function readAgentRun(target: AgentTarget, runId: number) {
@@ -77,6 +82,9 @@ export function readAgentRequest(target: AgentTarget, requestId: string) {
 }
 export function clearAgent(target: AgentTarget) {
   return http.delete<ApiResult<null>>(`${base(target)}/agent`)
+}
+export function cancelAgent(target: AgentTarget, requestId: string) {
+  return http.post<ApiResult<{ requestId: string; run: AgentRun | null }>>(`${base(target)}/agent/requests/${requestId}/cancel`)
 }
 export function readAgentOriginal(target: AgentTarget, opinionId: number) {
   return http.get<ApiResult<OpinionOriginal>>(`${base(target)}/opinions/${opinionId}`)
