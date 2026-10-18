@@ -1,6 +1,6 @@
 # SPEC-004：单股研究 Agent 设计草案
 
-状态：2026-10-18，AG 要求与 P-001～P-007 已确认。固定梳理、独立个人页面、受控工具和限定财务已接入；4.4 的报告 RAG 在两份受审年报、Windows 单机范围完成维护、混合检索对照及受审摘录的真实六题来源验收。默认模型和页面预算仍关闭，本机配置单独启用。005F 原财务题真实恢复、MCP、SSE 与生产分别验收，实际证据只见 tasks；模拟回答不替代真实模型质量，摘录交付也不等于模型自由概括全部正确。本文说明机制，不替代 [需求](requirements.md) 的确认状态。
+状态：2026-10-18，AG 要求与 P-001～P-007 已确认。固定梳理、独立个人页面、受控工具和限定财务已接入；4.4 的报告 RAG 在两份受审年报、Windows 单机范围完成维护、混合检索对照及受审摘录的真实六题来源验收。SSE 阶段／最终结果／停止及 4.5 的本机只读 MCP 已验证，实际范围与证据只见 tasks。默认模型和页面预算仍关闭，本机配置单独启用。005F 原财务题真实恢复、007 总体质量、逐字正文和生产仍分别保留；模拟回答或 MCP 协议成功不替代真实模型质量，摘录交付也不等于模型自由概括全部正确。本文说明机制，不替代 [需求](requirements.md) 的确认状态。
 
 ## 1. 首个页面闭环
 
@@ -176,7 +176,15 @@ v10 对实际带 REPORT 引用的事实段落采用受审原文摘录交付：[R
 
 ### 4.5 MCP 学习实践边界
 
-沿 [至少一个 MCP Server 的学习目标](../../product/requirements-v2.md#34-必做学习实践至少一个-mcp-server) 执行 AG-CODE-009。优先验证把一个受限研究 Service 包装成只读 MCP 工具；客户端可采用现成实现，传输方式与认证在隔离验证后定。不将 MCP 连接或会话 ID 当作用户身份，不共享所有用户的资料权限；工具实际执行仍进入当前业务授权和对象校验。先完成发现、调用、合法结果与拒绝／超时证据，再评估 WorkBuddy 或外部金融来源，现阶段不承诺已接入。
+沿 [至少一个 MCP Server 的学习目标](../../product/requirements-v2.md#34-必做学习实践至少一个-mcp-server) 执行 AG-CODE-009。当前实现为独立本机 stdio 入口 `ResearchMcpCommand`，使用官方 Java SDK 2.1.0（Jackson 3 适配），不启动第二套 Spring／数据库／行情／回答模型。它把现有周期资料 REST API 适配为唯一只读工具 `read_current_cycle_opinions`；真正执行仍经原 JWT 过滤器、Controller、StockResearchSourceService 和数据库，不复制权限 SQL。普通站内 Agent 仍直接调用 Service，没有为了协议再绕一遍子进程。
+
+取舍：现有需求是一项本机只读工具与真实客户端实践，stdio 由客户端拥有进程，账号和周期可随启动明确绑定，也不需要新增远程 MCP OAuth 授权服务器。Streamable HTTP 留给确有跨主机场景时评估；普通 REST JSON 接口并不因此成为 MCP。工具发现、能力协商和调用消息由官方 SDK 实现，当前客户端／服务端实际协议版本以 tasks 的运行证据为准，不把最新规范版本和已协商版本混为一谈。依据 [MCP stdio 规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)和 [Java SDK](https://java.sdk.modelcontextprotocol.io/latest/server/)，不把连接 ID 当作业务身份。
+
+一个进程只绑定环境中的账号访问 Token、空间／股票／周期 ID 和 `http://127.0.0.1:端口` 源地址；不允许用户信息、路径、查询串、其他主机或重定向目标。Token 只放源端 Authorization 头，不进入工具 schema、参数、结果、启动参数或日志。每次工具调用都请求当前资料，因此已初始化连接不绕过改密／凭据失效、成员退出、对象归属或观点撤回。工具参数只有可选 ISO 日期区间，额外字段及非法日期在联网前拒绝。客户端若需要另一账号／周期，应以另一配置启动进程，不能靠模型传 callerUserId 或 MCP 会话 ID 切换权限。
+
+服务每进程最多两次并发源查询，HTTP 全响应期限默认 10 秒、允许配置 250～10000 毫秒，流式接收最多 128 KiB，输出白名单资料最多 64 KiB；超限返回明确失败，不截断观点。成员只映射为本次 M1 等标识和显示昵称，不返 authorUserId、账号信息或原始异常。业务权限错误映射固定码，其他源端故障／超时／无效响应使用固定工具错误，应用层不自动重试。响应保留 `content` 文本及 `structuredContent`，错误使用 isError，不伪造空成功。源端已有单次 100 条／20000 字符限制继续生效，不扩大成全局业务限制。
+
+stdout 只输出 SDK 协议帧，日志不写 stdout；启动失败只在 stderr 给固定诊断。Java 17 Windows 客户端存在按本机默认代码页读取 stdio 的路径，中文真实调用曾复现乱码并破坏 JSON；服务端协议 JSON 使用 Unicode 转义（合法 UTF-8 的 ASCII 子集），解码后的成员中文正文保持原样，独立 JVM 同时显式选 UTF-8。stdin EOF 后关闭 MCP，客户端关闭后核对本轮子进程退出。使用步骤、参数与退出方式只见 [实验说明第 13 节](../../engineering/agent-experiment.md#13-本机只读-mcp-服务)。WorkBuddy／Codex 产品接入、远程 HTTP MCP、OAuth、外部金融许可及个人掌握另验，不由本机协议验证宣称已完成。
 
 ## 5. 调用、费用和失败限制
 

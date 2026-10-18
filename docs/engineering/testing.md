@@ -84,6 +84,14 @@ ResearchQuestionModelTest 走实际框架 HTTP 序列化，覆盖工具可选轮
 
 ResearchReportAnswerSupportTest 检查报告事实段落交付完整受审原文、计划限定保留、去重及混引拒绝。ResearchReportAnswerReplayTest 只有显式指定 REPORT_ANSWER_REPLAY 为 target 内已有实验 results.json 时执行，不连模型或数据库，另存输入哈希、原始模型版本和新流程版本。回放后仍用原题程序契约与原文清单核对，不把零新增请求的回放写成新版本真实模型复测；实现取舍见 [BUG-013](bugs/BUG-013-report-scope-generalization.md)。
 
+### 2.6 本机 MCP 协议与实际业务链路
+
+MCP 独立入口没有新增前端页面。`ResearchMcpIntegrationTest` 启动随机回环端口 test 后端，在实际 JDBC catalog 与 `/api/test/environment` 核对后创建本轮唯一账号、空间、周期及自造观点。官方 Java MCP Client 启动真实 stdio JVM，验证 initialize／tools/list／tools/call、中文、双账号、当前权限／凭据失效、撤回、范围上限，以及受控源端错误／超时。没有 mock MCP 消息或真实业务 Service，也没有调用回答模型；源故障两例明确为本地 HTTP 故障替身。
+
+默认测试从当前编译 classpath 启动；验证交付入口时先打包，再用 `-Dstock.mcp.packaged-jar=target/stock-system-0.0.1-SNAPSHOT.jar` 跑相同定向测试，实际由 PropertiesLauncher 启动同一个命令。调用程序必须提供自己拥有的账号／对象绑定，不能拿真实用户资料替代自造数据。关闭 SDK 客户端后核对新子 PID、父进程、可执行路径、创建时间和已退出状态；Windows 不保证提供 ProcessHandle.info.arguments，不能仅因该字段缺失而批量杀 Java。故障服务也用随机回环端口并 finally 关闭。测试不改全局客户端配置，进程和数据清理继续执行第 4／5 节。
+
+`ResearchMcpSourceClientTest` 在无数据库的本地 HTTP 层检查参数／目标／Token 头、重定向拒绝、全响应超时、128 KiB 输入边界、输出字段与并发上限；编码回归用自造中文对照 UTF-8 数据被 GBK 解码时的损坏和协议 Unicode 转义后的无损读取。最终数量、协商版本与证据只维护在 [任务第 30 节](../specs/004-research-agent/tasks.md#30-本机只读-mcp-服务与真实客户端2026-10-18)。
+
 ## 3. 前端测试
 
 - 类型检查：`npm.cmd run type-check`。

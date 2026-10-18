@@ -348,3 +348,25 @@ remove 的最后一个参数是 status 返回的文档 key，会同时禁止新�
 新页面发出带认证头的 fetch POST 流请求，按真实阶段显示进度；正文仍完整校验和保存后一次显示。出现“正在整理回答”表示已进入模型派发阶段，不表示已有可交付正文。点击“停止生成”后等待当前外部请求返回或超时，再停止后续工具／模型、结算并显示终态；不承诺供应商取消在途请求或免单。正常停留时问题与已有答案保留，停止完成后可继续编辑；草稿只在本次页面会话内存中，刷新不持久化它。
 
 离开／刷新只断开订阅，服务端仍可能完成；回到页面先 GET 原 requestId／runId，不自动再发送付费请求。停止标记存在 V16 的 agent_run.cancel_requested，RUNNING＋true 表示仍在收尾，CANCELLED 表示已结束且未保存正文；已成功运行不会被迟到停止覆盖。排查时同时看 model_calls、tool_calls、用量与 cost_upper_yuan，不能把“前端连接断了”直接当作模型已停。受控复现沿 [测试说明](testing.md#25-研究助手的受控与真实模型检查)，协议和并发边界只维护在 [设计 6.3](../specs/004-research-agent/design.md#63-用户看到的状态)。
+
+## 13. 本机只读 MCP 服务
+
+这个入口让独立 MCP Client 发现并调用一个只读研究工具；站内问答仍使用现有 Service，不依赖该进程。Client 启动 [ResearchMcpCommand](../../src/main/java/com/stock/system/agent/mcp/ResearchMcpCommand.java)，通过 stdio 传递 MCP 消息；工具再带账号访问 Token GET 已有 `/sources` API，由原 JWT、空间／周期检查和 Service 读取实际资料。它不执行回答生成、不调用模型、不新增数据库表，也不会自动注册到 WorkBuddy 或 Codex。
+
+先在项目根目录按既有 Maven 入口打包，再由 MCP 客户端启动 [start-research-mcp.cmd](../../scripts/start-research-mcp.cmd)。脚本从任意工作目录都能找到当前 `target/stock-system-0.0.1-SNAPSHOT.jar`，使用 `STOCK_MCP_JAVA` 指定的 Java 或 PATH 中的 java.exe；它不替你启动网站后端。后端必须已经运行，且是你要读取的那个环境。普通手工开发指向 dev；自动化验收只能指向独立 test 服务。
+
+| 进程环境变量 | 含义 |
+| --- | --- |
+| `STOCK_MCP_API_ORIGIN` | 默认 `http://127.0.0.1:8082`，必须是这个回环 IP＋明确端口；不含 `/api`、路径、用户信息或查询串 |
+| `STOCK_MCP_ACCESS_TOKEN` | 该业务账号正常登录后取得的现有 JWT。只交给本机进程环境，不放命令参数、工具参数、版本库或聊天记录；过期／改密后重新登录并重启该 MCP 进程 |
+| `STOCK_MCP_WORKSPACE_ID`／`STOCK_MCP_STOCK_ID`／`STOCK_MCP_CYCLE_ID` | 当前空间、空间股票、研究周期的正整数 ID；STOCK_ID 是空间股票 ID，不是证券代码或全局 stock 表 ID。三者必须属于同一研究对象 |
+| `STOCK_MCP_TIMEOUT_MS` | 全响应期限，默认 10000，允许 250～10000 毫秒；调小用于本地故障检查，不代表业务总时限被修改 |
+| `STOCK_MCP_JAVA` | 可选 Java 可执行文件绝对路径；用于 .cmd 启动器，不接受 Token 等凭据作为路径参数 |
+
+支持 stdio 的客户端可将 command 配置为 `cmd.exe`、args 配置为 `/d`、`/c` 和启动脚本绝对路径，环境字段使用上表。若客户端支持直接启动 Java，也可使用 Java 绝对路径，参数依次为 `-Dfile.encoding=UTF-8`、`-Dloader.main=com.stock.system.agent.mcp.ResearchMcpCommand`、`-cp`、打包 JAR 的绝对路径及 `org.springframework.boot.loader.launch.PropertiesLauncher`。客户端环境变量替换语法各不相同，以它自己的配置机制提供 Token；此文不提供含真实 Token 的配置文件，不修改本机全局 MCP 设置。
+
+先让客户端 initialize，再 tools/list，应只发现 `read_current_cycle_opinions`。合法 tools/call 的 arguments 可以是 `{}` 或 `{"dateFrom":"2026-01-01","dateTo":"2026-10-18"}`；结果给股票／周期、读取时间、日期范围、成员显示名及本次 M1 等标识、有效观点和来源 ID。成员观点仍是观点，不能据此说公司事实已经确认。工具拒绝 callerUserId、workspaceId、cycleId、URL 等额外字段；切换对象或账号必须换启动配置，连接 ID 不能代替身份。
+
+每次调用都重新走现有权限与撤回检查，没有 MCP 资料缓存。失败看 isError：SDK 可能在参数校验阶段直接返回工具错误文本，此时尚未发起源查询；进入适配器后的业务错误有固定 errorCode。未授权继续沿原 API 的 UNAUTHENTICATED、WORKSPACE_NOT_FOUND 等契约，隐藏空间存在性的规则保留。源故障、全响应超时、重定向或超限均不返回原始响应，也不在应用层自动重试。来源量及输出大小有各自上限，缩小日期范围后再由用户决定是否调用。
+
+stdout 只有协议帧，保持连接但暂未提问时没有普通命令输出是正常的；停止由客户端关闭连接／进程，直接在终端运行可 Ctrl+C。stdin EOF 会触发关闭。协议输出采用 Unicode 转义，仍是 UTF-8，客户端 JSON 解码后得到原样中文；这修复 Java SDK Windows 默认代码页读取路径造成的乱码／JSON 失败。单纯看到握手成功不能证明中文资料或业务权限已通过。实际官方客户端、打包入口、故障与清理证据只见 [任务第 30 节](../specs/004-research-agent/tasks.md#30-本机只读-mcp-服务与真实客户端2026-10-18)，个人解释能力仍待单独验收。

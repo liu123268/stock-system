@@ -1,6 +1,6 @@
 # 项目实际技术栈
 
-更新时间：2026-10-18（接入本机报告版本维护与模型失败诊断；云端尚未发布本轮构建）
+更新时间：2026-10-18（SSE 阶段推送／停止及本机只读 MCP 已验证；云端尚未发布本轮构建）
 
 本文档记录项目技术的真实状态。用户最初提供的学习目标和候选技术清单保存在 [技术目标与选型参考](../project/technology-reference.md)，两者不得混淆。
 
@@ -64,7 +64,7 @@
 | Nginx                           | 已使用       | 前端静态资源、`/api` 反向代理与 HTTPS          | 公网 HTTPS、HTTP 跳转、API 与静态资源行为已验收，见 [部署说明](../engineering/deployment.md#2-当前云端部署) |
 | ECharts                         | `^6.1.0`，已使用 | 按需展示九种周期 K 线／成交量和当日／历史分时 | 两个图表组件随展开面板异步加载；K 线与量柱同步缩放并支持左边界补载        |
 | 前端轮询                        | 已使用（分时最小范围） | 当前可见单股票盘中分时受控刷新              | 固定 30 秒；折叠、切回 K 线、页面隐藏时不访问上游，后端返回非更新状态后不再调度 |
-| SSE                             | 计划，尚未接入 | Agent 流式结果和状态反馈                       | 先验证同步模型／工具闭环，再补流式、鉴权、中断和取消行为                   |
+| SSE                             | 已使用（本地） | Agent 实时阶段与已校验最终结果 | 带认证头的 fetch、断线恢复和协作式停止已验证；逐字／逐段正文未实现，007 总体质量另验 |
 | WebSocket                       | 候选         | 有真实需要时的双向通信或行情推送               | 不与 SSE 或当前行情轮询绑定                                               |
 | LLM API + 结构化输出            | 独立实验及正式业务已接入 | 观点整理、工具追问与资料缺口                 | 个人权限、会话、独立助手页及有限财务工具已接；分项真实质量见 SPEC-004 tasks，不代表完整 V2       |
 | Spring AI                       | 2.0.1，框架已接入，版本默认模型关闭 | V2 主框架：模型调用、Tool Calling、会话、RAG 与观测 | 生成、受限工具及保存恢复已接；报告首段沿 EmbeddingModel／VectorStore 接入，完整 RAG 与 MCP 分别验收 |
@@ -89,11 +89,12 @@
 | 工具与上下文 | 观点／报价／日 K／限定财务／报告段落五类工具与有限原生循环已接入；ChatModel 负责一次传输，Java 显式执行工具 | 工具从业务 Service 取数据，可信对象由 Java 绑定并重校验；观点按成员／日期，报告按当前股票及可选年度。每轮仍最多三次工具尝试、四次模型调用；有限年报章节不等于任意全文 |
 | 会话存储 | 已用 MySQL 保存个人 session／message／run 和独立费用 budget；不为当前功能另建 Redis 聊天存储 | 同对象个人记录、有效历史整条裁剪、清空版本及恢复已接入；完整变化／断线场景沿 006，运行明细保留期限上线前落实。保存会话与独立报告分开，不机械建立两份状态存储 |
 | 报告维护 | 当前单机小语料采用原子文件保存公开正文／发布版本／状态，Java 命令同步处理，查询按当前发布切换索引 | 短文件锁、任务代次校验、失败保留旧版、显式重试／恢复；不新增 MySQL 报告表或 MQ。生产共享状态、自动任务推进与物理回收另评，边界只见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入) |
-| 页面与响应 | Vue／TypeScript 的同步梳理／追问及恢复已实现；SSE 沿 007 | 先同步得到结果，再以 fetch 流或支持认证头的客户端处理流式鉴权、中断与取消；原生 EventSource 不支持任意认证头。长任务恢复或 MQ 按实际需要评估 |
+| 页面与响应 | Vue／TypeScript 梳理／追问改用带认证头的 fetch SSE，原 JSON 接口保留 | 已校验正文一次交付，实时阶段与主动停止已验证；连接断开只解除订阅，不代表停止在途计费。状态恢复沿原编号 GET，不自动重发模型；逐字正文和总体质量另验 |
+| MCP 本机入口 | 官方 Java SDK 2.1.0／Jackson 3，独立 stdio，实际协商 2025-11-25 | 一个账号／周期绑定的只读观点工具，官方客户端实际发现与调用原 HTTP／JWT／Service／MySQL；参数、权限变更、失败／超时和进程退出已验证。普通 Agent 不绕 MCP；远程 OAuth、产品客户端接入及个人能力另验，见 [009 证据](../specs/004-research-agent/tasks.md#30-本机只读-mcp-服务与真实客户端2026-10-18) |
 | 观测与可靠性 | 运行版本、模型／工具次数、有限轨迹、耗时、Token／费用及白名单失败分类已保存；额外观测平台按需要接入 | 失败诊断只含阶段／轮次／HTTP 状态／固定分类和编号，不保存异常消息或原始响应；超时分类、零重试与未知用量保留占用有定向证据，旧失败不能补造根因 |
 | 质量验证 | 复用 JUnit／Mockito 与隔离业务测试，加固定问题集和独立真实模型评测，增量计划 | 替身测试验证工具、权限和错误边界；真实模型检查工具选择、归纳和引用。评分结合程序与人工，保留运行条件、版本、执行记录、坏例子与修改前后比较；具体验收沿 AG-CODE-007／008，不以文案完全相同作为正确标准 |
 
-2026-10-11 的独立组件预检及教学工程撤回事宜保留为历史记录。2026-10-12 主工程已锁定 Java 17／Boot 4.1.1／Spring AI 2.0.1／MyBatis-Plus 3.5.17，兼容接入证据见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。梳理、个人页面及观点／报价／日 K 沿 004／005，限定财务沿 001F／005F；008 已接 Java 本地向量、Qdrant、报告引用与本机版本维护。生产维护、混合／重排、真实回答质量、更广财务覆盖仍待完成。
+2026-10-11 的独立组件预检及教学工程撤回事宜保留为历史记录。2026-10-12 主工程已锁定 Java 17／Boot 4.1.1／Spring AI 2.0.1／MyBatis-Plus 3.5.17，兼容接入证据见 [任务第 9 节](../specs/004-research-agent/tasks.md#9-ag-code-002正式后端框架接入2026-10-12)。梳理、个人页面及观点／报价／日 K 沿 004／005，限定财务沿 001F／005F；008 已在两份受审报告范围完成本地向量／关键词混合、重排对照、受审摘录及维护，009 已验证本机只读 stdio。生产共享维护、005F 原年度题真实恢复、007 总体真实质量和更广财务覆盖仍待完成，不以本机协议替代模型质量。
 
 版本依据：官方 [Spring AI 兼容矩阵](https://github.com/spring-projects/spring-ai#getting-started) 列出 2.x 对应 Boot 4.x、1.1.x 对应 Boot 3.5.x；但 [Boot 3.5.16 发布说明](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/) 已声明 3.5.x 结束开源支持。因此 3.5／AI 1.1 只作为历史兼容关系或迁移中间步骤，不能默认当作新的长期目标。[Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html) 允许 Java 17；[MyBatis-Plus 官方说明](https://baomidou.com/getting-started/) 提供自 3.5.13 起的 Boot 4 starter，原项目的 Boot 3 starter 3.5.5 已更换为 Boot 4 starter 3.5.17。业务 ObjectMapper 已迁移到 Jackson 3；注入／序列化和时间行为按 [官方迁移说明](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide) 验证，不能由官方组合存在推断项目已经兼容。
 
@@ -173,7 +174,7 @@ MCP 负责统一工具发现和调用，不提供数据许可或实时性保证�
 
 学习顺序、阶段深度与本人产出沿 [V2 地图](../project/roadmap.md#v2-功能与学习地图)，目标岗位的语言／框架／资格差距沿 [岗位分流](../project/roadmap.md#岗位分流与学习优先级)。原始完整目标保留在 [技术参考](../project/technology-reference.md#用户原始文字)；本表不另设课表或个人掌握记录。
 
-RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)、[资料读取与分块管线](https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html) 和 [Embedding API](https://docs.spring.io/spring-ai/reference/api/embeddings.html)。回答模型和文本向量模型职责不同；现有 DeepSeek 真实回答实验没有验证向量化能力，Embedding 服务或本地模型、中文检索质量及成本需独立确认。分别对照检索及回答，不能将默认 similaritySearch 调用或空检索后的流畅回答当作通过。MCP 发现／调用与 Java 实现路径依据 [MCP 官方架构](https://modelcontextprotocol.io/docs/learn/architecture) 和 [Spring AI MCP](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html)。当前 RAG 仅接入有限章节的本机首段，完整 008 与 MCP 仍未完成，官方组件存在不证明本项目实际兼容。
+RAG 技术依据：[Spring AI 文档检索与上下文增强](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)、[资料读取与分块管线](https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html) 和 [Embedding API](https://docs.spring.io/spring-ai/reference/api/embeddings.html)。回答模型与文本向量模型分别验证；不能将默认 similaritySearch 调用或空检索后的流畅回答当作通过。008 的限定范围、真实本地向量及最终来源支持证据只见 tasks。MCP 发现／调用依据 [MCP 官方架构](https://modelcontextprotocol.io/docs/learn/architecture)、[Java SDK](https://java.sdk.modelcontextprotocol.io/latest/server/)及 [stdio 传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)；本机实现直接使用核心 SDK，未引入 Spring MCP starter 自动发布业务工具。官方组件存在不证明本项目兼容，009 的实际打包客户端和权限证据另列 tasks。
 
 ### 3.5 首轮模型与费用安排
 

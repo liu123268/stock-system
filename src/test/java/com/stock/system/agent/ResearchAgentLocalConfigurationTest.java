@@ -60,7 +60,7 @@ class ResearchAgentLocalConfigurationTest {
         var dev = environment("dev", Map.of(), Map.of());
         assertThat(dev.getProperty("spring.config.import").split(",")).containsExactly(
                 "optional:file:./.env.longbridge-local.properties", "optional:file:./.env.deepseek-local.properties",
-                "optional:file:./.env.research-agent-local.properties");
+                "optional:file:./.env.research-agent-local.properties", "optional:file:./.env.report-rag-local.properties");
         var prod = environment("prod", Map.of(), Map.of("deepseek.api-key", "offline-existing-key",
                 "local.research-agent.chat-model", "deepseek", "local.research-agent.budget-yuan", "10"));
         assertThat(prod.getProperty("spring.config.import")).isEqualTo("configtree:/run/secrets/");
