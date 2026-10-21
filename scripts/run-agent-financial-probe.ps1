@@ -9,7 +9,8 @@ param(
     [switch]$ApprovedReportData,
     [ValidateRange(0, 1000)][int]$ExpectedUnknownReservations = 0,
     [string]$FixtureFailAt,
-    [switch]$ReviewEach
+    [switch]$ReviewEach,
+    [switch]$StreamAnswers
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -21,6 +22,7 @@ if ($Suite -eq 'Closure') { $probeArguments += '--suite=closure'; $planArguments
 $unknownArgument = "--expected-unknown=$ExpectedUnknownReservations"
 $probeArguments += $unknownArgument; $planArguments += $unknownArgument
 if ($ReviewEach) { $probeArguments += '--review-each'; $planArguments += '--review-each' }
+if ($StreamAnswers) { $probeArguments += '--stream-answers'; $planArguments += '--stream-answers' }
 if ($PSBoundParameters.ContainsKey('FixtureFailAt')) {
     if ($Mode -ne 'Fixture') { throw 'Fixture failure injection is forbidden in Real mode' }
     $probeArguments += "--fixture-fail-at=$FixtureFailAt"; $planArguments += "--fixture-fail-at=$FixtureFailAt"

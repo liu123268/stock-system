@@ -1,6 +1,6 @@
 # SPEC-004：单股研究 Agent 设计草案
 
-状态：2026-10-18，AG 要求与 P-001～P-007 已确认。固定梳理、独立个人页面、受控工具和限定财务已接入；4.4 的报告 RAG 在两份受审年报、Windows 单机范围完成维护、混合检索对照及受审摘录的真实六题来源验收。SSE 阶段／最终结果／停止及 4.5 的本机只读 MCP 已验证，实际范围与证据只见 tasks。默认模型和页面预算仍关闭，本机配置单独启用。005F 原财务题真实恢复、007 总体质量、逐字正文和生产仍分别保留；模拟回答或 MCP 协议成功不替代真实模型质量，摘录交付也不等于模型自由概括全部正确。本文说明机制，不替代 [需求](requirements.md) 的确认状态。
+状态：2026-10-21，AG 要求与 P-001～P-007 已确认。固定梳理、独立个人页面、受控工具和限定财务已接入；4.4 的报告 RAG 在两份受审年报、Windows 单机范围完成维护、混合检索对照及受审摘录的真实六题来源验收。SSE 阶段／最终结果／停止、追问原生逐段预览及 4.5 的本机只读 MCP 已接入，实际工程与限定真实样本的范围只见 tasks。默认模型和页面预算仍关闭，本机配置单独启用。固定题集的历史完整验收与新版流式样本分别记录；初次梳理逐段、更多质量覆盖及生产仍另验。模拟回答或 MCP 协议成功不替代真实模型质量，摘录交付也不等于模型自由概括全部正确。本文说明机制，不替代 [需求](requirements.md) 的确认状态。
 
 ## 1. 首个页面闭环
 
@@ -266,9 +266,13 @@ MySQL 的 session／message／run 与独立 budget 职责见 [数据模型 3.13]
 
 007 的 SSE 工程接入使用带 Bearer 认证头的 POST fetch，分别调用 `/summaries/stream` 和 `/messages/stream`；原同步 JSON 接口继续供独立检查使用。Servlet 的异步分派从本次请求属性恢复安全上下文，不创建登录 Session，也不放行匿名异步接口。连接使用 no-store／X-Accel-Buffering: no，8 秒心跳、75 秒通道上限，工作流仍为 60 秒。实现沿 [Spring MVC 异步说明](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html)及 [Spring Security 分派鉴权](https://docs.spring.io/spring-security/reference/servlet/authorization/authorize-http-requests.html)。
 
-事件只包含 `progress`、`result`、`failure`。每项带 requestId、递增 sequence 和已绑定时的 runId；阶段固定为 READING／QUERYING／GENERATING／VALIDATING／SAVING，由实际资料读取、工具执行、模型派发、校验和结算触发。进度没有参数、原始响应、模型思考或未校验正文。`result.result` 沿已有 Run 契约，正文经完整校验、来源复核、成功保存及发送前权限复核后一次交付；失败／停止只有运行状态，不保存或显示半成品。这是实时阶段加最终结构，尚未实现逐字或逐段模型正文流式展示。
+事件包含 `progress`、`draft`、`result`、`failure`。每项带 requestId、递增 sequence 和已绑定时的 runId；阶段固定为 READING／QUERYING／GENERATING／VALIDATING／SAVING，由实际资料读取、工具执行、模型派发、校验和结算触发。进度没有参数、原始响应或模型思考。初次梳理仍完整校验后一次交付；追问的 `/messages/stream` 改用真实上游原生流，由 Java 收到完整段落对象后，检查正文、引用、财务数字及当前来源，再发送 `draft.paragraphs` 的累计文字快照；空数组表示撤掉预览。不是按计时器拆分已完成答案，也不显示未闭合 JSON。最终 `result.result` 沿已有 Run 契约，只有完整回复校验、来源复核、成功保存及发送前权限复核后才成为正式问答。
 
-每个进程至多两个工作线程、零等待队列，与数据库总并发上限一致。同用户同 requestId 的相同命令在运行中共享执行，至多四个连接订阅；不同对象／操作／内容拒绝。连接关闭只解除订阅，任务保留；刷新通过既有 GET 恢复，不重发模型。前端按 UTF-8 和 SSE 行边界解析，核对事件归属与序号，并限制单事件 256 KiB、总流 512 KiB。切换对象／账号、清空或卸载会中断旧连接并用版本守卫丢弃迟到事件。协议边界沿 [MDN SSE 格式](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)。
+临时段落单独保存在页面内存，标注生成中，暂不开放引用按钮；失败、停止、清空、换对象／账号或卸载立即移除，原已保存回答和问题输入按既有规则保留。每个段落对象最多 2,000 码点、8 个合法且不重复的引用，完整回复仍限八段、八项缺口及 32,000 UTF-16 字符；后续正文或缺口不合法时整轮失败，不保存已预览部分。增量扫描只提前识别以 paragraphs 开头的 JSON（可有完整开围栏或 BOM）；合法的其他属性顺序退回最终一次显示，不修补 JSON。报告预览也经同一受审摘录处理，不直接展示模型自由改写。
+
+原生流经 Spring AI ChatModel.stream／WebClient；同步接口继续使用原传输。两条路径在完整 HTTP 请求编码后都限制 64 KiB、派发前预留预算并计一次调用。流式执行对象经 Reactor Context 显式传递到网络线程，不能依靠业务线程的 ThreadLocal；单个缓冲区也显式检查长度。上游结束帧核对 stop／tool_calls，末帧用量归于原执行并只结算一次；停止或预览权限失效后仍在原 60 秒期限内读完已派发请求以取得用量，禁止继续工具或下一轮模型。超时、缺结束标记或错误结构不得保存；缺用量仍保留未知预留，零自动重试。上游协议沿 [DeepSeek 原生流说明](https://api-docs.deepseek.com/api/create-chat-completion/)，框架真实回环检查与实际收费结果见任务记录。
+
+每个进程至多两个工作线程、零等待队列，与数据库总并发上限一致。同用户同 requestId 的相同命令在运行中共享执行，至多四个连接订阅；不同对象／操作／内容拒绝。连接关闭只解除订阅，任务保留；刷新通过既有 GET 恢复，不重发模型，也不从服务端缓存重放临时正文。新订阅只取得进度、之后重新核验的段落快照或最终结果。前端按 UTF-8 和 SSE 行边界解析，核对事件归属与序号，并限制单事件 256 KiB、总流 2 MiB（容纳有界累计段落快照）。切换对象／账号、清空或卸载会中断旧连接并用版本守卫丢弃迟到事件。阅读末尾附近时跟随新段落，上翻阅读旧记录时不强拉到底部。协议边界沿 [MDN SSE 格式](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)。
 
 预算锁入口使用单行主键 upsert 直接取得排他锁，再读 FOR UPDATE；不先 INSERT IGNORE 取得共享锁再升级。Chrome 并行恢复中曾观察到旧入口的锁升级死锁，修复后用四线程、十二轮实际状态读取核对费用不变。锁语义依据 [MySQL InnoDB 语句加锁规则](https://dev.mysql.com/doc/refman/8.0/en/innodb-locks-set.html)；不据此承诺所有数据库路径永不死锁。
 

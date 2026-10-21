@@ -77,6 +77,7 @@ public class ResearchAgentStreamService {
     private record Progress(String requestId, long sequence, Long runId, ResearchAgentProgress.Stage stage) {}
     private record Completed(String requestId, long sequence, Long runId, Run result) {}
     private record Failed(String requestId, long sequence, Long runId, String errorCode, String message) {}
+    private record Draft(String requestId, long sequence, Long runId, List<String> paragraphs) {}
 
     private final class Flight implements Runnable, ResearchAgentProgress {
         private final Key key;
@@ -104,6 +105,13 @@ public class ResearchAgentStreamService {
 
         synchronized void detach(SseEmitter emitter) { subscribers.remove(emitter); }
         @Override public boolean cancellationRequested() { return cancelRequested; }
+        @Override public boolean streamsBody() { return command.question != null; }
+        @Override public synchronized void draft(List<String> paragraphs) {
+            if (closed || runId == null || command.question == null || cancelRequested && !paragraphs.isEmpty()) return;
+            if (!paragraphs.isEmpty()) service.verifyAccess(command.target);
+            var event = new Draft(key.requestId, ++sequence, runId, List.copyOf(paragraphs));
+            for (var emitter : List.copyOf(subscribers)) send(emitter, "draft", event);
+        }
         @Override public synchronized void bound(long runId) { this.runId = runId; stage(stage); }
         @Override public synchronized void stage(Stage stage) {
             if (closed) return;

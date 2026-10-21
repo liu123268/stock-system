@@ -160,8 +160,8 @@ public class ResearchAgentService {
                 execution.remainingMillis();
                 answer = questions.answer(context, question, execution::remainingMillis);
             }
-            catch (BusinessException failure) { error = failure.getErrorCode(); }
-            catch (RuntimeException failure) { error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
+            catch (BusinessException failure) { progress.draft(List.of()); error = failure.getErrorCode(); }
+            catch (RuntimeException failure) { progress.draft(List.of()); error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
             progress.stage(ResearchAgentProgress.Stage.SAVING);
             records.finish(target, started.run(), execution, context.dependencies(), answer, error, () -> questions.revalidate(context));
             return present(target, records.run(target, started.run().id()));

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.beans.factory.ObjectProvider;
 import tools.jackson.databind.ObjectMapper;
@@ -421,8 +422,36 @@ class ResearchFinancialQuestionTest {
             assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false),
                     "概念解释", () -> {})).isInstanceOf(BusinessException.class)
                     .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
-            assertThat(execution.failure.stage()).isEqualTo(output.startsWith("{") ? "QUESTION_REPLY_CONTRACT" : "QUESTION_REPLY_JSON");
+            assertThat(execution.failure.stage()).isEqualTo(output.startsWith("{") ? "QUESTION_REPLY_SOURCES" : "QUESTION_REPLY_JSON");
             assertThat(json.writeValueAsString(execution.failure)).doesNotContain("private-message", "unprovided-id", "not-json");
+            assertThat(execution.usageKnown()).isTrue();
+        }
+        verify(model, times(1)).call(anyList(), anyList());
+        verifyNoInteractions(reports, financials, market);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            {"paragraphs":[],"missingInformation":[]} | QUESTION_REPLY_COLLECTIONS
+            {"paragraphs":[{"text":"private-message","sourceIds":[]}]} | QUESTION_REPLY_COLLECTIONS
+            {"paragraphs":[null],"missingInformation":[]} | QUESTION_REPLY_PARAGRAPH
+            {"paragraphs":[{"text":"","sourceIds":[]}],"missingInformation":[]} | QUESTION_REPLY_PARAGRAPH
+            {"paragraphs":[{"text":"private-message"}],"missingInformation":[]} | QUESTION_REPLY_SOURCES
+            {"paragraphs":[{"text":"private-message","sourceIds":["unprovided-id"]}],"missingInformation":[]} | QUESTION_REPLY_SOURCES
+            {"paragraphs":[{"text":"private-message","sourceIds":[]}],"missingInformation":[null]} | QUESTION_REPLY_GAPS
+            """)
+    void diagnosesTheRejectedContractPartWithoutPersistingModelTextOrRetrying(String output, String stage) {
+        when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            //noinspection resource
+            var execution = ResearchModelExecution.current(); execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
+            return new AssistantMessage(output);
+        });
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false),
+                    "概念解释", () -> {})).isInstanceOfSatisfying(BusinessException.class,
+                    failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT));
+            assertThat(execution.failure.stage()).isEqualTo(stage);
+            assertThat(json.writeValueAsString(execution.failure)).doesNotContain("private-message", "unprovided-id");
             assertThat(execution.usageKnown()).isTrue();
         }
         verify(model, times(1)).call(anyList(), anyList());

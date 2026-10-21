@@ -68,7 +68,9 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号 ID 归一为本地别名数字；不连模型或数据库。它保留报价 AVAILABLE 却声称未提供行情、正文带内部编号的旧输出，验证新编号检查拒绝，并确认新版 Prompt 输入包含同一可用报价。ResearchSummaryServiceTest 覆盖可用／不可用报价和实际昵称，Validator 测试保留原文 M1 术语等合法字面。Chrome 的 invalid-summary-identifiers 走 SSE 验证旧答案保留、SUMMARY_REPLY_CONTRACT 安全诊断和错误不入消息；真实表达质量仍需按逐题门禁复测，不能用回放冒充新模型回答。
 
-007 的 SSE 检查仍用本地 HTTP 模型替身，不新增付费调用。`ResearchAgentIntegrationTest` 验证初始认证／异步分派、重复订阅只有一次执行、停止前后状态、已知／未知用量、取消归属、工具轮次和停止前绑定；继续复用真实 JDBC catalog 守卫与精确清理。前端 `agent-stream.spec.ts` 检查 UTF-8 分块、CRLF／多行 data、心跳、序号／对象归属、截断、事件大小、权限错误及 AbortSignal；`research-agent-panel.spec.ts` 检查进度、停止后的草稿／焦点、换周期迟到事件及停止恢复。Chrome 的 `research-agent-smoke.mjs` 同时验证早于正文的进度、停止阻止下一轮工具／模型、刷新停止状态及旧恢复／报告行为，沿现有 `scripts/run-agent-report-probe.ps1` 的拥有进程与数据清理入口。
+007 的受控 SSE 检查用本地 HTTP 模型替身，不新增付费调用。`ResearchQuestionStreamModelTest` 从实际 Spring AI／WebClient 请求随机回环 SSE，核对分块、结束标记、用量一次结算、取消后读完用量、未知预留、HTTP 错误零重试，以及编码后请求超限必须在派发计数前拒绝（含单个 Mono 缓冲区）。`ResearchReplyDraftTest` 覆盖逐字符中文／转义／字符串内括号、完整围栏与 BOM、未闭合对象不显示、坏结构撤回和其他属性顺序退回最终解析。最终结构失败的细分阶段用自造回复验证，只记固定诊断、不保存模型原文，也不据此补造旧真实失败根因。
+
+`ResearchAgentIntegrationTest` 验证初始认证／异步分派、重复订阅只有一次执行、停止前后状态、已知／未知用量、取消归属、工具轮次和停止前绑定；继续复用真实 JDBC catalog 守卫与精确清理。前端 `agent-stream.spec.ts` 检查 UTF-8 分块、CRLF／多行 data、心跳、序号／对象归属、draft 快照／撤回、截断、事件大小、权限错误及 AbortSignal；`research-agent-panel.spec.ts` 检查临时正文与已保存回答分开、失败／停止撤掉预览并保留原消息与输入、换周期迟到事件和停止恢复。Chrome 的 `research-agent-smoke.mjs` 让上游在首个完整段落后受控等待，核对已有 draft 时 run 仍为 RUNNING、agent_message 尚未入库，刷新以 GET 恢复且不另发 POST，停止撤回并取得已知用量，四宽度及原报告／财务／权限流程继续执行；沿现有 `scripts/run-agent-report-probe.ps1` 的拥有进程与数据清理入口。真实模型逐段采样另用原财务入口的 `-StreamAnswers -ReviewEach`，用量、首段耗时、程序终态和逐题来源语义分别记录；替身通过不充当真实质量证据。
 
 本地停止为协作式：等待当前 HTTP 结束再结算，测试不能只断开浏览器就声称已停止供应商调用；已发出但无用量仍占原预留。页面刷新只恢复 pending 编号与服务端状态，不把会话内存草稿当成已持久化。初轮 Chrome 若只因草稿刷新期望写错失败，保留失败证据并修正测试边界；正常 SSE 断开应由 AsyncRequestNotUsableException 专用处理收尾，不再尝试往流写 JSON 错误。实际结果、次数和证据只见 [任务第 29 节](../specs/004-research-agent/tasks.md#29-sse-进度最终结果与主动停止2026-10-18)。
 

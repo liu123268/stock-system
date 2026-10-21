@@ -20,12 +20,13 @@ const loading = ref(true)
 const busy = ref(false)
 const cancelRequested = ref(false)
 const cancelling = ref(false)
+const draftParagraphs = ref<string[]>([])
 let streamController: AbortController | undefined
 const progressText: Record<AgentStage, string> = {
   READING: '正在读取本周期资料…', QUERYING: '正在查询问题所需资料…', GENERATING: '正在整理回答…',
   VALIDATING: '正在核对正文和引用…', SAVING: '正在结算并保存运行状态…',
 }
-function detachStream() { streamController?.abort(); streamController = undefined }
+function detachStream() { streamController?.abort(); streamController = undefined; draftParagraphs.value = [] }
 function streamOptions(request: ReturnType<typeof capture>) {
   detachStream()
   streamController = new AbortController()
@@ -33,6 +34,11 @@ function streamOptions(request: ReturnType<typeof capture>) {
   cancelling.value = false; returnFocusAfterCancel = false
   return { signal: streamController.signal, onProgress: (progress: { stage: AgentStage }) => {
     if (current(request) && !cancelRequested.value) notices.value = progressText[progress.stage]
+  }, onDraft: (draft: { paragraphs: string[] }) => {
+    if (!current(request) || !busy.value || cancelRequested.value || cancelling.value) return
+    const follow = !history.value || history.value.scrollHeight - history.value.scrollTop - history.value.clientHeight < 80
+    draftParagraphs.value = [...draft.paragraphs]
+    if (follow) void showLatest()
   } }
 }
 const clearing = ref(false)
@@ -145,6 +151,7 @@ function forgetRequest(requestId: string) {
 }
 async function fail(cause: unknown, request: ReturnType<typeof capture>) {
   if (!current(request)) return
+  draftParagraphs.value = []
   if (cause instanceof ApiError && accessErrors.includes(cause.code)) hidePrivateContent()
   const failedVersion = version
   if (await handleWorkspaceApiError(cause, router)) return
@@ -189,6 +196,7 @@ function schedulePoll(runId: number, request: ReturnType<typeof capture>) {
   }, 1500)
 }
 function accept(run: AgentRun) {
+  draftParagraphs.value = []
   cancelRequested.value = !!run.cancelRequested && run.status === 'RUNNING'
   // 进行中失权可能以 FAILED 运行回包抵达；即使后续 GET 断线也先清正文。
   if (run.errorCode && accessErrors.includes(run.errorCode)) hidePrivateContent()
@@ -337,6 +345,7 @@ async function cancel() {
   const request = capture()
   const requestId = pending.value.requestId
   cancelling.value = true
+  draftParagraphs.value = []
   returnFocusAfterCancel = true
   try {
     const result = (await cancelAgent(request.target, requestId)).data.data
@@ -530,6 +539,11 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
       </template>
       <p v-else class="agent-note">{{ run.message || '该结果已失效，请重新梳理。' }}</p>
     </article>
+    <article v-if="busy && draftParagraphs.length && !cancelRequested && !cancelling" class="agent-draft" aria-label="正在生成的回答" aria-busy="true">
+      <p class="agent-your-question">你的问题：{{ question }}</p>
+      <p class="agent-note" role="status">生成中，完成后可查看依据。</p>
+      <p v-for="(paragraph, index) in draftParagraphs" :key="index" class="agent-prose">{{ paragraph }}</p>
+    </article>
     <button v-if="hasEarlier && !standalone" class="ui-button" type="button" :disabled="loading" @click="load(false, true)">查看更早记录</button>
     </div>
     <form class="agent-question" @submit.prevent="ask">
@@ -635,7 +649,7 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
 .agent-panel--standalone .agent-empty { padding: 20px 0; }
 .agent-error { color: var(--color-danger); display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .agent-empty { padding: 22px 0; font-size: 14px; line-height: 1.8; color: var(--color-muted); }
-.agent-answer { padding: 22px 0; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.agent-answer, .agent-draft { padding: 22px 0; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
 .agent-answer h4, .agent-original h4 { margin: 22px 0 10px; font-size: 15px; font-weight: 600; }
 .agent-quote { margin: 8px 0; font-size: 14px; line-height: 1.8; }
 .agent-prose { max-width: 72ch; white-space: pre-wrap; line-height: 1.9; font-size: 14px; }

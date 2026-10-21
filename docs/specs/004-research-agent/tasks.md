@@ -730,3 +730,37 @@ Chrome 使用当前 v16 JAR、真实 test MySQL、本机 Qdrant 与 HTTP 模型�
 只读审计 **target/agent-source-required-audit-20261021.json** 核对实际 catalog=stock_system_test、Flyway=16，十三类用户／业务／Agent 表均为 0；四个登记进程按 PID／创建时间核对无本轮残留，五个测试端口释放，临时向量目录已清理。审计没有业务写入或关闭进程。原预算 SHA-256 仍为 **b60804ecbed0f996c969c969de0c866763ecf26aa0135033cdaaa62139dae8b1**，新增费用 **0 元**，原占用上界 **1.138880＋4.016＝5.154880／10 元**保持不变，旧未知预留未释放，不是实扣账单。
 
 设计、工程复习、测试方法与 PROJECT-10 已用同一条当前规则替换过时“无财务引用就不校验”的说法，原 v15 结果保留为历史。已有未提交改动保留；本轮没有更改依赖、API、迁移、默认模型、生产配置或日常服务，也没有提交／推送。最近真实模型语义证据仍是第 33 节 v14，不由本轮替身通过宣称任意回答可靠；教学与个人检查点继续保留，逐字正文、生产、真实行情和更广财务覆盖仍另验。
+
+## 36. 追问原生逐段展示与临时正文边界（2026-10-21）
+
+用户继续开发并持续授权原累计十元内的必要费用。本轮推进 P-006 已确认的正文流式：独立助手页的追问改用真实上游原生 SSE，收到完整段落对象后先核对引用、财务数字与当前来源，再显示临时正文；全回复通过后才保存为正式问答。初次梳理保持阶段进度加最终正文，不用定时器制造逐字动画。页面将临时段落与 messages 分开，失败／停止／清空／换对象／账号或卸载时撤掉预览，保留原有效回答；刷新只 GET 原运行，不重发付费请求，也不缓存重放旧预览。机制由 [设计 6.3](design.md#63-用户看到的状态) 单独维护，教学链路见 [工程复习](../../engineering/agent-experiment.md#sse-进度与停止如何核对)。
+
+同步 RestClient 的拦截器不能覆盖原生流使用的 WebClient。本轮为后者加入编码后完整请求 64 KiB 检查、预算与一次派发守卫，执行对象通过 Reactor Context 传到网络线程。最初回环测试发现 DataBufferUtils.join 对单个 Mono 缓冲区可能绕过聚合大小检查，已补显式字节数检查并验证超限在派发计数前拒绝。取消或来源失效后不再发布正文，在原总时限内收尾已发生请求以取得末帧用量；缺用量仍保留未知预留，没有新增自动重试。完整结束标记、32,000 字符、段落及工具数上限继续检查。
+
+最终定向后端 **154 项全部通过、跳过 0**，包含 AgentIntegration 33、LocalConfiguration 5、ExperimentBudget 2、FinancialQuestion 58、ModelFailure 6、QuestionModel 2、QuestionStreamModel 7、SummaryModel 9、FinancialAnswerNumbers 22、ReplyDraft 6、ReportAnswerSupport 4。152 项见 **target/agent-body-stream-final-backend-fixed-20261021.log**；预算两项最初在 Windows 全局临时目录清理时报 AccessDenied，JUnit basedir 参数没有改变其目录，后以测试 JVM 的 java.io.tmpdir 指向项目 target，独立复核两项通过，日志 **target/agent-body-stream-budget-temp-fixed-20261021.log**。这是 152＋2 的合计，不称一次完整后端全量绿色。当前 v18 JAR 打包通过，日志 **target/agent-body-stream-final-package-20261021.log**。
+
+前端全量 **234 项通过**，日志 **target/agent-body-stream-all-frontend-20261021.log**；类型、生产构建与只读 lint 通过，对应 **agent-body-stream-types／build／final-lint-20261021.log**。脚本 **54 项通过**，日志 **target/agent-body-stream-final-node-20261021.log**。增量扫描覆盖逐字符中文、转义、字符串内括号、BOM／JSON 围栏、未闭合和坏结构；不兼容的提前属性顺序安全退回最终一次展示。前端核对 draft 快照／撤回、归属和序号，临时正文不计作成功问答。
+
+当前 v18 的 Chrome 目录 **target/report-rag-browser-20261021-223147-4ccfcc49**，**57 组通过、页面错误 0、paidRequests=0**。真实 Spring AI／WebClient 连接本地 HTTP 流替身，首段后受控等待，核对 draft 已显示时 run=RUNNING、agent_message 尚未入库；刷新移除临时正文并恢复同一运行，模型次数不增；首段后停止立即撤回、保留旧消息和输入、取得已知用量且不继续工具。1440／960／390／320px 临时段落完整可见，并检查默认／悬浮／按压／焦点、触摸取消、低动态及原财务／报告／权限流程。桌面和手机截图已人工查看；此前 v17 的 57 组目录 **target/report-rag-browser-20261021-220707-424c9aac** 保留为前一轮证据，不合并成 114 种不同检查。
+
+真实检查沿原财务入口加 `-StreamAnswers -ReviewEach`，使用原授权自造观点、模拟报价与受审财务目录，通过受控 Chrome 加载正式流解析器。首批 v17 目录 **target/agent-financial-real-20261021-221201-7894ecf5**：计划两题，财务首题收到一个已校验段落后，完整回复在 QUESTION_REPLY_CONTRACT 拒绝，第二题未执行；两次实际派发、一次财务工具、已知费用上界 **0.014228 元**。原始模型正文未保存，不能从这一阶段推断是字段、段落、引用或其他具体结构问题；不把后续成功反写为该次根因已经修复。
+
+随后离线增加七个安全诊断样例，v18 将结构失败细分为 COLLECTIONS／PARAGRAPH／SOURCES／GAPS／REPORT_GROUNDING，既有 JSON／CONTRACT／财务阶段保留；只保存固定阶段，不保存模型文字或异常消息。没有放宽引用唯一性、已知来源、财务数字或缺口检查，也没有改 Prompt 取巧。离线通过后按持续授权建立独立新批，不自动重发失败 requestId。
+
+v18 目录 **target/agent-financial-real-20261021-222708-75bb088e** 独立完成同两题，**程序 2／2、四维来源语义 2／2、任务完成 2／2**，新 runId／requestId、旧答案复用 0；实际四次模型派发、两次工具，费用上界 **0.025084 元**。财务题分别陈述收入与归母利润，原币／元单位、上年比较值、差额／负同比及第六页依据正确；报价题保留 612 港元、模拟来源与旧时点，只列当前真实价的必要缺口。首个临时段落／最终结果分别为 **2829.5／3309.9ms** 与 **2291.0／2489.4ms**，各收到两次／一次 draft；这说明真实上游的段落早于最终保存结果，不代表显著加速或所有回复都能提前展示。程序保存／GET 恢复／同编号去重和逐题审查均通过。
+
+该旧财务题集没有冻结 requiredTools／allowedTools，因此 scorecard 的工具选择为 **UNSCORED 2**、realQualityPassed 仍 **false**；实际轨迹分别是一次 read_financial_facts、一次 read_latest_quote，不以人工看过工具就修改历史计划或宣称总质量门槛全绿。新两题成功与前批一次结构失败均保留，不等于任意问题稳定，也不复用第 33 节十四次历史结果冒充 v18 完整回归。
+
+本轮两个真实批次合计 **六次模型派发、已知新增上界 0.039312 元**，包括失败批次。原累计已知 **1.178192 元**，旧未知预留仍 **4.016 元／1 笔**，总占用上界 **5.194192／10 元**；不是实扣账单，没有新增额度、释放旧未知或新增未知用量。最新账本 SHA-256 为 **f6c30c2b8097d570428d942e783b12e9b9f80bee6b37dbff6c598af23b0bdf19**。
+
+只读收尾审计 **target/agent-body-stream-audit-20261021.json** 核对实际 catalog=stock_system_test、Flyway=16，十三类业务／用户／Agent 表均为 0；两轮 Chrome 与两批真实检查登记的十四个进程按 PID＋创建时间无本轮残留，五个测试端口释放、临时向量目录由启动脚本清理。审计没有数据库写入或关闭任何进程；预算哈希在最终付费检查后保持不变。需求、设计、测试、技术栈、复习、PROJECT-10 和状态同步，文档检查通过 71 份 Markdown、1150 个本地链接／锚点，git diff --check 通过。无依赖升级、迁移、日常服务替换、生产变更、部署、提交或推送。教学与本人检查点保留，初次梳理逐段、生产、真实行情和更广财务／质量覆盖仍另验。
+
+## 37. IDEA 模型适配检查提示补修（2026-10-21）
+
+用户提供两张提交前代码分析截图，含 ChatModel 无法装配、通配符链式 Builder 的 build 被推断到 Object，以及空值、资源和正则提示。本轮仅处理这些可见位置，保护已有暂存与未暂存内容，没有全局关闭检查或清理全部风格警告。
+
+按实际 Spring AI 2.0.1 JAR 契约，将追问同步／流式路径改为先检查 results 数量再取首项，消除可空 getResult() 的重复调用；删除框架保证非空的 response／Usage／Token／输出检查，默认零用量仍标为未知。AssistantMessage 使用显式 Builder<?> 分步设置字段，避免 IDE 的通配符链式推断错误。ChatModel 与当前适配器受同一 deepseek 开关控制，真实装配测试通过后，仅在构造器局部说明并抑制该静态提示；没有新增可空依赖或更改默认关闭策略。上层继续拥有并关闭执行上下文，当前 getter 处只借用，删除无效抑制并保留必要的局部资源说明。
+
+ConnectException 继承 SocketException，删去被后者覆盖的分支而保留连接分类；失败翻译测试增加返回业务错误码断言。摘要编号正则由多项以 | 连接，非捕获组必须让左右边界覆盖全部候选；保留语义并用单行 RegExpUnnecessaryNonCapturingGroup 抑制说明原因，不直接删除分组。工程复习合并到 [模型失败排查](../../engineering/agent-experiment.md#模型失败如何排查)，普通静态提示没有单独新建 Bug 或面试题。
+
+当前源码与全部测试源码编译通过，定向 **82 项、失败／错误／跳过均为 0**：FinancialQuestion 58、ModelFailure 6、QuestionModel 2、QuestionStreamModel 8、SummaryReplay 2、SummaryValidator 6，日志 **target/agent-idea-inspections-20261021.log**。新增一项实际装配检查证明模型关闭时不需要 ChatModel Bean，启用时沿既有真实框架同步／流式上下文验证；未连接真实模型或数据库，HTTP 回环资源由测试关闭。当前 JAR 打包通过，日志 **target/agent-idea-inspections-package-20261021.log**。未重跑前端、Chrome 或付费题集，第 36 节仍是对应此前版本的功能证据，不计为本轮新结果；IDEA 图形界面的重新分析结果需在 IDE 内核对，不能由 Maven 通过声称其全部提示已清零。新增模型费用为 0，原账本、模型开关、生产与日常服务保持原状；没有提交或推送。

@@ -147,6 +147,15 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
                     List.of(questionMode.equals("financial") ? "财务数字不能直接证明订单变化，未读取订单资料。"
                             : "未读取财报与公告，无法确认实际增长。"))));
         }).when(questionModel).call(any(), any());
+        doAnswer(invocation -> {
+            var response = questionModel.call(invocation.getArgument(0), invocation.getArgument(1));
+            if (!response.hasToolCalls()) {
+                java.util.function.Consumer<String> pieces = invocation.getArgument(2);
+                String content = response.getText();
+                for (int i = 0; i < content.length(); i++) pieces.accept(content.substring(i, i + 1));
+            }
+            return response;
+        }).when(questionModel).stream(any(), any(), any());
     }
 
     @Test void getDoesNotCreateAndGenerationRestoresPrivateResultWithIndependentLedger() throws Exception {

@@ -3,11 +3,12 @@ import type { AgentRun } from './agent'
 
 export type AgentStage = 'READING' | 'QUERYING' | 'GENERATING' | 'VALIDATING' | 'SAVING'
 export interface AgentProgress { requestId: string; sequence: number; runId: number | null; stage: AgentStage }
-export interface AgentStreamOptions { signal: AbortSignal; onProgress: (progress: AgentProgress) => void }
+export interface AgentDraft { requestId: string; sequence: number; runId: number; paragraphs: string[] }
+export interface AgentStreamOptions { signal: AbortSignal; onProgress: (progress: AgentProgress) => void; onDraft?: (draft: AgentDraft) => void }
 const stages: AgentStage[] = ['READING', 'QUERYING', 'GENERATING', 'VALIDATING', 'SAVING']
 const interrupted = () => new ApiError('AGENT_STREAM_INTERRUPTED', '连接已中断，正在查询原任务状态。')
 
-/** POST fetch 保留认证头；只接收进度和已校验结果，不自动重发生成请求。 */
+/** POST fetch 保留认证头；临时段落与最终结果分开，不自动重发生成请求。 */
 export async function agentStream(url: string, body: { requestId: string } & Record<string, unknown>, options: AgentStreamOptions): Promise<AgentRun> {
   const token = window.localStorage.getItem(TOKEN_STORAGE_KEY)
   const controller = new AbortController()
@@ -48,6 +49,10 @@ export async function agentStream(url: string, body: { requestId: string } & Rec
       if (kind === 'progress') {
         if (!stages.includes(value.stage as AgentStage)) throw interrupted()
         options.onProgress(value as unknown as AgentProgress)
+      } else if (kind === 'draft') {
+        if (value.runId == null || !Array.isArray(value.paragraphs) || value.paragraphs.length > 8 ||
+          value.paragraphs.some(text => typeof text !== 'string' || !text.trim() || Array.from(text).length > 2000)) throw interrupted()
+        options.onDraft?.(value as unknown as AgentDraft)
       } else if (kind === 'failure') {
         if (typeof value.errorCode !== 'string' || typeof value.message !== 'string') throw interrupted()
         throw apiError(value.errorCode, value.message)
@@ -63,7 +68,7 @@ export async function agentStream(url: string, body: { requestId: string } & Rec
     while (true) {
       const chunk = await reader.read()
       if (chunk.value) totalBytes += chunk.value.byteLength
-      if (totalBytes > 512 * 1024) throw interrupted()
+      if (totalBytes > 2 * 1024 * 1024) throw interrupted()
       buffer += decoder.decode(chunk.value, { stream: !chunk.done })
       while (true) {
         const end = buffer.search(/[\r\n]/)

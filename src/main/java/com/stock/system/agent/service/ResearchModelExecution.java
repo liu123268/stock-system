@@ -46,6 +46,14 @@ public final class ResearchModelExecution implements AutoCloseable {
         remainingMillis();
         progress.stage(stage);
     }
+    public boolean streamsBody() { return progress.streamsBody(); }
+    public void draft(java.util.List<String> paragraphs) { progress.draft(paragraphs); }
+    /** 流式在途请求继续收尾取得用量，取消检查仍在业务发布及下一轮边界执行。 */
+    public int transportRemainingMillis() {
+        long millis = (deadline - System.nanoTime()) / 1_000_000L;
+        if (millis <= 0) throw new BusinessException(ErrorCode.RESEARCH_AGENT_TIMEOUT);
+        return (int) millis;
+    }
     public Long runId() { return runId; }
     public String requestId() { return requestId; }
     public Integer upstreamStatus() { return upstreamStatus; }

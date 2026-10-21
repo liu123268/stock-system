@@ -48,10 +48,20 @@ async function api(path, token, method = 'GET', body) {
 async function fixtureState(mode) {
   return (await fetch(`${fixture}/_test`, mode ? { method: 'POST', body: JSON.stringify({ mode }) } : {})).json()
 }
-async function capture(name, widths = [1440, 960, 390, 320]) {
+async function capture(name, widths = [1440, 960, 390, 320], focusDraft = false) {
   for (const width of widths) {
     await page.setViewportSize({ width, height: 1000 })
     await page.evaluate(() => window.scrollTo(0, 0))
+    if (focusDraft) {
+      // 改变宽度后文字重新换行；截图前将内部历史滚到当前临时回答。
+      await page.locator('.agent-history').evaluate(element => { element.scrollTop = element.scrollHeight })
+      const visible = await page.locator('.agent-draft .agent-prose').last().evaluate(element => {
+        const paragraph = element.getBoundingClientRect()
+        const history = element.closest('.agent-history').getBoundingClientRect()
+        return paragraph.top >= history.top - 1 && paragraph.bottom <= history.bottom + 1
+      })
+      assert.ok(visible, `临时段落在 ${width}px 的历史区域内完整可见`)
+    }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     await page.screenshot({ path: `${output}/${name}-${width}.png`, fullPage: true })
   }
@@ -143,13 +153,30 @@ try {
   assert.equal(invalidSummary.status, 'FAILED'); assert.equal(invalidSummary.failure.stage, 'SUMMARY_REPLY_CONTRACT')
   assert.equal(sql(`select count(*) from agent_message where run_id=${invalidSummary.id}`), '0')
   checks.push('summary-known-internal-identifiers-rejected-before-save-with-old-result-preserved')
-  await fixtureState('valid')
+  await fixtureState('stream-hold')
   const questionInput = page.getByLabel('继续提问')
   const beforeQuestions = (await fixtureState()).calls
   await questionInput.fill('成员甲最新观点和现在最新可用价分别是什么？')
+  const bodyStreamPost = page.waitForRequest(request => request.url().endsWith('/agent/messages/stream') && request.method() === 'POST')
   await page.getByRole('button', { name: '发送问题', exact: true }).click()
-  await page.getByText('你的问题：成员甲最新观点和现在最新可用价分别是什么？', { exact: true }).waitFor()
+  const bodyStreamRequestId = (await bodyStreamPost).postDataJSON().requestId
+  await page.getByRole('article', { name: '正在生成的回答' }).waitFor()
+  assert.equal(await page.locator('.agent-draft').getAttribute('aria-busy'), 'true')
+  assert.ok((await page.locator('.agent-draft').innerText()).includes('生成中，完成后可查看依据。'))
+  const draftRun = JSON.parse(sql(`select json_object('id',id,'status',status) from agent_run where user_id=${owner.userId} and request_id='${bodyStreamRequestId}'`))
+  assert.equal(draftRun.status, 'RUNNING')
+  assert.equal(sql(`select count(*) from agent_message where run_id=${draftRun.id}`), '0')
+  await capture('paragraph-stream-pending', [1440, 960, 390, 320], true)
+  checks.push('native-upstream-paragraph-visible-before-finish-with-running-state-and-no-saved-message')
+  await page.reload()
+  await page.getByRole('button', { name: '停止生成', exact: true }).waitFor()
+  assert.equal(await page.locator('.agent-draft').count(), 0)
   assert.equal((await fixtureState()).calls, beforeQuestions + 2)
+  await fixtureState('valid')
+  await page.locator('.agent-answer').getByText('你的问题：成员甲最新观点和现在最新可用价分别是什么？', { exact: true }).waitFor()
+  assert.equal(await page.locator('.agent-draft').count(), 0)
+  assert.equal((await fixtureState()).calls, beforeQuestions + 2)
+  checks.push('reload-during-native-body-stream-drops-draft-and-restores-original-result-without-another-post')
   await questionInput.fill('这个价格什么时候取得？')
   await page.getByRole('button', { name: '查看最新可用报价依据', exact: true }).click()
   await page.getByRole('dialog').getByText(/生成时取得的快照/).waitFor()
@@ -157,21 +184,41 @@ try {
   await page.keyboard.press('Escape')
   assert.equal(await questionInput.inputValue(), '这个价格什么时候取得？')
   checks.push('native-two-tool-question-and-quote-evidence')
+  await fixtureState('stream-hold')
+  const beforeDraftStop = (await fixtureState()).calls
+  const answersBeforeDraftStop = await page.locator('.agent-answer').count()
+  await questionInput.fill('请核对最新可用价，并在停止后保留这个问题。')
+  const draftStopPost = page.waitForRequest(request => request.url().endsWith('/agent/messages/stream') && request.method() === 'POST')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  const draftStopRequestId = (await draftStopPost).postDataJSON().requestId
+  await page.locator('.agent-draft').waitFor()
+  await page.getByRole('button', { name: '停止生成', exact: true }).click()
+  assert.equal(await page.locator('.agent-draft').count(), 0)
+  await fixtureState('valid')
+  await page.getByText('本次生成已停止，已有结果和问题草稿已保留。', { exact: true }).waitFor()
+  const draftStopped = JSON.parse(sql(`select json_object('id',id,'status',status,'known',cost_upper_yuan is not null)
+    from agent_run where user_id=${owner.userId} and request_id='${draftStopRequestId}'`))
+  assert.equal(draftStopped.status, 'CANCELLED'); assert.equal(draftStopped.known, true)
+  assert.equal(sql(`select count(*) from agent_message where run_id=${draftStopped.id}`), '0')
+  assert.equal((await fixtureState()).calls, beforeDraftStop + 2)
+  assert.equal(await page.locator('.agent-answer').count(), answersBeforeDraftStop)
+  assert.equal(await questionInput.inputValue(), '请核对最新可用价，并在停止后保留这个问题。')
+  checks.push('stop-after-first-native-paragraph-retracts-draft-drains-known-usage-and-keeps-saved-history')
   await questionInput.fill('请查询2026-09-01至2026-09-04的名义收盘价变化')
   await page.getByRole('button', { name: '发送问题', exact: true }).click()
-  await page.getByText('你的问题：请查询2026-09-01至2026-09-04的名义收盘价变化', { exact: true }).waitFor()
+  await page.locator('.agent-answer').getByText('你的问题：请查询2026-09-01至2026-09-04的名义收盘价变化', { exact: true }).waitFor()
   await page.getByRole('button', { name: '查看区间日 K 与名义变化依据', exact: true }).click()
   await page.getByRole('dialog').locator('table tbody tr').first().waitFor()
   await page.keyboard.press('Escape')
   await capture('follow-up', [1440, 960, 390, 320])
   checks.push('daily-price-question-and-java-evidence')
   await page.reload()
-  await page.getByText('你的问题：请查询2026-09-01至2026-09-04的名义收盘价变化', { exact: true }).waitFor()
+  await page.locator('.agent-answer').getByText('你的问题：请查询2026-09-01至2026-09-04的名义收盘价变化', { exact: true }).waitFor()
   checks.push('follow-up-restores-without-model-request')
   const beforeFinancial = (await fixtureState()).calls
   await questionInput.fill('成员判断、最新可用价和年度财务数字一起核对')
   await page.getByRole('button', { name: '发送问题', exact: true }).click()
-  await page.getByText('你的问题：成员判断、最新可用价和年度财务数字一起核对', { exact: true }).waitFor()
+  await page.locator('.agent-answer').getByText('你的问题：成员判断、最新可用价和年度财务数字一起核对', { exact: true }).waitFor()
   assert.equal((await fixtureState()).calls, beforeFinancial + 2)
   const financialRun = (await api(base, owner.accessToken)).messages[0]
   assert.equal(financialRun.answer.followUp.evidence.filter(item => item.type === 'FINANCIAL').length, 1)
@@ -283,7 +330,7 @@ try {
     const beforeReport = (await fixtureState()).calls
     await questionInput.fill(reportQuestion)
     await page.getByRole('button', { name: '发送问题', exact: true }).click()
-    await page.getByText(`你的问题：${reportQuestion}`, { exact: true }).waitFor()
+    await page.locator('.agent-answer').getByText(`你的问题：${reportQuestion}`, { exact: true }).waitFor()
     assert.equal((await fixtureState()).calls, beforeReport + 2)
     const reportRun = (await api(base, owner.accessToken)).messages[0]
     const cited = reportRun.answer.followUp.evidence.filter(item => item.type === 'REPORT')
@@ -367,7 +414,7 @@ try {
     const question = `分页样本 ${index}：现在最新可用价是多少？`
     await questionInput.fill(question)
     await page.getByRole('button', { name: '发送问题', exact: true }).click()
-    await page.getByText(`你的问题：${question}`, { exact: true }).waitFor()
+    await page.locator('.agent-answer').getByText(`你的问题：${question}`, { exact: true }).waitFor()
   }
   const beforeEarlier = (await fixtureState()).calls
   await page.getByRole('button', { name: '查看更早记录', exact: true }).click()
@@ -424,7 +471,7 @@ try {
   await page.route(messagesRoute, loseReply)
   await questionInput.fill('回包丢失时的最新可用价是多少？')
   await page.getByRole('button', { name: '发送问题', exact: true }).click()
-  await page.getByText('你的问题：回包丢失时的最新可用价是多少？', { exact: true }).waitFor()
+  await page.locator('.agent-answer').getByText('你的问题：回包丢失时的最新可用价是多少？', { exact: true }).waitFor()
   await page.unroute(messagesRoute, loseReply)
   assert.equal((await fixtureState()).calls, beforeLostReply + 2)
   assert.equal((await api(`${base}/requests/${lostQuestionId}`, owner.accessToken)).status, 'SUCCEEDED')
@@ -478,7 +525,7 @@ try {
     await page.waitForTimeout(50)
   assert.equal((await fixtureState()).calls, beforeReload + 1)
   await page.reload()
-  await page.getByText('你的问题：刷新中最新可用价是多少？', { exact: true }).waitFor()
+  await page.locator('.agent-answer').getByText('你的问题：刷新中最新可用价是多少？', { exact: true }).waitFor()
   await page.waitForFunction(() => sessionStorage.getItem('stock-system-agent-pending') === null)
   assert.equal((await fixtureState()).calls, beforeReload + 2)
   await page.locator('.agent-panel').screenshot({ path: `${output}/reload-restored-panel-320.png` })

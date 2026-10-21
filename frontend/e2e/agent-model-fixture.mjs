@@ -6,6 +6,41 @@ const port = Number(process.env.AGENT_FIXTURE_PORT ?? 18084)
 assert.ok(port >= 18000 && port < 19000)
 let mode = 'valid'
 let calls = 0
+const heldBodies = new Set()
+async function finishCompletion(response, body, message, finish, usedMode) {
+  const responseId = `offline-${calls}`
+  const usage = { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 }
+  if (!body.stream) {
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({ id: responseId, object: 'chat.completion', created: 1, model: 'offline-agent-fixture', choices: [{ index: 0, finish_reason: finish, message }], usage }))
+    return
+  }
+  response.setHeader('Content-Type', 'text/event-stream')
+  const frame = (delta, reason = null, used = null) => response.write(`data: ${JSON.stringify({
+    id: responseId, object: 'chat.completion.chunk', created: 1, model: 'offline-agent-fixture',
+    choices: [{ index: 0, delta, finish_reason: reason }], usage: used,
+  })}\n\n`)
+  if (message.tool_calls) {
+    frame({ role: 'assistant', tool_calls: message.tool_calls.map((call, index) => ({ ...call, index })) })
+  } else {
+    const content = message.content
+    let split = Math.floor(content.length / 2)
+    try {
+      const paragraph = JSON.stringify(JSON.parse(content).paragraphs[0])
+      split = content.indexOf(paragraph) + paragraph.length
+    } catch { /* 非法最终 JSON 仍交给后端拒绝，不修补模型回复。 */ }
+    frame({ role: 'assistant', content: content.slice(0, split) })
+    if (usedMode === 'stream-hold') await new Promise(resolve => {
+      const release = () => { clearTimeout(timer); heldBodies.delete(release); resolve() }
+      const timer = setTimeout(release, 10_000)
+      heldBodies.add(release)
+    })
+    else await new Promise(resolve => setTimeout(resolve, usedMode.includes('-gap') ? 450 : 100))
+    frame({ content: content.slice(split) })
+  }
+  frame({ content: '' }, finish, usage)
+  response.end('data: [DONE]\n\n')
+}
 const server = createServer(async (request, response) => {
   let raw = ''
   for await (const chunk of request) {
@@ -16,7 +51,8 @@ const server = createServer(async (request, response) => {
     mode = JSON.parse(raw).mode
     assert.ok(['valid', 'slow', 'invalid', 'failure', 'failure-after-tool', 'invalid-financial-number', 'invalid-financial-percent',
       'invalid-financial-number-gap', 'invalid-financial-percent-gap', 'invalid-financial-no-citation',
-      'invalid-financial-no-citation-gap', 'missing-comparison', 'invalid-summary-identifiers'].includes(mode))
+      'invalid-financial-no-citation-gap', 'missing-comparison', 'invalid-summary-identifiers', 'stream-hold'].includes(mode))
+    if (mode !== 'stream-hold') for (const release of heldBodies) release()
   }
   if (request.url === '/_test') {
     response.setHeader('Content-Type', 'application/json')
@@ -88,7 +124,7 @@ const server = createServer(async (request, response) => {
     if (usedMode === 'failure' || usedMode === 'failure-after-tool' && toolResponses.length) {
       response.writeHead(503).end('{"error":{"message":"offline fixture failure"}}'); return
     }
-    response.end(JSON.stringify({ id: `offline-${calls}`, object: 'chat.completion', created: 1, model: 'offline-agent-fixture', choices: [{ index: 0, finish_reason: finish, message }], usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 } }))
+    await finishCompletion(response, body, message, finish, usedMode)
     return
   }
   assert.equal(body.response_format.type, 'json_object')

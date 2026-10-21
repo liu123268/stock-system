@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 import com.stock.system.agent.service.ResearchModelExecution;
 import com.stock.system.agent.service.ResearchExperimentBudget;
 import org.springframework.beans.factory.ObjectProvider;
@@ -49,5 +50,12 @@ public class ResearchAiConfiguration {
     RetryTemplate researchModelRetryTemplate() {
         // 这里限制的是“首次尝试之后的重试次数”，0 才是只发一次。
         return new RetryTemplate(RetryPolicy.withMaxRetries(0));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(WebClient.Builder.class)
+    WebClient.Builder researchModelWebClientBuilder() {
+        return WebClient.builder().clientConnector(new ResearchModelStreamConnector(experimentBudgets))
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(65_536));
     }
 }

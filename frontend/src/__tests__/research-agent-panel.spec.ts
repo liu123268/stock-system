@@ -51,11 +51,16 @@ describe('研究助手的个人记录与迟到响应', () => {
     await wrapper.find('textarea').setValue('停止后继续编辑的问题')
     await wrapper.find('.agent-question').trigger('submit')
     const requestId = api.askAgent.mock.calls[0]![1]
-    const options = api.askAgent.mock.calls[0]![4] as { signal: AbortSignal; onProgress: (value: { stage: string }) => void }
+    const options = api.askAgent.mock.calls[0]![4] as { signal: AbortSignal; onProgress: (value: { stage: string }) => void; onDraft: (value: { paragraphs: string[] }) => void }
     options.onProgress({ stage: 'GENERATING' }); await flushPromises()
     expect(wrapper.text()).toContain('正在整理回答…')
+    options.onDraft({ paragraphs: ['第一段已完成核对。'] }); await flushPromises()
+    expect(wrapper.find('.agent-draft').text()).toContain('生成中，完成后可查看依据。')
+    expect(wrapper.find('.agent-draft').attributes('aria-busy')).toBe('true')
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(1)
     cancellation.mockResolvedValueOnce({ data: { data: { requestId, run: { ...answer(11), requestId, status: 'RUNNING', answer: null, cancelRequested: true } } } })
     await wrapper.find('.agent-stop').trigger('click'); await flushPromises()
+    expect(wrapper.find('.agent-draft').exists()).toBe(false)
     expect(cancellation).toHaveBeenCalledExactlyOnceWith(target, requestId)
     expect(wrapper.find('.agent-stop').text()).toBe('正在停止…')
     options.onProgress({ stage: 'SAVING' }); await flushPromises()
@@ -67,6 +72,24 @@ describe('研究助手的个人记录与迟到响应', () => {
     expect(wrapper.find('.agent-stop').exists()).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(document.activeElement).toBe(wrapper.find('textarea').element)
+    expect(api.askAgent).toHaveBeenCalledOnce()
+  })
+
+  it('临时回答失败后撤掉，只保留此前保存的记录和输入', async () => {
+    let reject!: (reason: unknown) => void
+    api.askAgent.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    api.restoreAgent.mockResolvedValue(session([answer()]))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('需要依据的问题')
+    await wrapper.find('.agent-question').trigger('submit')
+    const options = api.askAgent.mock.calls[0]![4] as { onDraft: (value: { paragraphs: string[] }) => void }
+    options.onDraft({ paragraphs: ['尚未保存的临时正文。'] }); await flushPromises()
+    expect(wrapper.find('.agent-draft').text()).toContain('尚未保存的临时正文。')
+    reject(new ApiError('RESEARCH_AGENT_INVALID_RESULT', '研究助手未返回可核对的完整结果'))
+    await flushPromises()
+    expect(wrapper.find('.agent-draft').exists()).toBe(false)
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(1)
+    expect(wrapper.find('textarea').element.value).toBe('需要依据的问题')
     expect(api.askAgent).toHaveBeenCalledOnce()
   })
 

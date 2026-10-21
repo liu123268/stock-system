@@ -31,7 +31,7 @@ import java.util.*;
 /** 所有查询由当前 Java 对象绑定权限范围；模型只能提出有界工具请求。 */
 @Service
 public class ResearchQuestionService {
-    public static final String VERSION = "research-question-20261021-v16-cited-numbers";
+    public static final String VERSION = "research-question-20261021-v18-stream-diagnostics";
     public static final int MAX_MODEL_CALLS = 4;
     public static final int MAX_TOOL_ATTEMPTS = 3;
     private final StockResearchSourceService sources;
@@ -105,7 +105,6 @@ public class ResearchQuestionService {
         ResearchQuestionModel model = models.getIfAvailable();
         if (model == null) throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
         // 运行入口拥有并关闭上下文，本次追问只借用同一个实例。
-        //noinspection resource
         var execution = Objects.requireNonNull(ResearchModelExecution.current());
         var messages = new ArrayList<Message>();
         messages.add(new SystemMessage(SYSTEM));
@@ -134,7 +133,22 @@ public class ResearchQuestionService {
             revalidate(context);
             requireMessageSize(messages);
             boolean allowTools = round < MAX_MODEL_CALLS - 1 && attempts < MAX_TOOL_ATTEMPTS;
-            AssistantMessage response = model.call(List.copyOf(messages), allowTools ? definitions() : List.of());
+            var offeredTools = allowTools ? definitions() : List.<ToolCallback>of();
+            AssistantMessage response;
+            if (execution.streamsBody()) {
+                boolean[] publish = {true};
+                var draft = new ResearchReplyDraft(strict, paragraphs -> {
+                    if (!publish[0]) return;
+                    try { stateCheck.run(); revalidate(context); }
+                    catch (RuntimeException changed) { execution.draft(List.of()); throw changed; }
+                    ResearchReply checked;
+                    try { checked = parseReply(json.writeValueAsString(new ResearchReply(paragraphs, List.of())), context, false); }
+                    catch (RuntimeException invalid) { publish[0] = false; execution.draft(List.of()); return; }
+                    try { stateCheck.run(); execution.draft(checked.paragraphs().stream().map(item -> item.text()).toList()); }
+                    catch (RuntimeException changed) { execution.draft(List.of()); throw changed; }
+                }, () -> { publish[0] = false; execution.draft(List.of()); });
+                response = model.stream(List.copyOf(messages), offeredTools, draft::accept);
+            } else response = model.call(List.copyOf(messages), offeredTools);
             if (!response.hasToolCalls()) {
                 execution.stage(ResearchAgentProgress.Stage.VALIDATING);
                 ResearchReply reply = parseReply(response.getText(), context);
@@ -146,6 +160,7 @@ public class ResearchQuestionService {
                         LocalDateTime.now(), context.quote, new FollowUp(question, reply,
                         context.evidence.values().stream().filter(source -> cited.contains(source.sourceId())).toList(), context.omitted));
             }
+            execution.draft(List.of()); // 本轮最终选择工具时，撤掉尚未成为答案的临时段落。
             if (!allowTools || response.getToolCalls().size() > 8) throw new BusinessException(ErrorCode.RESEARCH_AGENT_EXECUTION_LIMIT);
             for (var call : response.getToolCalls()) {
                 validateToolIdentity(call.id(), call.name(), call.type(), callIds);
@@ -300,6 +315,9 @@ public class ResearchQuestionService {
         if (json.writeValueAsBytes(payload).length > 60 * 1024) throw new BusinessException(ErrorCode.RESEARCH_AGENT_SOURCE_LIMIT_EXCEEDED);
     }
     private ResearchReply parseReply(String text, Context context) {
+        return parseReply(text, context, true);
+    }
+    private ResearchReply parseReply(String text, Context context, boolean diagnose) {
         String stage = "QUESTION_REPLY_SIZE";
         try {
             if (text == null || text.length() > 32_000) throw new IllegalArgumentException();
@@ -309,11 +327,15 @@ public class ResearchQuestionService {
             stage = "QUESTION_REPLY_CONTRACT";
             if (!payload.isObject()) throw new IllegalArgumentException();
             var reply = strict.treeToValue(payload, ResearchReply.class);
+            stage = "QUESTION_REPLY_COLLECTIONS";
             if (reply.paragraphs() == null || reply.paragraphs().isEmpty() || reply.paragraphs().size() > 8
                     || reply.missingInformation() == null || reply.missingInformation().size() > 8) throw new IllegalArgumentException();
             var ids = new HashSet<>(context.references.keySet()); ids.addAll(context.evidence.keySet());
             for (var paragraph : reply.paragraphs()) {
-                if (paragraph == null || invalidText(paragraph.text()) || paragraph.sourceIds() == null
+                stage = "QUESTION_REPLY_PARAGRAPH";
+                if (paragraph == null || invalidText(paragraph.text())) throw new IllegalArgumentException();
+                stage = "QUESTION_REPLY_SOURCES";
+                if (paragraph.sourceIds() == null
                         || paragraph.sourceIds().size() > 8 || new HashSet<>(paragraph.sourceIds()).size() != paragraph.sourceIds().size()
                         || paragraph.sourceIds().stream().anyMatch(id -> !ids.contains(id))) throw new IllegalArgumentException();
                 var cited = paragraph.sourceIds().stream().map(context.evidence::get).filter(Objects::nonNull).toList();
@@ -323,8 +345,8 @@ public class ResearchQuestionService {
                         .filter(opinion -> opinionIds.contains(opinion.id())).map(json::writeValueAsString).toList();
                 stage = "QUESTION_REPLY_FINANCIAL";
                 ResearchFinancialAnswerNumbers.validate(paragraph.text(), cited, originalOpinions, context.financialFactsRead);
-                stage = "QUESTION_REPLY_CONTRACT";
             }
+            stage = "QUESTION_REPLY_GAPS";
             if (reply.missingInformation().stream().anyMatch(this::invalidText)) throw new IllegalArgumentException();
             // 缺口同样是要展示和保存的模型文字，不能成为财务数字校验的旁路。
             // 只使用最终答案已引用的来源，保证保存后的依赖和本次校验范围一致。
@@ -337,9 +359,10 @@ public class ResearchQuestionService {
                     .filter(opinion -> replyOpinionIds.contains(opinion.id())).map(json::writeValueAsString).toList();
             stage = "QUESTION_REPLY_FINANCIAL_GAPS";
             for (String gap : reply.missingInformation()) ResearchFinancialAnswerNumbers.validate(gap, replyEvidence, replyOpinions, context.financialFactsRead);
-            stage = "QUESTION_REPLY_CONTRACT";
+            stage = "QUESTION_REPLY_REPORT_GROUNDING";
             return emptyReportReply(context).orElseGet(() -> ResearchReportAnswerSupport.ground(reply, context.evidence));
         } catch (RuntimeException failure) {
+            if (!diagnose) throw failure;
             // Only a fixed stage is retained, never model text or the parser's exception message.
             throw ResearchModelFailure.translate(new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT), stage,
                     failure instanceof ResearchFinancialAnswerNumbers.Rejected rejected ? rejected.rule() : null);

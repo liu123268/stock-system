@@ -20,6 +20,19 @@ test('没有数据库、Key或服务也可只读打印完整计划', () => {
   assert.equal(plan.realBudget, 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER')
   assert.equal(plan.semanticReview, 'REQUIRED')
 })
+
+test('流式定向验收保留原题、预算和逐题审查，不默认替代同步回归', () => {
+  const result = execute(['--dry-run', '--stream-answers', '--review-each', '--cases=moutai-annual,quote-focused-gaps'])
+  assert.equal(result.status, 0, result.stderr)
+  const plan = JSON.parse(result.stdout)
+  assert.equal(plan.transport, 'NATIVE_SSE_PARAGRAPHS')
+  assert.equal(plan.reviewMode, 'SEQUENTIAL_SOURCE_REVIEW')
+  assert.equal(plan.realBudget, 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER')
+  assert.equal(plan.maxQuestions, 2)
+  const missingReview = execute(['--stream-answers'], { AGENT_FINANCIAL_MODEL_PROBE: 'true' })
+  assert.notEqual(missingReview.status, 0)
+  assert.match(missingReview.stderr, /流式真实检查须逐题核对来源后放行/)
+})
 test('未显式启用真实财务检查时，在连接服务或创建数据之前拒绝', () => {
   const result = execute([])
   assert.notEqual(result.status, 0)

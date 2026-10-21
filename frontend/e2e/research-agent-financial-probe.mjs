@@ -10,7 +10,8 @@ import { artifactHash, buildScorecard, writeReviewArtifacts } from '../../script
 import { awaitSourceReview } from '../../scripts/agent-quality/review-gate.mjs'
 
 const args = process.argv.slice(2)
-assert.ok(args.every(arg => ['--dry-run', '--review-each'].includes(arg) || ['--cases=', '--suite=', '--expected-unknown=', '--fixture-fail-at='].some(prefix => arg.startsWith(prefix))), '不接受未知检查参数')
+assert.ok(args.every(arg => ['--dry-run', '--review-each', '--stream-answers'].includes(arg) || ['--cases=', '--suite=', '--expected-unknown=', '--fixture-fail-at='].some(prefix => arg.startsWith(prefix))), '不接受未知检查参数')
+const streamAnswers = args.includes('--stream-answers')
 const suites = args.filter(arg => arg.startsWith('--suite='))
 assert.ok(suites.length <= 1, '只能指定一次检查题库')
 const suite = suites.length ? suites[0].slice('--suite='.length) : 'financial'
@@ -41,6 +42,7 @@ if (fixtureFailAt !== undefined) {
 const plan = { cases: cases.map(item => ({ ...item, expected: expectedFor(item, catalog) })), pricing,
   maxQuestions: executions.length, maxModelCallsPerQuestion: 4, automaticRetry: false, expectedUnknownReservations,
   reviewMode: reviewEach ? 'SEQUENTIAL_SOURCE_REVIEW' : 'POST_RUN_REVIEW_REQUIRED',
+  ...(streamAnswers ? { transport: 'NATIVE_SSE_PARAGRAPHS' } : {}),
   ...(fixtureFailAt !== undefined ? { fixtureFailAt } : {}),
   ...(suite !== 'financial' ? { suite } : {}),
   ...(suite === 'closure' ? { fixtureVersion: closureSuite.fixtureVersion, executions: executions.map(item => ({
@@ -53,11 +55,13 @@ if (args.includes('--dry-run')) {
   process.exit(0)
 }
 if (mode === 'real') {
+  if (streamAnswers) assert.equal(reviewEach, true, '流式真实检查须逐题核对来源后放行')
   if (suite === 'reports') assert.equal(process.env.AGENT_REPORT_MODEL_PROBE, 'true', '真实报告原文检查须另行显式启用，并核对该轮授权')
   else assert.equal(process.env.AGENT_FINANCIAL_MODEL_PROBE, 'true', '真实财务资料检查须另行显式启用，并核对该轮授权')
   if (suite === 'closure') assert.equal(reviewEach, true, '综合真实验收须逐题核对正文和依据后放行')
 }
 const continuationPath = process.env.AGENT_FINANCIAL_CONTINUE_FROM
+if (streamAnswers) assert.ok(!continuationPath, '流式验收不复用其他传输或旧批次答案')
 const previous = continuationPath ? JSON.parse(await readFile(resolve(continuationPath), 'utf8')) : null
 const previousReview = previous && suite === 'closure' ? JSON.parse(await readFile(resolve(dirname(continuationPath), 'review.json'), 'utf8')) : undefined
 const results = previous ? continuationRows(previous, mode, catalog, cases, previousReview) : []
@@ -78,11 +82,30 @@ let after = null
 let owner
 let databaseRemaining
 const sourceFixtures = []
+const streamEvidence = []
+let streamBrowser, streamPage
 const sql = query => execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', [
   '--user=root', '--host=localhost', '--port=3306', '--database=stock_system_test',
   '--default-character-set=utf8mb4', '--batch', '--skip-column-names', `--execute=${query}`,
 ], { encoding: 'utf8', env: { ...process.env, MYSQL_PWD: process.env.DB_PASSWORD }, windowsHide: true }).trim()
 async function api(path, token, method = 'GET', body) {
+  if (streamAnswers && method === 'POST' && path.endsWith('/messages')) {
+    const observed = await streamPage.evaluate(async ({ path, token, body }) => {
+      const { agentStream } = await import('/src/api/agent-stream.ts')
+      const { TOKEN_STORAGE_KEY } = await import('/src/api/http.ts')
+      localStorage.setItem(TOKEN_STORAGE_KEY, token)
+      const started = performance.now()
+      let draftEvents = 0, firstDraftMillis = null
+      try {
+        const run = await agentStream(`${path}/stream`, body, { signal: AbortSignal.timeout(75_000), onProgress: () => {},
+          onDraft: draft => { if (draft.paragraphs.length) { draftEvents++; firstDraftMillis ??= performance.now() - started } } })
+        return { run, draftEvents, firstDraftMillis, resultMillis: performance.now() - started }
+      } catch (error) { return { failure: { code: error.code, message: error.message }, draftEvents, firstDraftMillis } }
+    }, { path, token, body })
+    streamEvidence.push({ requestId: body.requestId, ...observed, run: undefined })
+    assert.ok(!observed.failure, `流式返回失败：${observed.failure?.code}`)
+    return observed.run
+  }
   const response = await fetch(`${backend}/api${path}`, { method, signal: AbortSignal.timeout(75_000),
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}) })
@@ -115,6 +138,12 @@ budgetExisted = Number(sql('select count(*) from agent_budget')) > 0
 await mkdir(output, { recursive: true })
 await save()
 try {
+  if (streamAnswers) {
+    const { chromium } = await import('playwright-core')
+    streamBrowser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+    streamPage = await streamBrowser.newPage()
+    await streamPage.goto(`${frontend}/login`)
+  }
   for (const [index, name] of names.entries())
     await api('/auth/register', null, 'POST', { username: name, password: 'TestPass123', nickname: index ? '自造成员乙' : '自造成员甲' })
   owner = await api('/auth/login', null, 'POST', { username: names[0], password: 'TestPass123' })
@@ -173,7 +202,8 @@ try {
     const traceJson = sql(`select json_object('modelCalls',model_calls,'toolCalls',tool_calls,'inputTokens',input_tokens,'outputTokens',output_tokens,'costUpperYuan',cost_upper_yuan,'reservedYuan',reserved_yuan,'model',model,'promptVersion',prompt_version,'tools',cast(tool_trace_json as json),'failure',cast(model_failure_json as json)) from agent_run where user_id=${id(owner.userId)} and request_id='${requestId}'`)
     const row = traceJson ? JSON.parse(traceJson) : { modelCalls: 0, toolCalls: 0, tools: [], failure: null }
     const result = { id: testCase.executionId, caseId: testCase.id, sample: testCase.sample, elapsedMillis: Date.now() - started,
-      expected: expectedFor(testCase, catalog), fixtureFingerprint: artifactHash(sourceFixtures), trace: row, run }
+      expected: expectedFor(testCase, catalog), fixtureFingerprint: artifactHash(sourceFixtures), trace: row, run,
+      ...(streamAnswers ? { streaming: streamEvidence.find(item => item.requestId === requestId) } : {}) }
     results.push(result); await save()
     if (dispatchError) throw dispatchError
     result.checks = checkProgramResult(testCase, run, row, catalog, sourceFixtures)
@@ -198,6 +228,9 @@ try {
   }
   success = true
 } finally {
+  let browserCloseFailed = false
+  try { if (streamBrowser) await streamBrowser.close() }
+  catch { browserCloseFailed = true; success = false }
   if (mode === 'real' && owner) {
     try { after = await api('/test/agent-budget', owner.accessToken) }
     catch { after = { unavailable: true } }
@@ -253,5 +286,6 @@ try {
     reusedCases: [...alreadyRun], newCases: results.filter(item => !alreadyRun.has(item.id)).length,
     paidRequests: mode === 'fixture' ? 0 : results.filter(item => !alreadyRun.has(item.id)).reduce((sum, item) => sum + item.trace.modelCalls, 0),
     budget: mode === 'real' ? 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER_PRESERVED' : 'LOCAL_FIXTURE' }, null, 2))
+  assert.equal(browserCloseFailed, false, '本轮流式浏览器未正常关闭，数据库清理已独立执行')
 }
 process.stdout.write(JSON.stringify({ success, cases: results.length, databaseRemaining, mode, output }) + '\n')

@@ -73,7 +73,7 @@ describe('带认证头的助手 SSE', () => {
   it('限制未分行事件和总字节数', async () => {
     response(`data: ${'a'.repeat(256 * 1024 + 1)}`, 300 * 1024)
     await expect(execute()).rejects.toBeInstanceOf(ApiError)
-    response(`:${'a'.repeat(1000)}\n\n`.repeat(600), 1000)
+    response(`:${'a'.repeat(1000)}\n\n`.repeat(2200) + frame('result', completed), 1000)
     await expect(execute()).rejects.toBeInstanceOf(ApiError)
   })
 
@@ -81,6 +81,25 @@ describe('带认证头的助手 SSE', () => {
     response(frame('result', completed) + ': 仍有后续心跳\n\n', 1)
     expect(await execute()).toEqual(run)
     expect(cancelled).toBe(true)
+  })
+
+  it('临时段落按快照替换，空快照撤掉正文，只有 result 结束请求', async () => {
+    const onDraft = vi.fn<() => void>()
+    const first = { requestId: id, sequence: 2, runId: 7, paragraphs: ['已核对的中文段落😀。'] }
+    const empty = { ...first, sequence: 3, paragraphs: [] }
+    response(frame('progress', progress) + frame('draft', first) + frame('draft', empty) + frame('result', { ...completed, sequence: 4 }), 1)
+    expect(await agentStream('/agent/messages/stream', { requestId: id }, {
+      signal: new AbortController().signal, onProgress: vi.fn<() => void>(), onDraft,
+    })).toEqual(run)
+    expect(onDraft).toHaveBeenNthCalledWith(1, first)
+    expect(onDraft).toHaveBeenNthCalledWith(2, empty)
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it.each([null, [''], [123], Array(9).fill('段落'), ['长'.repeat(2001)]])('拒绝不完整或超限的临时正文 %j', async (paragraphs) => {
+    response(frame('progress', progress) + frame('draft', { requestId: id, sequence: 2, runId: 7, paragraphs }))
+    await expect(execute()).rejects.toBeInstanceOf(ApiError)
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it('一个网络块可以携带多项合规事件，总大小不当作单事件大小', async () => {
