@@ -24,7 +24,7 @@ final class ResearchFinancialAnswerNumbers {
     private static final Pattern YEAR = Pattern.compile("(?<!\\d)(?:FY\\s*(\\d{4})(?!\\d)|(\\d{4})\\s*(?:年|财年|財年))", Pattern.CASE_INSENSITIVE);
     private ResearchFinancialAnswerNumbers() {}
     private record Money(String amount, String unit, String currency) {}
-    enum Rule { UNSUPPORTED_LITERAL, PERCENT_UNIT_REQUIRED, MONEY_BASIS_MISMATCH, UNSUPPORTED_PERCENTAGE,
+    enum Rule { CITED_SOURCE_REQUIRED, UNSUPPORTED_LITERAL, PERCENT_UNIT_REQUIRED, MONEY_BASIS_MISMATCH, UNSUPPORTED_PERCENTAGE,
         SCIENTIFIC_LITERAL, CONFLICTING_CURRENCY }
     static final class Rejected extends IllegalArgumentException {
         private final Rule rule;
@@ -33,7 +33,12 @@ final class ResearchFinancialAnswerNumbers {
     }
 
     static void validate(String text, List<Evidence> cited, List<String> opinionTexts) {
-        if (cited.stream().noneMatch(source -> source.financialFacts() != null)) return;
+        validate(text, cited, opinionTexts, false);
+    }
+
+    /** 实际财务取数只启用检查，不给未引用的金额授权；纯概念或报告问题继续沿原边界。 */
+    static void validate(String text, List<Evidence> cited, List<String> opinionTexts, boolean financialFactsRead) {
+        if (!financialFactsRead && cited.stream().noneMatch(source -> source.financialFacts() != null)) return;
         var numbers = new HashSet<String>();
         var money = new HashSet<Money>();
         var percentages = new HashSet<String>();
@@ -80,6 +85,8 @@ final class ResearchFinancialAnswerNumbers {
         opinionTexts.forEach(original -> addOriginalText(original, numbers, money, percentages));
         opinionTexts.forEach(original -> addNumbers(original, nonPercentageNumbers));
         String normalized = normalize(text);
+        if (cited.isEmpty() && opinionTexts.isEmpty() && NUMBERS.matcher(normalized).find())
+            throw new Rejected(Rule.CITED_SOURCE_REQUIRED);
         var missingYearPositions = new HashSet<String>();
         var years = YEAR.matcher(normalized);
         while (years.find()) {

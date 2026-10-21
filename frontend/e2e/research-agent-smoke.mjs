@@ -207,6 +207,8 @@ try {
     { mode: 'invalid-financial-percent', name: 'percentage', rule: 'PERCENT_UNIT_REQUIRED' },
     { mode: 'invalid-financial-number-gap', name: 'number-gap', rule: 'UNSUPPORTED_LITERAL', stage: 'QUESTION_REPLY_FINANCIAL_GAPS' },
     { mode: 'invalid-financial-percent-gap', name: 'percentage-gap', rule: 'PERCENT_UNIT_REQUIRED', stage: 'QUESTION_REPLY_FINANCIAL_GAPS' },
+    { mode: 'invalid-financial-no-citation', name: 'no-citation', rule: 'CITED_SOURCE_REQUIRED' },
+    { mode: 'invalid-financial-no-citation-gap', name: 'no-citation-gap', rule: 'CITED_SOURCE_REQUIRED', stage: 'QUESTION_REPLY_FINANCIAL_GAPS' },
   ]) {
     await fixtureState(guard.mode)
     const beforeNumberGuard = (await fixtureState()).calls

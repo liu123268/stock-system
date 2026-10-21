@@ -78,6 +78,8 @@ Redis（WSL2）：6380
 
 配置职责如下：`application.properties` 保存两边共用的非敏感配置，各 profile 文件保存数据库地址和该环境的行情模式；本机数据库用户名固定为原有的 `root`，它不是秘密，生产可用 Spring Boot 标准属性 `SPRING_DATASOURCE_USERNAME` 覆盖为最小权限账号。数据库密码和 JWT 签名密钥只从 `DB_PASSWORD`、`JWT_SECRET` 环境变量读取，不能写回 properties 或启动参数。默认 profile 是 dev，所以普通启动仍进入开发库；自动化测试必须显式进入 test。开发默认 `stock-system.market.mode=longbridge`，测试固定 `mock`；开发可通过 `MARKET_MODE=directory` 暂停外部报价，或用 `MARKET_MODE=mock` 明确进入模拟模式。
 
+IDEA 的 SQL 列名检查使用数据源结构缓存。迁移后若运行正常、编辑器仍提示列不存在，先核对 SQL 所属库及实际表字段；e2e 脚本绑定的是 stock_system_test。确认字段已存在后，在 Database 面板右键对应数据源，选择 `Diagnostics → Force Refresh`（Windows 默认 `Ctrl+Shift+F5`），重新加载表结构后再运行代码检查。该操作刷新 IDE 的元数据，具体菜单见 [JetBrains 数据源说明](https://www.jetbrains.com/help/idea/databases.html)。
+
 启动前在同一个 PowerShell 窗口提供数据库密码和至少 32 个 UTF-8 字节的开发密钥；尖括号内容需要替换为你自己的值，不能把示例原样复制：
 
 ```powershell

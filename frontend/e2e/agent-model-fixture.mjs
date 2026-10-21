@@ -15,7 +15,8 @@ const server = createServer(async (request, response) => {
   if (request.url === '/_test' && request.method === 'POST') {
     mode = JSON.parse(raw).mode
     assert.ok(['valid', 'slow', 'invalid', 'failure', 'failure-after-tool', 'invalid-financial-number', 'invalid-financial-percent',
-      'invalid-financial-number-gap', 'invalid-financial-percent-gap', 'missing-comparison', 'invalid-summary-identifiers'].includes(mode))
+      'invalid-financial-number-gap', 'invalid-financial-percent-gap', 'invalid-financial-no-citation',
+      'invalid-financial-no-citation-gap', 'missing-comparison', 'invalid-summary-identifiers'].includes(mode))
   }
   if (request.url === '/_test') {
     response.setHeader('Content-Type', 'application/json')
@@ -72,7 +73,11 @@ const server = createServer(async (request, response) => {
         return { text: '本次查询未取得可用资料。', sourceIds: [] }
       })
       const financial = toolResponses.find(result => result.financialFacts)?.financialFacts
-      const gap = usedMode === 'invalid-financial-number-gap' ? '尚需核对营业收入1688.3810251459亿元是否准确。'
+      if (usedMode === 'invalid-financial-no-citation' || usedMode === 'invalid-financial-no-citation-gap') {
+        paragraphs.forEach(paragraph => { paragraph.sourceIds = [] })
+        if (usedMode === 'invalid-financial-no-citation') paragraphs[0].text = '营业收入168838102514.79元。'
+      }
+      const gap = usedMode === 'invalid-financial-number-gap' || usedMode === 'invalid-financial-no-citation-gap' ? '尚需核对营业收入1688.3810251459亿元是否准确。'
         : usedMode === 'invalid-financial-percent-gap' ? `尚需核对同比变化${financial.facts[0].change.percent}。`
         : usedMode === 'missing-comparison' ? '未取得2023年比较列，所问同比尚无法核对。'
         : financial ? '未读取订单资料，财务数字不证明订单变化。' : '未读取财报与公告，无法确认实际增长。'

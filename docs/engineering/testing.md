@@ -64,7 +64,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 财务缺失比较期的年份检查保留合法中文／FY 年份、中文标点与真实千分位，也拒绝把所需年份作为金额、百分比、裸数或其他年份。ResearchFinancialQuestionTest 走实际工具循环验证，ResearchModelFailureTest 检查旧诊断 JSON 的兼容与空规则省略；Chrome 的 missing-comparison 替身检查经 SSE 显示、成功入库、刷新恢复且模型调用不增，原错误金额／漏百分号的拒绝检查同时保留。真实失败未留原始正文时，离线同阶段复现不能自动认作该次真实根因。
 
-带财务引用答案的缺口区域也必须检查数字。ResearchFinancialQuestionTest 覆盖 `missingInformation` 中虚构换算、错单位、缺百分号和错误百分比的拒绝，以及合法缺失比较年、原报单位和纯报告说明的保留；Chrome 的 invalid-financial-number-gap／invalid-financial-percent-gap 走原 SSE，核对 FINANCIAL_GAPS 安全诊断、已知用量、错误消息零入库、旧答案保留及无自动重试。该检查只证明程序边界，不是新增真实模型质量采样。
+财务数字保护同时覆盖正文、资料缺口和省略引用的情况。ResearchFinancialQuestionTest 覆盖 `missingInformation` 中虚构换算、错单位、缺百分号和错误百分比的拒绝；实际取得财务后删除引用不能关闭校验，未引用的资产快照不能授权最终缺口中的金额。正例保留缺失比较年、原报单位、纯报告说明、只使用合法报价引用及不查询财务的概念定义。Chrome 的 invalid-financial-number-gap／invalid-financial-percent-gap 和 invalid-financial-no-citation／invalid-financial-no-citation-gap 走原 SSE，核对固定诊断、已知用量、错误消息零入库、旧答案保留及无自动重试。该检查只证明程序边界，不是新增真实模型质量采样。
 
 ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号 ID 归一为本地别名数字；不连模型或数据库。它保留报价 AVAILABLE 却声称未提供行情、正文带内部编号的旧输出，验证新编号检查拒绝，并确认新版 Prompt 输入包含同一可用报价。ResearchSummaryServiceTest 覆盖可用／不可用报价和实际昵称，Validator 测试保留原文 M1 术语等合法字面。Chrome 的 invalid-summary-identifiers 走 SSE 验证旧答案保留、SUMMARY_REPLY_CONTRACT 安全诊断和错误不入消息；真实表达质量仍需按逐题门禁复测，不能用回放冒充新模型回答。
 

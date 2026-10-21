@@ -33,6 +33,7 @@ import static org.mockito.Mockito.*;
 class ResearchFinancialQuestionTest {
     private UnaryOperator<String> replyEnvelope = UnaryOperator.identity();
     private List<String> missingInformation = List.of();
+    private boolean omitCitations;
     private List<ResearchModelExecution.ToolTrace> toolTraces = List.of();
     private final StockResearchSourceService sources = mock(StockResearchSourceService.class);
     private final ResearchMarketDataService market = mock(ResearchMarketDataService.class);
@@ -338,6 +339,65 @@ class ResearchFinancialQuestionTest {
         verifyNoInteractions(financials);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"营业收入1688.3810251459亿元。", "营业收入168838102514.79元。", "同比变化-1.2060%。"})
+    void removingFinancialCitationsCannotDisableNumericValidation(String text) {
+        omitCitations = true;
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")), text);
+        assertRejectedFinancialReply("QUESTION_REPLY_FINANCIAL", "CITED_SOURCE_REQUIRED");
+    }
+
+    @Test void removingAllCitationsCannotDisableValidationOfNumbersInMissingInformation() {
+        omitCitations = true;
+        missingInformation = List.of("尚需核对营业收入1688.3810251459亿元是否准确。");
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")));
+        assertRejectedFinancialReply("QUESTION_REPLY_FINANCIAL_GAPS", "CITED_SOURCE_REQUIRED");
+    }
+
+    @Test void aFinancialLookupDoesNotPreventAReplyUsingOnlyItsCitedQuote() {
+        when(market.readLatestQuote(1L, 2L, 20L)).thenReturn(new ResearchMarketDataService.Quote("AVAILABLE", "600519.SH",
+                new BigDecimal("123"), "CNY", java.time.LocalDateTime.now(), "MOCK", true, null));
+        replyEnvelope = raw -> {
+            var reply = json.readValue(raw, ResearchReply.class);
+            String quoteId = reply.paragraphs().get(0).sourceIds().get(1);
+            return json.writeValueAsString(new ResearchReply(List.of(new ResearchSummary.Item(
+                    "本次模拟报价为123元人民币，不代表实际行情。", List.of(quoteId))), List.of()));
+        };
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}"),
+                call("q1", "read_latest_quote", "{}")));
+        var result = answer();
+        assertThat(result.followUp().evidence()).extracting(Evidence::type).containsExactly("QUOTE");
+        assertThat(result.followUp().reply().paragraphs().get(0).text()).contains("123元人民币");
+    }
+
+    @Test void unusedFinancialFactsCannotAuthorizeNumbersInTheSavedReply() {
+        var catalog = new OfficialFinancialReportCatalog();
+        var revenue = catalog.read("600519.SH", FinancialPeriod.ANNUAL, "FY 2025", List.of(FinancialMetric.REVENUE));
+        var assets = catalog.read("600519.SH", FinancialPeriod.ANNUAL, "FY 2025", List.of(FinancialMetric.TOTAL_ASSETS));
+        when(financials.read(anyLong(), anyLong(), anyLong(), any(), any(), any())).thenReturn(revenue, assets);
+        missingInformation = List.of("尚需核对总资产" + assets.facts().get(0).current().amount().toPlainString() + "元是否足够。");
+        replyEnvelope = raw -> {
+            var reply = json.readValue(raw, ResearchReply.class);
+            return json.writeValueAsString(new ResearchReply(List.of(new ResearchSummary.Item(
+                    reply.paragraphs().get(0).text(), List.of(reply.paragraphs().get(0).sourceIds().get(0)))), reply.missingInformation()));
+        };
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\",\"metrics\":[\"REVENUE\"]}"),
+                call("f2", "read_financial_facts", "{\"series\":\"ANNUAL\",\"metrics\":[\"TOTAL_ASSETS\"]}")));
+        assertRejectedFinancialReply("QUESTION_REPLY_FINANCIAL_GAPS", "UNSUPPORTED_LITERAL");
+    }
+
+    @Test void aConceptReplyCanUseDefinitionNumbersWithoutQueryingFinancialFacts() {
+        when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            //noinspection resource
+            var execution = ResearchModelExecution.current(); execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
+            return new AssistantMessage(json.writeValueAsString(new ResearchReply(List.of(new ResearchSummary.Item(
+                    "同比变化率的定义是本期减上年同期，再除以上年同期并乘以100%。", List.of())), List.of())));
+        });
+        assertThat(answer().followUp().reply().paragraphs().get(0).text()).contains("100%");
+        verify(model).call(anyList(), anyList());
+        verifyNoInteractions(financials, market, reports);
+    }
+
     @Test void missingAnnualComparisonCanExplainItsExpectedYearThroughTheNativeToolLoop() {
         var missing = new OfficialFinancialReportCatalog().read("600519.SH", FinancialPeriod.ANNUAL, "FY 2024", List.of(FinancialMetric.REVENUE));
         when(financials.read(anyLong(), anyLong(), anyLong(), any(), any(), any())).thenReturn(missing);
@@ -408,6 +468,17 @@ class ResearchFinancialQuestionTest {
     private static AssistantMessage.ToolCall call(String id, String name, String args) {
         return new AssistantMessage.ToolCall(id, "function", name, args);
     }
+    private void assertRejectedFinancialReply(String stage, String rule) {
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+            assertThat(execution.failure.stage()).isEqualTo(stage);
+            assertThat(execution.failure.validationRule()).isEqualTo(rule);
+            assertThat(execution.usageKnown()).isTrue();
+        }
+        verify(model, times(2)).call(anyList(), anyList());
+    }
     private void respondWith(List<AssistantMessage.ToolCall> calls) {
         respondWith(calls, "这是基于已取得资料的核对结果。");
     }
@@ -429,7 +500,7 @@ class ResearchFinancialQuestionTest {
                 else if (data.has("opinions")) ids.add(data.path("opinions").get(0).path("sourceId").asString());
             }
             return new AssistantMessage(replyEnvelope.apply(json.writeValueAsString(new ResearchReply(
-                    List.of(new ResearchSummary.Item(finalText, ids)), missingInformation))));
+                    List.of(new ResearchSummary.Item(finalText, omitCitations ? List.of() : ids)), missingInformation))));
         });
     }
 }

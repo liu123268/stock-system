@@ -31,7 +31,7 @@ import java.util.*;
 /** 所有查询由当前 Java 对象绑定权限范围；模型只能提出有界工具请求。 */
 @Service
 public class ResearchQuestionService {
-    public static final String VERSION = "research-question-20261021-v15-financial-gaps";
+    public static final String VERSION = "research-question-20261021-v16-cited-numbers";
     public static final int MAX_MODEL_CALLS = 4;
     public static final int MAX_TOOL_ATTEMPTS = 3;
     private final StockResearchSourceService sources;
@@ -258,6 +258,7 @@ public class ResearchQuestionService {
                     yield Map.of("financialFacts", unavailable);
                 }
                 financials.verifySnapshot(context.target.user(), context.target.workspace(), context.target.stock(), facts);
+                context.financialFactsRead = true;
                 String id = "financial-" + UUID.randomUUID().toString().substring(0, 8);
                 context.evidence.put(id, new Evidence(id, "FINANCIAL", "财务数据", null, null, facts));
                 yield Map.of("sourceId", id, "financialFacts", facts);
@@ -321,7 +322,7 @@ public class ResearchQuestionService {
                 var originalOpinions = context.snapshots.stream().flatMap(snapshot -> snapshot.opinions().stream())
                         .filter(opinion -> opinionIds.contains(opinion.id())).map(json::writeValueAsString).toList();
                 stage = "QUESTION_REPLY_FINANCIAL";
-                ResearchFinancialAnswerNumbers.validate(paragraph.text(), cited, originalOpinions);
+                ResearchFinancialAnswerNumbers.validate(paragraph.text(), cited, originalOpinions, context.financialFactsRead);
                 stage = "QUESTION_REPLY_CONTRACT";
             }
             if (reply.missingInformation().stream().anyMatch(this::invalidText)) throw new IllegalArgumentException();
@@ -335,7 +336,7 @@ public class ResearchQuestionService {
             var replyOpinions = context.snapshots.stream().flatMap(snapshot -> snapshot.opinions().stream())
                     .filter(opinion -> replyOpinionIds.contains(opinion.id())).map(json::writeValueAsString).toList();
             stage = "QUESTION_REPLY_FINANCIAL_GAPS";
-            for (String gap : reply.missingInformation()) ResearchFinancialAnswerNumbers.validate(gap, replyEvidence, replyOpinions);
+            for (String gap : reply.missingInformation()) ResearchFinancialAnswerNumbers.validate(gap, replyEvidence, replyOpinions, context.financialFactsRead);
             stage = "QUESTION_REPLY_CONTRACT";
             return emptyReportReply(context).orElseGet(() -> ResearchReportAnswerSupport.ground(reply, context.evidence));
         } catch (RuntimeException failure) {
@@ -421,6 +422,8 @@ public class ResearchQuestionService {
         final LinkedHashMap<String, Reference> references = new LinkedHashMap<>();
         final LinkedHashMap<String, Evidence> evidence = new LinkedHashMap<>();
         ResearchMarketDataService.Quote quote;
+        // 本轮实际取得且通过核实的财务结果；模型省略引用不能关闭校验。
+        boolean financialFactsRead;
         boolean onlyReportTools = true;
         final List<ReportLookup> reportLookups = new ArrayList<>();
         Context(Target target, ResearchCycleSourcesResponseVO primary, List<Answer> history, boolean omitted) {

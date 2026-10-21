@@ -227,7 +227,7 @@ V10 只保存无法由当前周期状态还原的普通／重点关注切换：`
 
 共享观点正文仍以 `stock_opinion` 为原文入口。历史回答恢复前核对全部输入依赖；撤回使整个依赖回答失效，无权限不返回个人正文。清空按当前用户和对象删除消息并增加版本，不删除共享观点或重置费用。网络调用发生在事务外，保存与清空采用一致的预算行→会话行锁顺序。具体流程和费用口径见 [SPEC-004 设计第 5、6 节](../specs/004-research-agent/design.md#5-调用费用和失败限制)。环境应用状态只见 status。
 
-[V14](../../src/main/resources/db/migration/V14__track_agent_model_and_tool_calls.sql) 只给 `agent_run` 增加 `model_calls`、`tool_calls` 和 `tool_trace_json`。前者记录实际 HTTP 派发，后者记录模型工具尝试，轨迹仅含工具名／完成或失败／耗时，不保存参数正文。旧运行默认 0 表示此前没有此统计，不能据此说旧运行没有调用。每轮 Token 为所有已知响应之和；任何派发用量未知仍保留整轮预留，清空不改变它。
+[V14](../../src/main/resources/db/migration/V14__track_agent_model_and_tool_calls.sql) 只给 `agent_run` 增加 `model_calls`、`tool_calls` 和 `tool_trace_json`。前者记录实际 HTTP 派发，后者记录模型工具尝试，轨迹保存工具名／完成或失败／耗时；v13 在同一 JSON 内增加可选 `errorCode`，只取本程序受控工具错误码，不保存参数正文或异常消息。旧三字段轨迹仍可读取，缺少错误码不补造原因，无需新增表列或迁移。旧运行默认 0 表示此前没有此统计，不能据此说旧运行没有调用。每轮 Token 为所有已知响应之和；任何派发用量未知仍保留整轮预留，清空不改变它。
 
 [V15](../../src/main/resources/db/migration/V15__record_agent_model_failure.sql) 给 `agent_run` 增加可空 `model_failure_json`，保存固定字段的模型失败诊断：运行／请求编号、阶段、调用轮次、HTTP 状态与类别。不保存原始异常消息、响应、Header 或密钥；旧记录为空，不补造历史原因。该迁移不调整 Token、预留或消息正文。公开报告的本机发布状态另由原子文件维护，范围和选择理由只见 [设计 4.4](../specs/004-research-agent/design.md#44-报告资料库与-rag-接入)，不将它描述为已新增 MySQL 报告表。
 

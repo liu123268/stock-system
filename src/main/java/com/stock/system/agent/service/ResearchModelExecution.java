@@ -89,7 +89,11 @@ public final class ResearchModelExecution implements AutoCloseable {
     }
 
     public boolean usageKnown() { return !unknownUsage && !waitingForUsage; }
-    public record ToolTrace(String name, String status, long elapsedMillis) {}
+    public record ToolTrace(String name, String status, long elapsedMillis,
+                            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                            String errorCode) {
+        public ToolTrace(String name, String status, long elapsedMillis) { this(name, status, elapsedMillis, null); }
+    }
 
     @Override public void close() { CURRENT.remove(); }
 }
