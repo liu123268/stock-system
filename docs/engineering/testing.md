@@ -60,6 +60,14 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 ### 2.5 研究助手的受控与真实模型检查
 
+综合题集／评分／预算和逐题审查门禁执行 `node --test scripts/agent-quality/financial-cases.test.mjs scripts/agent-quality/financial-probe-guard.test.mjs scripts/agent-quality/report-cases.test.mjs scripts/agent-quality/closure-quality.test.mjs`，只用合成数据与临时文件，不调用真实模型。完整回环执行和故障位置用 `scripts/run-agent-closure-quality.ps1`，先读 [实验说明第 14 节](agent-experiment.md#14-先行闭环的固定题集与逐题审查) 的范围与审查方式。禁止把待审算通过、缩小失败分母或复用同一运行冒充重复采样；跨夹具仅能复用已审且只取财务事实的成功答案。真实模型失败后不能以续做重新付费。
+
+财务缺失比较期的年份检查保留合法中文／FY 年份、中文标点与真实千分位，也拒绝把所需年份作为金额、百分比、裸数或其他年份。ResearchFinancialQuestionTest 走实际工具循环验证，ResearchModelFailureTest 检查旧诊断 JSON 的兼容与空规则省略；Chrome 的 missing-comparison 替身检查经 SSE 显示、成功入库、刷新恢复且模型调用不增，原错误金额／漏百分号的拒绝检查同时保留。真实失败未留原始正文时，离线同阶段复现不能自动认作该次真实根因。
+
+带财务引用答案的缺口区域也必须检查数字。ResearchFinancialQuestionTest 覆盖 `missingInformation` 中虚构换算、错单位、缺百分号和错误百分比的拒绝，以及合法缺失比较年、原报单位和纯报告说明的保留；Chrome 的 invalid-financial-number-gap／invalid-financial-percent-gap 走原 SSE，核对 FINANCIAL_GAPS 安全诊断、已知用量、错误消息零入库、旧答案保留及无自动重试。该检查只证明程序边界，不是新增真实模型质量采样。
+
+ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号 ID 归一为本地别名数字；不连模型或数据库。它保留报价 AVAILABLE 却声称未提供行情、正文带内部编号的旧输出，验证新编号检查拒绝，并确认新版 Prompt 输入包含同一可用报价。ResearchSummaryServiceTest 覆盖可用／不可用报价和实际昵称，Validator 测试保留原文 M1 术语等合法字面。Chrome 的 invalid-summary-identifiers 走 SSE 验证旧答案保留、SUMMARY_REPLY_CONTRACT 安全诊断和错误不入消息；真实表达质量仍需按逐题门禁复测，不能用回放冒充新模型回答。
+
 007 的 SSE 检查仍用本地 HTTP 模型替身，不新增付费调用。`ResearchAgentIntegrationTest` 验证初始认证／异步分派、重复订阅只有一次执行、停止前后状态、已知／未知用量、取消归属、工具轮次和停止前绑定；继续复用真实 JDBC catalog 守卫与精确清理。前端 `agent-stream.spec.ts` 检查 UTF-8 分块、CRLF／多行 data、心跳、序号／对象归属、截断、事件大小、权限错误及 AbortSignal；`research-agent-panel.spec.ts` 检查进度、停止后的草稿／焦点、换周期迟到事件及停止恢复。Chrome 的 `research-agent-smoke.mjs` 同时验证早于正文的进度、停止阻止下一轮工具／模型、刷新停止状态及旧恢复／报告行为，沿现有 `scripts/run-agent-report-probe.ps1` 的拥有进程与数据清理入口。
 
 本地停止为协作式：等待当前 HTTP 结束再结算，测试不能只断开浏览器就声称已停止供应商调用；已发出但无用量仍占原预留。页面刷新只恢复 pending 编号与服务端状态，不把会话内存草稿当成已持久化。初轮 Chrome 若只因草稿刷新期望写错失败，保留失败证据并修正测试边界；正常 SSE 断开应由 AsyncRequestNotUsableException 专用处理收尾，不再尝试往流写 JSON 错误。实际结果、次数和证据只见 [任务第 29 节](../specs/004-research-agent/tasks.md#29-sse-进度最终结果与主动停止2026-10-18)。
@@ -78,7 +86,9 @@ Java 的 ReportRetrievalTest 检查有界词法检索、融合去重、重排、
 
 财务正文数值保护由 ResearchFinancialAnswerNumbersTest 与 ResearchFinancialQuestionTest 检查，包含真实金额错误、百分比漏单位和共同引用中的同值数字。研究助手受控浏览器另用 invalid-financial-number／invalid-financial-percent 替身返回合法引用及错误金额／缺百分号，确认 INVALID_RESULT、旧答案保留、错误不入消息、不额外派发、费用已知；该项不占真实模型预算。人工／Codex 原文审查必须同时看正文和引用快照，SUCCEEDED 或工具金额正确不能自动判为语义通过，真实失败样本见 [BUG-012](bugs/BUG-012-financial-answer-unit-conversion.md)。
 
-ResearchQuestionModelTest 走实际框架 HTTP 序列化，覆盖工具可选轮次直接回答与原生 tool_calls：两者均须带 JSON 输出约束，后者由业务层执行。ResearchFinancialQuestionTest 的拒绝检查核对 JSON／引用校验的安全阶段、已知用量和无重试；Chrome 的错误财务段落进一步核对 QUESTION_REPLY_FINANCIAL 落库。不得为定位格式问题把原始响应或解析异常消息加入普通日志；历史没有保存的响应不能靠新诊断反推其确切失败原因。
+ResearchQuestionModelTest 走实际框架 HTTP 序列化，覆盖工具可选轮次直接回答与原生 tool_calls：两者均须带 JSON 输出约束，后者由业务层执行。ResearchFinancialQuestionTest 的拒绝检查核对 JSON／引用校验的安全阶段、已知用量和无重试；另区分合法季度查询完成后未覆盖与参数错误未完成，核对轨迹的可选固定 errorCode。ResearchModelFailureTest 同时检查旧三字段工具轨迹 JSON 兼容及成功时不写空错误码；Chrome 的错误财务段落进一步核对 QUESTION_REPLY_FINANCIAL 落库。不得为定位格式问题把原始响应或解析异常消息加入普通日志；历史没有保存的响应不能靠新诊断反推其确切失败原因。
+
+追问格式边界另用不联网的模型替身覆盖开头 BOM、完整 json／无标记围栏和 CRLF；夹杂说明、其他语言标记、围栏外正文、多个对象／围栏仍拒绝。合法 JSON 的 null、数组与额外字段归 CONTRACT；兼容围栏后的错误金额仍归 FINANCIAL。各例核对调用次数不增加、无原始正文进入安全诊断，不能把替身通过写成真实输出稳定性已获证明。
 
 纯报告空查询的 Java 覆盖说明检查包括 NO_REPORT／NO_MATCH 去重、模型常识句不进入最终回复、混合财务材料不被替换，以及有工具参数错误时不冒充成功空检索；报告范围与真实性仍从实际 Service 结果核对，不由用户或模型声明的“没有资料”触发。
 

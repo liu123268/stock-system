@@ -61,3 +61,36 @@ test('不接受未知模式或默默切换到其他模型入口', () => {
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /只能显式选择真实模型或本地替身/)
 })
+
+test('综合计划固定十题十四次，三次采样不是失败自动重试', () => {
+  const result = execute(['--suite=closure', '--dry-run', '--expected-unknown=1'])
+  assert.equal(result.status, 0, result.stderr)
+  const plan = JSON.parse(result.stdout)
+  assert.equal(plan.cases.length, 10); assert.equal(plan.executions.length, 14)
+  assert.equal(plan.maxQuestions, 14); assert.equal(plan.expectedUnknownReservations, 1)
+  assert.equal(plan.executions[0].caseId, 'tencent-original-currency')
+  assert.equal(plan.executions.filter(row => row.caseId === 'tencent-original-currency').length, 3)
+  assert.equal(plan.automaticRetry, false)
+  const unauthorized = execute(['--suite=closure', '--expected-unknown=1'])
+  assert.notEqual(unauthorized.status, 0)
+  assert.match(unauthorized.stderr, /真实财务资料检查须另行显式启用/)
+})
+
+test('历史未知笔数的空值、负值、小数和重复参数在启动前拒绝', () => {
+  for (const args of [['--expected-unknown='], ['--expected-unknown=-1'], ['--expected-unknown=1.5'],
+    ['--expected-unknown=9007199254740992'], ['--expected-unknown=1', '--expected-unknown=1']]) {
+    const result = execute(['--dry-run', ...args])
+    assert.notEqual(result.status, 0)
+    assert.doesNotMatch(result.stderr, /ECONNREFUSED|not-a-real-mysql-client/)
+  }
+})
+
+test('故障注入须绑定计划且只允许替身，不能用于真实付费入口', () => {
+  const unknown = execute(['--dry-run', '--suite=closure', '--fixture-fail-at=unknown'])
+  assert.notEqual(unknown.status, 0)
+  const real = execute(['--suite=closure', '--fixture-fail-at=tencent-original-currency#2'])
+  assert.notEqual(real.status, 0); assert.match(real.stderr, /真实检查禁止替身故障参数/)
+  assert.doesNotMatch(real.stderr, /ECONNREFUSED|not-a-real-mysql-client/)
+  const plan = execute(['--dry-run', '--suite=closure', '--fixture-fail-at=tencent-original-currency#2'])
+  assert.equal(JSON.parse(plan.stdout).fixtureFailAt, 'tencent-original-currency#2')
+})

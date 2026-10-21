@@ -4,6 +4,7 @@ import com.stock.system.agent.dto.ResearchReply;
 import com.stock.system.agent.dto.ResearchSummary;
 import com.stock.system.agent.mapper.ResearchAgentRecordMapper.Target;
 import com.stock.system.agent.service.*;
+import com.stock.system.agent.vo.ResearchAgentResponseVO.Evidence;
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
 import com.stock.system.stock.financial.*;
@@ -22,6 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -29,6 +31,9 @@ import static org.mockito.Mockito.*;
 
 /** Native messages and reviewed report data, with no HTTP model, provider or database calls. */
 class ResearchFinancialQuestionTest {
+    private UnaryOperator<String> replyEnvelope = UnaryOperator.identity();
+    private List<String> missingInformation = List.of();
+    private List<ResearchModelExecution.ToolTrace> toolTraces = List.of();
     private final StockResearchSourceService sources = mock(StockResearchSourceService.class);
     private final ResearchMarketDataService market = mock(ResearchMarketDataService.class);
     private final StockFinancialService financials = mock(StockFinancialService.class);
@@ -77,6 +82,30 @@ class ResearchFinancialQuestionTest {
         assertThat(answer().followUp().evidence()).isEmpty();
         verifyNoInteractions(financials);
         assertThat(toolResponses.get(0)).contains("INVALID_TOOL_ARGUMENTS");
+        assertThat(toolTraces.get(0).errorCode()).isEqualTo("INVALID_TOOL_ARGUMENTS");
+    }
+
+    @Test void uncoveredQuarterCompletesTheRequestedQuarterQueryWithoutUsingAnnualFigures() {
+        when(financials.read(anyLong(), anyLong(), anyLong(), any(), any(), any())).thenReturn(
+                new FinancialFacts("UNAVAILABLE", "600519.SH", FinancialPeriod.QUARTER, "Q3 2025", List.of("FY 2025"),
+                        List.of(), List.of(FinancialMetric.REVENUE), "OFFICIAL_REPORT_CATALOG", java.time.Instant.now(),
+                        null, "PERIOD_NOT_COVERED", "当前目录未覆盖该季度"));
+        respondWith(List.of(call("q1", "read_financial_facts", "{\"series\":\"QUARTER\",\"period\":\"Q3 2025\",\"metrics\":[\"REVENUE\"]}")));
+        assertThat(answer().followUp().evidence()).isEmpty();
+        verify(financials).read(1L, 2L, 20L, FinancialPeriod.QUARTER, "Q3 2025", List.of(FinancialMetric.REVENUE));
+        assertThat(toolResponses.get(0)).contains("UNAVAILABLE", "PERIOD_NOT_COVERED").doesNotContain("168838102514.79");
+        assertThat(toolTraces.get(0).status()).isEqualTo("COMPLETED");
+        assertThat(toolTraces.get(0).errorCode()).isNull();
+    }
+
+    @Test void parameterFailureIsRecordedAsAnErrorInsteadOfSuccessfulMissingPeriodData() {
+        when(financials.read(anyLong(), anyLong(), anyLong(), any(), any(), any()))
+                .thenThrow(new BusinessException(ErrorCode.INVALID_REQUEST));
+        respondWith(List.of(call("q1", "read_financial_facts", "{\"series\":\"QUARTER\",\"period\":\"2025 Q3\",\"metrics\":[\"REVENUE\"]}")));
+        assertThat(answer().followUp().evidence()).isEmpty();
+        assertThat(toolResponses.get(0)).contains("INVALID_REQUEST", "ERROR").doesNotContain("PERIOD_NOT_COVERED");
+        assertThat(toolTraces.get(0).status()).isEqualTo("ERROR");
+        assertThat(toolTraces.get(0).errorCode()).isEqualTo("INVALID_REQUEST");
     }
 
     @Test void unverifiedProviderAmountsNeverReachTheModelOrFinancialCitations() {
@@ -93,6 +122,54 @@ class ResearchFinancialQuestionTest {
         assertThat(toolResponses.get(0)).doesNotContain("123456789.99").contains("SOURCE_BASIS_UNVERIFIED");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\uFEFF%s", "```json\n%s\n```", "```\n%s\n```", "```JSON\r\n%s\r\n```"})
+    void completeJsonEnvelopeKeepsTheSameValidatedReplyWithoutAnotherModelCall(String envelope) {
+        replyEnvelope = envelope::formatted;
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")));
+        assertThat(answer().followUp().reply().paragraphs().get(0).text()).isEqualTo("这是基于已取得资料的核对结果。");
+        verify(model, times(2)).call(anyList(), anyList());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"说明\n```json\n%s\n```", "```js\n%s\n```", "```json\n%s\n```尾文",
+            "%s\n{}", "```json\n%s\n```\n```json\n{}\n```"})
+    void proseMultipleObjectsAndOtherCodeAreNotAcceptedAsAJsonEnvelope(String envelope) {
+        replyEnvelope = envelope::formatted;
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")));
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(execution.failure.stage()).isEqualTo("QUESTION_REPLY_JSON");
+        }
+        verify(model, times(2)).call(anyList(), anyList());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "[]", "{\"paragraphs\":[],\"missingInformation\":[],\"extra\":\"private-message\"}"})
+    void validJsonWithTheWrongReplyShapeIsAContractFailure(String output) {
+        replyEnvelope = unused -> output;
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")));
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(execution.failure.stage()).isEqualTo("QUESTION_REPLY_CONTRACT");
+            assertThat(json.writeValueAsString(execution.failure)).doesNotContain("private-message", "extra");
+        }
+        verify(model, times(2)).call(anyList(), anyList());
+    }
+
+    @Test void aJsonFenceDoesNotBypassTheFinancialNumberGuard() {
+        replyEnvelope = "```json\n%s\n```"::formatted;
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")), "2025年营业收入1688.3810251459亿元。");
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(execution.failure.stage()).isEqualTo("QUESTION_REPLY_FINANCIAL");
+        }
+        verify(model, times(2)).call(anyList(), anyList());
+    }
+
     @Test void threeToolsCanCombineOpinionsQuoteAndFinancialFactsWithoutExceedingTheBound() {
         when(market.readLatestQuote(1L, 2L, 20L)).thenReturn(new ResearchMarketDataService.Quote("AVAILABLE", "600519.SH",
                 new BigDecimal("123"), "CNY", java.time.LocalDateTime.now(), "MOCK", true, null));
@@ -100,7 +177,7 @@ class ResearchFinancialQuestionTest {
                 call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")));
         var answer = answer();
         assertThat(toolResponses).hasSize(3);
-        assertThat(answer.followUp().evidence()).extracting(source -> source.type()).containsExactly("QUOTE", "FINANCIAL");
+        assertThat(answer.followUp().evidence()).extracting(Evidence::type).containsExactly("QUOTE", "FINANCIAL");
         assertThat(answer.references()).hasSize(3);
     }
 
@@ -154,6 +231,8 @@ class ResearchFinancialQuestionTest {
         // Only the report Service is a fixture; native message roles, strict tool parsing and limits are real.
         when(reports.search(target, "公司主要业务", 2025)).thenReturn(new ResearchReportService.Search("AVAILABLE", List.of(passage), "自造边界样本"));
         when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            // 回调借用测试外层创建的执行上下文，不取得关闭权。
+            //noinspection resource
             var execution = ResearchModelExecution.current(); execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
             List<Message> messages = invocation.getArgument(0);
             if (execution.modelCalls == 1) return AssistantMessage.builder().toolCalls(List.of(
@@ -184,19 +263,25 @@ class ResearchFinancialQuestionTest {
         var foreign = catalog.forSymbol("00700.HK").get(0);
         when(reports.search(target, "公司主要业务", 2025)).thenReturn(new ResearchReportService.Search("AVAILABLE", List.of(passage), "原文候选"));
         when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            //noinspection resource
             var execution = ResearchModelExecution.current(); execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
             if (execution.modelCalls == 1) return AssistantMessage.builder().toolCalls(List.of(
                     call("r1", "search_report_passages", "{\"query\":\"公司主要业务\",\"year\":2025}"))).build();
             return new AssistantMessage(json.writeValueAsString(new ResearchReply(List.of(
                     new ResearchSummary.Item("错误引用不能保存。", List.of("report-" + foreign.id()))), List.of())));
         });
-        assertThatThrownBy(this::answer).isInstanceOf(BusinessException.class)
-                .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+            assertThat(execution.failure.validationRule()).isNull();
+        }
         verify(reports, times(1)).search(any(), anyString(), any());
     }
 
     @Test void aValidFinancialCitationCannotSaveAnInventedConversionInTheAnswer() {
         when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            //noinspection resource
             var execution = ResearchModelExecution.current(); execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
             if (execution.modelCalls == 1) return AssistantMessage.builder().toolCalls(List.of(
                     call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\",\"period\":\"FY 2025\",\"metrics\":[\"REVENUE\"]}"))).build();
@@ -206,8 +291,61 @@ class ResearchFinancialQuestionTest {
             return new AssistantMessage(json.writeValueAsString(new ResearchReply(List.of(
                     new ResearchSummary.Item("2025年度营业收入为1688.3810251459亿元。", List.of(sourceId))), List.of())));
         });
-        assertThatThrownBy(this::answer).isInstanceOf(BusinessException.class)
-                .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+            assertThat(execution.failure.stage()).isEqualTo("QUESTION_REPLY_FINANCIAL");
+            assertThat(execution.failure.validationRule()).isEqualTo("UNSUPPORTED_LITERAL");
+            assertThat(json.writeValueAsString(execution.failure)).doesNotContain("1688.3810251459", "亿元", "营业收入");
+        }
+        verify(model, times(2)).call(anyList(), anyList());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"尚需核对营业收入1688.3810251459亿元是否准确。",
+            "尚需核对营业收入168838102514.79万元。", "尚需核对同比变化-1.2060。", "尚需核对2025%的订单增长。"})
+    void missingInformationCannotBypassTheFinancialNumberAndUnitGuard(String gap) {
+        missingInformation = List.of(gap);
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\"}")));
+        try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
+            assertThatThrownBy(() -> questions.answer(questions.prepare(target, material, List.of(), false), "年度财务数字", () -> {}))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(failure -> ((BusinessException) failure).getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+            assertThat(execution.failure.stage()).isEqualTo("QUESTION_REPLY_FINANCIAL_GAPS");
+            assertThat(execution.failure.validationRule()).isNotNull();
+            assertThat(execution.usageKnown()).isTrue();
+            assertThat(json.writeValueAsString(execution.failure)).doesNotContain(gap);
+        }
+        verify(model, times(2)).call(anyList(), anyList());
+    }
+
+    @Test void missingInformationPreservesTheActualMissingComparisonYearAndOriginalUnits() {
+        when(financials.read(anyLong(), anyLong(), anyLong(), any(), any(), any())).thenReturn(
+                new OfficialFinancialReportCatalog().read("00700.HK", FinancialPeriod.ANNUAL, "FY 2024", List.of(FinancialMetric.REVENUE)));
+        missingInformation = List.of("本次缺少2023年比较列，无法计算2024年收入的同比。", "已取得2024年收入660257百万元人民币，仍不能证明订单增长。");
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\",\"period\":\"FY 2024\"}")));
+        assertThat(answer().followUp().reply().missingInformation()).containsExactlyElementsOf(missingInformation);
+    }
+
+    @Test void reportOnlyMissingInformationDoesNotAcquireFinancialUnitRestrictions() throws Exception {
+        var passage = new com.stock.system.agent.report.ReportCatalog().forSymbol("00700.HK").stream()
+                .filter(row -> row.section().equals("tx-marketing")).findFirst().orElseThrow();
+        when(reports.search(target, "营销服务", 2025)).thenReturn(new ResearchReportService.Search("AVAILABLE", List.of(passage), "受审原文"));
+        missingInformation = List.of("报告中的营销服务收入1,450亿元，同比增长19%，仍不能证明当前订单增长。");
+        respondWith(List.of(call("r1", "search_report_passages", "{\"query\":\"营销服务\",\"year\":2025}")));
+        assertThat(answer().followUp().reply().missingInformation()).containsExactlyElementsOf(missingInformation);
+        verifyNoInteractions(financials);
+    }
+
+    @Test void missingAnnualComparisonCanExplainItsExpectedYearThroughTheNativeToolLoop() {
+        var missing = new OfficialFinancialReportCatalog().read("600519.SH", FinancialPeriod.ANNUAL, "FY 2024", List.of(FinancialMetric.REVENUE));
+        when(financials.read(anyLong(), anyLong(), anyLong(), any(), any(), any())).thenReturn(missing);
+        respondWith(List.of(call("f1", "read_financial_facts", "{\"series\":\"ANNUAL\",\"period\":\"FY 2024\",\"metrics\":[\"REVENUE\"]}")),
+                "2024年营业收入170899152276.34元，缺少2023年比较列，无法计算所问同比。");
+        var result = answer();
+        assertThat(result.followUp().reply().paragraphs().get(0).text()).contains("缺少2023年比较列");
+        assertThat(result.followUp().evidence().get(0).financialFacts().facts().get(0).comparable()).isNull();
         verify(model, times(2)).call(anyList(), anyList());
     }
 
@@ -215,6 +353,7 @@ class ResearchFinancialQuestionTest {
     @ValueSource(strings = {"not-json private-message", "{\"paragraphs\":[{\"text\":\"private-message\",\"sourceIds\":[\"unprovided-id\"]}],\"missingInformation\":[]}"})
     void recordsOnlyTheValidationStageAndNeverRetriesAnInvalidFinalAnswer(String output) {
         when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            //noinspection resource
             var execution = ResearchModelExecution.current(); execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
             return new AssistantMessage(output);
         });
@@ -262,6 +401,7 @@ class ResearchFinancialQuestionTest {
         try (var execution = new ResearchModelExecution(ResearchQuestionService.MAX_MODEL_CALLS)) {
             var result = questions.answer(questions.prepare(target, material, List.of(), false), "请核对这项判断与财务资料", () -> {});
             assertThat(execution.toolCalls).isLessThanOrEqualTo(ResearchQuestionService.MAX_TOOL_ATTEMPTS);
+            toolTraces = List.copyOf(execution.toolTrace);
             return result;
         }
     }
@@ -273,6 +413,7 @@ class ResearchFinancialQuestionTest {
     }
     private void respondWith(List<AssistantMessage.ToolCall> calls, String finalText) {
         when(model.call(anyList(), anyList())).thenAnswer(invocation -> {
+            //noinspection resource
             var execution = ResearchModelExecution.current();
             execution.dispatch(); execution.usage("OFFLINE_TEST", 10, 10);
             if (execution.modelCalls == 1) return AssistantMessage.builder().toolCalls(calls).build();
@@ -287,8 +428,8 @@ class ResearchFinancialQuestionTest {
                 else if (data.has("passages") && !data.path("passages").isEmpty()) ids.add(data.path("passages").get(0).path("sourceId").asString());
                 else if (data.has("opinions")) ids.add(data.path("opinions").get(0).path("sourceId").asString());
             }
-            return new AssistantMessage(json.writeValueAsString(new ResearchReply(
-                    List.of(new ResearchSummary.Item(finalText, ids)), List.of())));
+            return new AssistantMessage(replyEnvelope.apply(json.writeValueAsString(new ResearchReply(
+                    List.of(new ResearchSummary.Item(finalText, ids)), missingInformation))));
         });
     }
 }

@@ -30,13 +30,14 @@ class ResearchSummaryServiceTest {
     private final Model model = new Model();
     private final DefaultListableBeanFactory beans = new DefaultListableBeanFactory();
     private final ResearchSummaryPrompt prompt = new ResearchSummaryPrompt(JsonMapper.builder().findAndAddModules().build());
+    private ResearchMarketDataService.Quote quoteSnapshot = new ResearchMarketDataService.Quote("UNAVAILABLE", "SAMPLE.HK", null, "HKD", null, null, true,
+            "测试样本没有报价");
     private final ResearchSummaryService service = new ResearchSummaryService(sources, prompt,
             new ResearchSummaryValidator(), beans.getBeanProvider(ResearchSummaryModel.class),
             new ResearchMarketDataService(null, null, null, null) {
                 @Override
                 public Quote readLatestQuote(Long userId, Long workspaceId, Long stockId) {
-                    return new Quote("UNAVAILABLE", "SAMPLE.HK", null, "HKD", null, null, true,
-                            "测试样本没有报价");
+                    return quoteSnapshot;
                 }
             });
 
@@ -56,6 +57,23 @@ class ResearchSummaryServiceTest {
         assertThat(model.input.user()).contains("认为新订单可能增长")
                 .doesNotContain("authorUserId", "workspaceId");
         assertThat(model.calls).isEqualTo(1);
+    }
+
+    @Test void modelReceivesTheSameAvailableQuoteShownWithTheFinalSummary() {
+        quoteSnapshot = new ResearchMarketDataService.Quote("AVAILABLE", "SAMPLE.HK", new java.math.BigDecimal("612"), "HKD",
+                ResearchSummaryFixtures.DATE, "LOCAL_MOCK", true, null);
+        var result = service.summarize(10L, 1L, 20L, 30L);
+        assertThat(result.quote()).isSameAs(quoteSnapshot);
+        var quote = JsonMapper.builder().findAndAddModules().build().readTree(model.input.user().substring(model.input.user().indexOf('{'))).path("quote");
+        assertThat(quote.path("status").asString()).isEqualTo("AVAILABLE");
+        assertThat(quote.path("price").asInt()).isEqualTo(612);
+        assertThat(quote.path("simulated").asBoolean()).isTrue();
+        assertThat(model.input.system()).contains("不能因此写", "编号只放在authorId和sourceIds结构字段").doesNotContain("没有提供公告、财报、新闻或行情资料");
+    }
+
+    @Test void unavailableQuoteIsAlsoExplicitInModelInputInsteadOfAssumingItsAbsence() {
+        service.summarize(10L, 1L, 20L, 30L);
+        assertThat(model.input.user()).contains("\"status\":\"UNAVAILABLE\"", "测试样本没有报价");
     }
 
     @Test
@@ -162,6 +180,10 @@ class ResearchSummaryServiceTest {
 
         @Override
         public ResearchCycleSourcesResponseVO readCycle(Long user, Long workspace, Long stock, Long cycle) {
+            return readSnapshot(user, workspace, stock, cycle);
+        }
+
+        private ResearchCycleSourcesResponseVO readSnapshot(Long user, Long workspace, Long stock, Long cycle) {
             assertThat(List.of(user, workspace, stock, cycle)).containsExactly(10L, 1L, 20L, 30L);
             steps.add("read");
             if (readFailure != null) throw new BusinessException(readFailure);
@@ -172,7 +194,7 @@ class ResearchSummaryServiceTest {
         public ResearchCycleSourcesResponseVO readCycle(Long user, Long workspace, Long stock, Long cycle,
                                                         ResearchSourceFilter filter) {
             assertThat(filter).isEqualTo(snapshot.scope().filter());
-            return readCycle(user, workspace, stock, cycle);
+            return readSnapshot(user, workspace, stock, cycle);
         }
 
         @Override

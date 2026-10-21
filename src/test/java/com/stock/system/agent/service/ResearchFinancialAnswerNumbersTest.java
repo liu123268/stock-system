@@ -4,6 +4,8 @@ import com.stock.system.agent.report.ReportCatalog;
 import com.stock.system.agent.vo.ResearchAgentResponseVO.Evidence;
 import com.stock.system.stock.financial.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
@@ -52,6 +54,30 @@ class ResearchFinancialAnswerNumbersTest {
                 List.of(tencent), List.of())).doesNotThrowAnyException();
         assertThatIllegalArgumentException().isThrownBy(() -> ResearchFinancialAnswerNumbers.validate("2025年收入751,766亿元。", List.of(tencent), List.of()));
         assertThatIllegalArgumentException().isThrownBy(() -> check("2025年收入751,766百万元。"));
+    }
+    @Test void describesTheExpectedYearOfAMissingAnnualComparison() {
+        var missing = new Evidence("financial-missing", "FINANCIAL", "财务依据", null, null,
+                catalog.read("00700.HK", FinancialPeriod.ANNUAL, "FY 2024", List.of(FinancialMetric.REVENUE)));
+        assertThatCode(() -> ResearchFinancialAnswerNumbers.validate("2024年收入660257百万元人民币，本次缺少2023年比较列，不能计算2024年相对2023年的同比。",
+                List.of(missing), List.of())).doesNotThrowAnyException();
+        assertThatCode(() -> ResearchFinancialAnswerNumbers.validate("FY 2024收入660257百万元；缺少FY 2023，不能计算所问同比。",
+                List.of(missing), List.of())).doesNotThrowAnyException();
+        assertThatCode(() -> ResearchFinancialAnswerNumbers.validate("仅取得2024年、2025年比较列，2023年缺失。",
+                List.of(missing), List.of())).doesNotThrowAnyException();
+        assertThatCode(() -> ResearchFinancialAnswerNumbers.validate("FY 2023,2024年无法形成完整比较，2024年收入660,257百万元。",
+                List.of(missing), List.of())).doesNotThrowAnyException();
+    }
+    @ParameterizedTest
+    @ValueSource(strings = {"2023百万元人民币", "2023元", "2023%", "缺少2022年比较列", "缺少FY 2022", "未知数字2023", "缺少-2023年比较列", "缺少FY 2023.5", "缺少FY 2023,456"})
+    void aMissingComparisonYearDoesNotAuthorizeAmountsPercentagesOrOtherYears(String text) {
+        var missing = new Evidence("financial-missing", "FINANCIAL", "财务依据", null, null,
+                catalog.read("00700.HK", FinancialPeriod.ANNUAL, "FY 2024", List.of(FinancialMetric.REVENUE)));
+        assertThatExceptionOfType(ResearchFinancialAnswerNumbers.Rejected.class).isThrownBy(() ->
+                ResearchFinancialAnswerNumbers.validate(text, List.of(missing), List.of()));
+    }
+    @Test void aPresentComparisonCannotAuthorizeAnUnseenPreviousYear() {
+        assertThatExceptionOfType(ResearchFinancialAnswerNumbers.Rejected.class).isThrownBy(() -> check("缺少2023年比较列"))
+                .extracting(ResearchFinancialAnswerNumbers.Rejected::rule).isEqualTo(ResearchFinancialAnswerNumbers.Rule.UNSUPPORTED_LITERAL);
     }
     @Test void allowsNumbersQuotedFromTheOtherCitedReport() throws Exception {
         var passage = new ReportCatalog().forSymbol("600519.SH").get(0);

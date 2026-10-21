@@ -60,6 +60,28 @@ class ResearchSummaryValidatorTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    @Test void rejectsKnownInternalIdentifiersInBodyWithoutChangingStructuredReferences() {
+        var valid = ResearchSummaryFixtures.summary();
+        for (String text : List.of("成员M1从看多转为中性", "成员甲先前看多（op-1），随后转中性（op-2）")) {
+            rejects(new ResearchSummary(new ResearchSummary.Item(text, List.of("op-1", "op-2")), valid.changes(), valid.members(), valid.pendingItems()));
+        }
+        assertThat(validator.validate(valid, prompt.build(ResearchSummaryFixtures.sources()).sources()).changes().get(0).sourceIds())
+                .containsExactly("op-1", "op-2");
+    }
+
+    @Test void anActualNicknameMatchingAnAliasAndAnOriginalFinancialTermRemainLegalText() {
+        var source = ResearchSummaryFixtures.sources(List.of(ResearchSummaryFixtures.opinion(1L, 11L, "M1", "NEUTRAL",
+                "观察货币M1增速，不是成员编号。", ResearchSummaryFixtures.DATE)));
+        var summary = new ResearchSummary(new ResearchSummary.Item("M1观察货币M1增速。", List.of("op-1")), List.of(),
+                List.of(new ResearchSummary.Member("M1", "M1关注货币M1增速。", List.of("op-1"))), List.of());
+        assertThat(validator.validate(summary, prompt.build(source).sources())).isEqualTo(summary);
+        var originalTerm = ResearchSummaryFixtures.sources(List.of(ResearchSummaryFixtures.opinion(1L, 11L, "甲", "NEUTRAL",
+                "关注M1增速。", ResearchSummaryFixtures.DATE)));
+        var term = new ResearchSummary(new ResearchSummary.Item("甲关注M1增速。", List.of("op-1")), List.of(),
+                List.of(new ResearchSummary.Member("M1", "甲关注M1增速。", List.of("op-1"))), List.of());
+        assertThat(validator.validate(term, prompt.build(originalTerm).sources())).isEqualTo(term);
+    }
+
     private void rejects(ResearchSummary summary) {
         assertThatThrownBy(() -> validator.validate(summary, prompt.build(ResearchSummaryFixtures.sources()).sources()))
                 .isInstanceOfSatisfying(BusinessException.class,

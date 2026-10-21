@@ -7,6 +7,7 @@ import com.stock.system.stock.service.StockResearchSourceService;
 import com.stock.system.stock.dto.ResearchSourceFilter;
 import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO;
 import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO.Coverage;
+import org.jspecify.annotations.NonNull;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -21,11 +22,11 @@ public class ResearchSummaryService {
     private final StockResearchSourceService sourceService;
     private final ResearchSummaryPrompt prompt;
     private final ResearchSummaryValidator validator;
-    private final ObjectProvider<ResearchSummaryModel> models;
+    private final ObjectProvider<@NonNull ResearchSummaryModel> models;
     private final ResearchMarketDataService marketData;
 
     public ResearchSummaryService(StockResearchSourceService sourceService, ResearchSummaryPrompt prompt,
-                                  ResearchSummaryValidator validator, ObjectProvider<ResearchSummaryModel> models,
+                                  ResearchSummaryValidator validator, ObjectProvider<@NonNull ResearchSummaryModel> models,
                                   ResearchMarketDataService marketData) {
         this.sourceService = sourceService;
         this.prompt = prompt;
@@ -58,11 +59,15 @@ public class ResearchSummaryService {
         if (model == null) {
             throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
         }
-        ResearchSummaryPrompt.Input input = prompt.build(sources);
+        // 先保护消息大小，再读取报价；正式模型输入使用与最终页面相同的报价快照。
+        prompt.build(sources);
+        // 仅借用外层 try-with-resources 拥有的上下文，不能在这里关闭。
+        //noinspection resource
         var execution = ResearchModelExecution.current();
         if (execution != null) execution.stage(ResearchAgentProgress.Stage.QUERYING);
         ResearchMarketDataService.Quote quote = marketData.readLatestQuote(userId, workspaceId, workspaceStockId);
         if (execution != null) execution.remainingMillis();
+        ResearchSummaryPrompt.Input input = prompt.build(sources, quote);
         ResearchSummaryModel.Result generated;
         if (sources.opinions().isEmpty()) {
             generated = new ResearchSummaryModel.Result(new ResearchSummary(
@@ -72,7 +77,9 @@ public class ResearchSummaryService {
             generated = model.generate(input);
         }
         if (execution != null) execution.stage(ResearchAgentProgress.Stage.VALIDATING);
-        ResearchSummary checked = validator.validate(generated.summary(), input.sources());
+        ResearchSummary checked;
+        try { checked = validator.validate(generated.summary(), input.sources()); }
+        catch (BusinessException failure) { throw ResearchModelFailure.translate(failure, "SUMMARY_REPLY_CONTRACT"); }
         StockResearchSourceService.SourceValidity validity = sourceService.revalidate(
                 userId, workspaceId, workspaceStockId, researchCycleId, sources);
         return new Result(checked, sources.scope(), input.sources(), validity.newOpinionsAvailable(),

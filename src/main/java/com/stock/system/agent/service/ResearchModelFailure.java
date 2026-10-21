@@ -2,6 +2,7 @@ package com.stock.system.agent.service;
 
 import com.stock.system.common.api.ErrorCode;
 import com.stock.system.common.exception.BusinessException;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.converter.HttpMessageConversionException;
@@ -17,6 +18,11 @@ public final class ResearchModelFailure {
     private ResearchModelFailure() {}
 
     public static BusinessException translate(RuntimeException failure, String stage) {
+        return translate(failure, stage, null);
+    }
+    static BusinessException translate(RuntimeException failure, String stage, ResearchFinancialAnswerNumbers.Rule validationRule) {
+        // 当前上下文由运行入口负责关闭；错误翻译只读取并补充诊断。
+        //noinspection resource
         var execution = ResearchModelExecution.current();
         Integer status = execution == null ? null : execution.upstreamStatus();
         String category = "UNCLASSIFIED";
@@ -34,12 +40,18 @@ public final class ResearchModelFailure {
             category = status == 429 ? "RATE_LIMIT" : status == 401 || status == 403 ? "UPSTREAM_AUTH" : "UPSTREAM_HTTP";
         if (failure instanceof BusinessException business) category = business.getErrorCode().name();
         var diagnostic = new Diagnostic(stage, category, status, execution == null ? 0 : execution.modelCalls,
-                execution == null ? null : execution.runId(), execution == null ? null : execution.requestId());
+                execution == null ? null : execution.runId(), execution == null ? null : execution.requestId(),
+                validationRule == null ? null : validationRule.name());
         if (execution != null) execution.failure = diagnostic;
-        LOG.warn("Research model failure run={} request={} call={} stage={} category={} upstreamStatus={}",
-                diagnostic.runId(), diagnostic.requestId(), diagnostic.modelCall(), stage, category, status);
+        LOG.warn("Research model failure run={} request={} call={} stage={} category={} upstreamStatus={} validationRule={}",
+                diagnostic.runId(), diagnostic.requestId(), diagnostic.modelCall(), stage, category, status, diagnostic.validationRule());
         if (failure instanceof BusinessException business) return business;
         return new BusinessException("TIMEOUT".equals(category) ? ErrorCode.RESEARCH_AGENT_TIMEOUT : ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
     }
-    public record Diagnostic(String stage, String category, Integer upstreamStatus, int modelCall, Long runId, String requestId) {}
+    public record Diagnostic(String stage, String category, Integer upstreamStatus, int modelCall, Long runId, String requestId,
+                             @JsonInclude(JsonInclude.Include.NON_NULL) String validationRule) {
+        public Diagnostic(String stage, String category, Integer upstreamStatus, int modelCall, Long runId, String requestId) {
+            this(stage, category, upstreamStatus, modelCall, runId, requestId, null);
+        }
+    }
 }

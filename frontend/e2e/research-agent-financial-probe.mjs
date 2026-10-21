@@ -1,26 +1,50 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { resolve, dirname } from 'node:path'
 import * as financialSuite from '../../scripts/agent-quality/financial-cases.mjs'
 import * as reportSuite from '../../scripts/agent-quality/report-cases.mjs'
+import * as closureSuite from '../../scripts/agent-quality/closure-cases.mjs'
+import { checkBudgetStart, checkBudgetAfter } from '../../scripts/agent-quality/probe-budget.mjs'
+import { artifactHash, buildScorecard, writeReviewArtifacts } from '../../scripts/agent-quality/quality-report.mjs'
+import { awaitSourceReview } from '../../scripts/agent-quality/review-gate.mjs'
 
 const args = process.argv.slice(2)
-assert.ok(args.every(arg => arg === '--dry-run' || arg.startsWith('--cases=') || arg.startsWith('--suite=')), '不接受未知检查参数')
+assert.ok(args.every(arg => ['--dry-run', '--review-each'].includes(arg) || ['--cases=', '--suite=', '--expected-unknown=', '--fixture-fail-at='].some(prefix => arg.startsWith(prefix))), '不接受未知检查参数')
 const suites = args.filter(arg => arg.startsWith('--suite='))
 assert.ok(suites.length <= 1, '只能指定一次检查题库')
 const suite = suites.length ? suites[0].slice('--suite='.length) : 'financial'
-assert.ok(['financial', 'reports'].includes(suite), '未知检查题库')
-const { selectCases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } = suite === 'reports' ? reportSuite : financialSuite
+assert.ok(['financial', 'reports', 'closure'].includes(suite), '未知检查题库')
+const { selectCases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } = { financial: financialSuite, reports: reportSuite, closure: closureSuite }[suite]
+const unknownArguments = args.filter(arg => arg.startsWith('--expected-unknown='))
+assert.ok(unknownArguments.length <= 1, '只能指定一次历史未知笔数')
+const unknownText = unknownArguments.length ? unknownArguments[0].slice('--expected-unknown='.length) : '0'
+assert.match(unknownText, /^(0|[1-9]\d*)$/, '历史未知笔数必须是非负整数')
+const expectedUnknownReservations = Number(unknownText)
+assert.ok(Number.isSafeInteger(expectedUnknownReservations), '历史未知笔数超限')
 const selectors = args.filter(arg => arg.startsWith('--cases='))
 assert.ok(selectors.length <= 1, '只能指定一次题目范围')
 const cases = selectCases(selectors.length ? selectors[0].slice('--cases='.length).split(',') : undefined)
+const executions = cases.flatMap(item => Array.from({ length: item.repeats ?? 1 }, (_, index) => ({
+  ...item, executionId: suite === 'closure' ? `${item.id}#${index + 1}` : item.id, sample: index + 1 })))
 const catalog = loadCatalog()
 const mode = process.env.AGENT_FINANCIAL_PROBE_MODE ?? 'real'
 assert.ok(['real', 'fixture'].includes(mode), '只能显式选择真实模型或本地替身')
+const failureSelectors = args.filter(arg => arg.startsWith('--fixture-fail-at='))
+assert.ok(failureSelectors.length <= 1, '只能指定一次替身故障位置')
+const fixtureFailAt = failureSelectors[0]?.slice('--fixture-fail-at='.length)
+const reviewEach = args.includes('--review-each')
+if (fixtureFailAt !== undefined) {
+  assert.ok(executions.some(item => item.executionId === fixtureFailAt), '替身故障必须绑定计划内执行编号')
+  assert.ok(args.includes('--dry-run') || mode === 'fixture', '真实检查禁止替身故障参数')
+}
 const plan = { cases: cases.map(item => ({ ...item, expected: expectedFor(item, catalog) })), pricing,
-  maxQuestions: cases.length, maxModelCallsPerQuestion: 4, automaticRetry: false,
-  ...(suite === 'reports' ? { suite } : {}),
+  maxQuestions: executions.length, maxModelCallsPerQuestion: 4, automaticRetry: false, expectedUnknownReservations,
+  reviewMode: reviewEach ? 'SEQUENTIAL_SOURCE_REVIEW' : 'POST_RUN_REVIEW_REQUIRED',
+  ...(fixtureFailAt !== undefined ? { fixtureFailAt } : {}),
+  ...(suite !== 'financial' ? { suite } : {}),
+  ...(suite === 'closure' ? { fixtureVersion: closureSuite.fixtureVersion, executions: executions.map(item => ({
+    id: item.executionId, caseId: item.id, sample: item.sample })) } : {}),
   data: suite === 'reports' ? 'SELF_MADE_OPINIONS_AND_BOUNDED_REVIEWED_PUBLIC_REPORT_PASSAGES_AND_FINANCIAL_FACTS'
     : 'SELF_MADE_OPINIONS_MOCK_MARKET_AND_REVIEWED_PUBLIC_FINANCIAL_FACTS',
   realBudget: 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER', semanticReview: 'REQUIRED' }
@@ -31,14 +55,16 @@ if (args.includes('--dry-run')) {
 if (mode === 'real') {
   if (suite === 'reports') assert.equal(process.env.AGENT_REPORT_MODEL_PROBE, 'true', '真实报告原文检查须另行显式启用，并核对该轮授权')
   else assert.equal(process.env.AGENT_FINANCIAL_MODEL_PROBE, 'true', '真实财务资料检查须另行显式启用，并核对该轮授权')
+  if (suite === 'closure') assert.equal(reviewEach, true, '综合真实验收须逐题核对正文和依据后放行')
 }
 const continuationPath = process.env.AGENT_FINANCIAL_CONTINUE_FROM
 const previous = continuationPath ? JSON.parse(await readFile(resolve(continuationPath), 'utf8')) : null
-const results = previous ? continuationRows(previous, mode, catalog, cases) : []
+const previousReview = previous && suite === 'closure' ? JSON.parse(await readFile(resolve(dirname(continuationPath), 'review.json'), 'utf8')) : undefined
+const results = previous ? continuationRows(previous, mode, catalog, cases, previousReview) : []
 const alreadyRun = new Set(results.map(item => item.id))
-const pendingCases = cases.filter(item => !alreadyRun.has(item.id))
+const pendingCases = executions.filter(item => !alreadyRun.has(item.executionId))
 const continuation = previous ? { source: resolve(continuationPath), reusedCases: [...alreadyRun],
-  pendingCases: pendingCases.map(item => item.id), originalBefore: previous.before } : null
+  pendingCases: pendingCases.map(item => item.executionId), originalBefore: previous.before } : null
 const backend = 'http://localhost:18082'
 const frontend = 'http://localhost:18083'
 const output = resolve(process.env.AGENT_FINANCIAL_PROBE_OUTPUT ?? `../target/agent-${suite}-${mode}/${Date.now().toString(36)}`)
@@ -47,10 +73,11 @@ const names = [`agfo_${runId}`, `agfm_${runId}`]
 const stocksBefore = new Map()
 let budgetExisted
 let success = false
-let before
-let after
+let before = null
+let after = null
 let owner
-let databaseRemaining = null
+let databaseRemaining
+const sourceFixtures = []
 const sql = query => execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', [
   '--user=root', '--host=localhost', '--port=3306', '--database=stock_system_test',
   '--default-character-set=utf8mb4', '--batch', '--skip-column-names', `--execute=${query}`,
@@ -65,8 +92,10 @@ async function api(path, token, method = 'GET', body) {
 }
 function id(value) { assert.ok(Number.isSafeInteger(value) && value > 0); return value }
 async function save() {
-  await writeFile(`${output}/results.json`, JSON.stringify({ runId, mode, plan, continuation, before, after, results,
-    programSuccess: success, semanticReview: 'PENDING_HUMAN_REVIEW' }, null, 2))
+  const artifact = { runId, mode, plan, continuation, before, after, sourceFixtures, results,
+    programSuccess: success, semanticReview: reviewEach ? 'PER_ROW_SOURCE_REVIEW_SEE_SCORECARD' : 'PENDING_HUMAN_REVIEW' }
+  await writeFile(`${output}/results.json`, JSON.stringify(artifact, null, 2))
+  await writeFile(`${output}/scorecard.json`, JSON.stringify(buildScorecard(artifact), null, 2))
 }
 // 必须先通过前端代理、后端和实际 catalog 三重检查，再产生任何业务写入。
 for (const origin of [backend, frontend]) {
@@ -92,10 +121,7 @@ try {
   const member = await api('/auth/login', null, 'POST', { username: names[1], password: 'TestPass123' })
   if (mode === 'real') {
     before = await api('/test/agent-budget', owner.accessToken)
-    assert.equal(before.officialEndpoint, true)
-    assert.equal(before.budget.limitYuan, 10)
-    if (suite === 'financial') assert.equal(before.budget.unknownReservations, 0)
-    assert.ok(before.budget.occupiedUpperYuan + 4.016 <= 10)
+    checkBudgetStart(before, expectedUnknownReservations)
   }
   const workspace = id((await api('/workspaces', owner.accessToken, 'POST', { name: `财务核对自造样本${runId}` })).workspaceId)
   const invitation = await api(`/workspaces/${workspace}/invitations`, owner.accessToken, 'POST', { expectedInvitationId: null })
@@ -103,34 +129,72 @@ try {
   const targets = new Map()
   for (const symbol of stocksBefore.keys()) {
     const target = await api(`/workspaces/${workspace}/stocks`, owner.accessToken, 'POST', { code: symbol,
-      stance: 'NEUTRAL', reason: '验收自造观点：成员甲猜测新订单可能增长，尚待权威资料核对。',
+      stance: suite === 'closure' && symbol === '00700.HK' ? 'BULLISH' : 'NEUTRAL', reason: '验收自造观点：成员甲猜测新订单可能增长，尚待权威资料核对。',
       observationNote: '这是新建测试样本，不是实际研究记录。', horizon: 'MEDIUM', targetPrice: null, stopLossPrice: null })
     id(target.workspaceStockId); id(target.researchCycleId)
-    targets.set(symbol, `/workspaces/${workspace}/stocks/${target.workspaceStockId}/research/cycles/${target.researchCycleId}/agent`)
+    const cycleBase = `/workspaces/${workspace}/stocks/${target.workspaceStockId}/research/cycles/${target.researchCycleId}`
+    targets.set(symbol, `${cycleBase}/agent`)
+    if (suite === 'closure' && symbol === '00700.HK') {
+      const opinionPath = `/workspaces/${workspace}/stocks/${target.workspaceStockId}/opinions`
+      const common = { researchCycleId: target.researchCycleId, type: 'UPDATE', horizon: 'MEDIUM', targetPrice: null, stopLossPrice: null }
+      await api(opinionPath, member.accessToken, 'POST', { ...common, stance: 'BEARISH',
+        reason: '验收自造观点：成员乙担心盈利能力，尚未查询财报。', observationNote: '盈利下降仍是担忧，不是已核对事实。' })
+      await api(opinionPath, owner.accessToken, 'POST', { ...common, stance: 'NEUTRAL',
+        reason: '验收自造观点：成员甲调整为中性，因为订单增长尚无权威依据确认。', observationNote: '等待权威订单披露，不凭成员推测下结论。' })
+    }
+    const sources = await api(`${cycleBase}/sources`, owner.accessToken)
+    sourceFixtures.push({ symbol, scope: sources.scope, opinions: sources.opinions.map(item => ({
+      sourceId: `op-${item.id}`, authorName: item.authorNickname, createdAt: item.createdAt,
+      type: item.type, stance: item.stance, reason: item.reason, observationNote: item.observationNote })) })
   }
+  if (suite === 'closure') closureSuite.checkSourceFixtures(sourceFixtures, cases)
   for (const testCase of pendingCases) {
+    if (mode === 'real') checkBudgetStart(after ?? before, expectedUnknownReservations)
+    if (testCase.executionId === fixtureFailAt) {
+      const response = await fetch('http://127.0.0.1:18084/_test', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'failure-after-tool' }) })
+      assert.ok(response.ok)
+    }
     const base = targets.get(testCase.symbol)
     // 每题使用同一新建测试对象，清空上一题消息以免历史答案暗示工具选择；不重置费用。
     await api(base, owner.accessToken, 'DELETE')
     const started = Date.now()
-    const run = await api(`${base}/messages`, owner.accessToken, 'POST', { requestId: crypto.randomUUID(), question: testCase.question })
-    const row = JSON.parse(sql(`select json_object('modelCalls',model_calls,'toolCalls',tool_calls,'inputTokens',input_tokens,'outputTokens',output_tokens,'costUpperYuan',cost_upper_yuan,'model',model,'promptVersion',prompt_version,'tools',cast(tool_trace_json as json)) from agent_run where id=${id(run.runId)}`))
-    const result = { id: testCase.id, elapsedMillis: Date.now() - started, expected: expectedFor(testCase, catalog), trace: row, run }
+    const requestId = crypto.randomUUID()
+    const path = `${base}/${testCase.operation === 'SUMMARY' ? 'summaries' : 'messages'}`
+    const body = { requestId, ...(testCase.operation === 'SUMMARY' ? {} : { question: testCase.question }) }
+    let run, dispatchError
+    try { run = await api(path, owner.accessToken, 'POST', body) }
+    catch (error) {
+      dispatchError = error
+      // 只读恢复；回包丢失也不能重发付费 POST。失败同样保留 requestId 和安全诊断。
+      try { run = await api(`${base}/requests/${requestId}`, owner.accessToken) } catch { /* 下方保存 UNKNOWN */ }
+    }
+    run ??= { requestId, status: 'UNKNOWN', answer: null }
+    const traceJson = sql(`select json_object('modelCalls',model_calls,'toolCalls',tool_calls,'inputTokens',input_tokens,'outputTokens',output_tokens,'costUpperYuan',cost_upper_yuan,'reservedYuan',reserved_yuan,'model',model,'promptVersion',prompt_version,'tools',cast(tool_trace_json as json),'failure',cast(model_failure_json as json)) from agent_run where user_id=${id(owner.userId)} and request_id='${requestId}'`)
+    const row = traceJson ? JSON.parse(traceJson) : { modelCalls: 0, toolCalls: 0, tools: [], failure: null }
+    const result = { id: testCase.executionId, caseId: testCase.id, sample: testCase.sample, elapsedMillis: Date.now() - started,
+      expected: expectedFor(testCase, catalog), fixtureFingerprint: artifactHash(sourceFixtures), trace: row, run }
     results.push(result); await save()
-    result.checks = checkProgramResult(testCase, run, row, catalog)
+    if (dispatchError) throw dispatchError
+    result.checks = checkProgramResult(testCase, run, row, catalog, sourceFixtures)
     const restored = await api(`${base}/runs/${run.runId}`, owner.accessToken)
     assert.deepEqual(restored.answer, run.answer, '恢复必须保留同一问答和依据')
-    const repeated = await api(`${base}/messages`, owner.accessToken, 'POST', { requestId: run.requestId, question: testCase.question })
+    const repeated = await api(path, owner.accessToken, 'POST', body)
     assert.equal(repeated.runId, run.runId)
     assert.equal(Number(sql(`select model_calls from agent_run where id=${id(run.runId)}`)), row.modelCalls, '幂等恢复不能新增模型调用')
     assert.equal((await api(base, member.accessToken)).messages.length, 0)
     if (mode === 'real') {
-      after = await api('/test/agent-budget', owner.accessToken)
-      assert.equal(after.budget.unknownReservations, before.budget.unknownReservations, '新增未知用量时立即停止，不清除既有预留')
-      assert.ok(after.budget.occupiedUpperYuan <= 10)
+      const latest = await api('/test/agent-budget', owner.accessToken)
+      checkBudgetAfter(after ?? before, latest)
+      after = latest
     }
     await save()
-    process.stdout.write(JSON.stringify({ case: testCase.id, programContract: 'PASSED', semanticReview: 'PENDING', elapsedMillis: result.elapsedMillis }) + '\n')
+    if (reviewEach) {
+      result.manualReview = await awaitSourceReview(output, result)
+      await save()
+      assert.ok(Object.values(result.manualReview.dimensions).every(item => item.verdict === 'PASSED'), '逐题语义核对失败，停止后续派发')
+    }
+    process.stdout.write(JSON.stringify({ case: testCase.executionId, programContract: 'PASSED', semanticReview: result.manualReview ? 'PASSED' : 'PENDING', elapsedMillis: result.elapsedMillis }) + '\n')
   }
   success = true
 } finally {
@@ -183,8 +247,9 @@ try {
   remaining.split(/\r?\n/).forEach(value => assert.equal(Number(value), 0))
   databaseRemaining = 0
   await save()
+  await writeReviewArtifacts(output)
   await writeFile(`${output}/verification.json`, JSON.stringify({ success, runId, mode, cases: results.length,
-    databaseRemaining, realModel: mode === 'real', semanticReview: 'PENDING_HUMAN_REVIEW',
+    databaseRemaining, realModel: mode === 'real', semanticReview: reviewEach ? 'PER_ROW_SOURCE_REVIEW_SEE_SCORECARD' : 'PENDING_HUMAN_REVIEW',
     reusedCases: [...alreadyRun], newCases: results.filter(item => !alreadyRun.has(item.id)).length,
     paidRequests: mode === 'fixture' ? 0 : results.filter(item => !alreadyRun.has(item.id)).reduce((sum, item) => sum + item.trace.modelCalls, 0),
     budget: mode === 'real' ? 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER_PRESERVED' : 'LOCAL_FIXTURE' }, null, 2))

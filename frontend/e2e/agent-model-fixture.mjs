@@ -14,7 +14,8 @@ const server = createServer(async (request, response) => {
   }
   if (request.url === '/_test' && request.method === 'POST') {
     mode = JSON.parse(raw).mode
-    assert.ok(['valid', 'slow', 'invalid', 'failure', 'invalid-financial-number', 'invalid-financial-percent'].includes(mode))
+    assert.ok(['valid', 'slow', 'invalid', 'failure', 'failure-after-tool', 'invalid-financial-number', 'invalid-financial-percent',
+      'invalid-financial-number-gap', 'invalid-financial-percent-gap', 'missing-comparison', 'invalid-summary-identifiers'].includes(mode))
   }
   if (request.url === '/_test') {
     response.setHeader('Content-Type', 'application/json')
@@ -61,6 +62,7 @@ const server = createServer(async (request, response) => {
         if (result.financialFacts) return { text: result.sourceId ? usedMode === 'invalid-financial-number'
           ? '2025年度营业收入为1688.3810251459亿元。'
           : usedMode === 'invalid-financial-percent' ? `同比变化为${result.financialFacts.facts[0].change.percent}。`
+          : usedMode === 'missing-comparison' ? '2024年收入660257百万元人民币，本次缺少2023年比较列，不能计算2024年相对2023年的同比。'
           : '已核对所选年度报告财务科目，数值与口径见本次依据；不能据此证明订单增长。'
           : '本次资料没有可核实的所问财务期间或科目，不用其他年度数字替代。', sourceIds: result.sourceId ? [result.sourceId] : [] }
         if (result.passages) {
@@ -69,11 +71,18 @@ const server = createServer(async (request, response) => {
         }
         return { text: '本次查询未取得可用资料。', sourceIds: [] }
       })
-      message = { role: 'assistant', content: usedMode === 'invalid' ? 'invalid-json' : JSON.stringify({ paragraphs: paragraphs.length ? paragraphs : [{ text: '这是通用概念说明。', sourceIds: [] }], missingInformation: [toolResponses.some(result => result.financialFacts) ? '未读取订单资料，财务数字不证明订单变化。' : '未读取财报与公告，无法确认实际增长。'] }) }
+      const financial = toolResponses.find(result => result.financialFacts)?.financialFacts
+      const gap = usedMode === 'invalid-financial-number-gap' ? '尚需核对营业收入1688.3810251459亿元是否准确。'
+        : usedMode === 'invalid-financial-percent-gap' ? `尚需核对同比变化${financial.facts[0].change.percent}。`
+        : usedMode === 'missing-comparison' ? '未取得2023年比较列，所问同比尚无法核对。'
+        : financial ? '未读取订单资料，财务数字不证明订单变化。' : '未读取财报与公告，无法确认实际增长。'
+      message = { role: 'assistant', content: usedMode === 'invalid' ? 'invalid-json' : JSON.stringify({ paragraphs: paragraphs.length ? paragraphs : [{ text: '这是通用概念说明。', sourceIds: [] }], missingInformation: [gap] }) }
     }
     if (usedMode === 'slow') await new Promise(resolve => setTimeout(resolve, 2200))
     response.setHeader('Content-Type', 'application/json')
-    if (usedMode === 'failure') { response.writeHead(503).end('{"error":{"message":"offline fixture failure"}}'); return }
+    if (usedMode === 'failure' || usedMode === 'failure-after-tool' && toolResponses.length) {
+      response.writeHead(503).end('{"error":{"message":"offline fixture failure"}}'); return
+    }
     response.end(JSON.stringify({ id: `offline-${calls}`, object: 'chat.completion', created: 1, model: 'offline-agent-fixture', choices: [{ index: 0, finish_reason: finish, message }], usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 } }))
     return
   }
@@ -82,6 +91,7 @@ const server = createServer(async (request, response) => {
   const user = body.messages.find(message => message.role === 'user').content
   const material = JSON.parse(user.slice(user.indexOf('{')))
   const opinions = material.opinions
+  assert.ok(material.quote && ['AVAILABLE', 'UNAVAILABLE'].includes(material.quote.status))
   const latest = new Map(opinions.map(item => [item.authorId, item]))
   const refs = opinions.slice(-8).map(item => item.sourceId)
   const content = {
@@ -90,6 +100,10 @@ const server = createServer(async (request, response) => {
     members: [...latest.values()].map(item => ({ authorId: item.authorId,
       text: `${item.authorName}的最新判断：${item.reason}。这是成员观点，仍需权威资料核对。`, sourceIds: [item.sourceId] })),
     pendingItems: [{ text: '缺少对应公告、财报或业绩预告，暂时不能确认订单是否实际增长。', sourceIds: refs }],
+  }
+  if (usedMode === 'invalid-summary-identifiers') {
+    content.overview.text = `成员M1提出订单可能增长（${refs[0]}），未获权威依据核实。`
+    content.pendingItems[0].text = '本次未提供公告、财报、新闻或行情资料。'
   }
   if (usedMode === 'slow') await new Promise(resolve => setTimeout(resolve, 2200))
   response.setHeader('Content-Type', 'application/json')

@@ -1,0 +1,110 @@
+{
+  "caseId": "actual-summary-scope-v2",
+  "sourceArtifactSha256": "4d5e846c8036d3e1c13927acd60e0d9478cba55a6b5cb0644214e7cfc27bc702",
+  "originalPromptVersion": "research-summary-20261013-v2",
+  "authorUserIds": "SYNTHETIC_ALIAS_NUMBERS_NOT_ACCOUNT_IDS",
+  "summary": {
+    "overview": {
+      "text": "成员M1（自造成员甲）最初猜测新订单可能增长而看多，后因缺乏权威依据转为中性；成员M2（自造成员乙）担心盈利能力并持看空，但尚未查询财报。两人的观点都属预期或担忧，未获公告、财报、新闻或行情资料核实。",
+      "sourceIds": [
+        "op-8949",
+        "op-8950",
+        "op-8951"
+      ]
+    },
+    "changes": [
+      {
+        "text": "成员M1从看多转为中性：先前猜测新订单可能增长（op-8949），随后因订单增长尚无权威依据确认而调整为中性（op-8951）。",
+        "sourceIds": [
+          "op-8949",
+          "op-8951"
+        ]
+      }
+    ],
+    "members": [
+      {
+        "authorId": "M1",
+        "text": "最新为中性。此前猜测新订单可能增长而看多，后因订单增长缺乏权威依据确认，调整为中性并等待权威订单披露。",
+        "sourceIds": [
+          "op-8951"
+        ]
+      },
+      {
+        "authorId": "M2",
+        "text": "看空，理由是担心盈利能力；盈利下降目前只是担忧，尚未查询财报核实。",
+        "sourceIds": [
+          "op-8950"
+        ]
+      }
+    ],
+    "pendingItems": [
+      {
+        "text": "本次未提供公告、财报、新闻或行情资料，因此订单增长和盈利能力相关判断均无法确认，成员观点仅属预期或担忧。",
+        "sourceIds": []
+      }
+    ]
+  },
+  "quote": {
+    "status": "AVAILABLE",
+    "code": "00700.HK",
+    "price": 612,
+    "currency": "HKD",
+    "quoteTime": "2026-09-04T15:00:00",
+    "source": "LOCAL_MOCK",
+    "simulated": true,
+    "unavailableReason": null
+  },
+  "sources": [
+    {
+      "sourceId": "op-8949",
+      "authorId": "M1",
+      "opinion": {
+        "id": 8949,
+        "authorUserId": 1,
+        "authorNickname": "自造成员甲",
+        "type": "INITIAL",
+        "stance": "BULLISH",
+        "reason": "验收自造观点：成员甲猜测新订单可能增长，尚待权威资料核对。",
+        "observationNote": "这是新建测试样本，不是实际研究记录。",
+        "horizon": "MEDIUM",
+        "targetPrice": null,
+        "stopLossPrice": null,
+        "createdAt": "2026-10-18T22:52:23.417"
+      }
+    },
+    {
+      "sourceId": "op-8950",
+      "authorId": "M2",
+      "opinion": {
+        "id": 8950,
+        "authorUserId": 2,
+        "authorNickname": "自造成员乙",
+        "type": "UPDATE",
+        "stance": "BEARISH",
+        "reason": "验收自造观点：成员乙担心盈利能力，尚未查询财报。",
+        "observationNote": "盈利下降仍是担忧，不是已核对事实。",
+        "horizon": "MEDIUM",
+        "targetPrice": null,
+        "stopLossPrice": null,
+        "createdAt": "2026-10-18T22:52:23.458"
+      }
+    },
+    {
+      "sourceId": "op-8951",
+      "authorId": "M1",
+      "opinion": {
+        "id": 8951,
+        "authorUserId": 1,
+        "authorNickname": "自造成员甲",
+        "type": "UPDATE",
+        "stance": "NEUTRAL",
+        "reason": "验收自造观点：成员甲调整为中性，因为订单增长尚无权威依据确认。",
+        "observationNote": "等待权威订单披露，不凭成员推测下结论。",
+        "horizon": "MEDIUM",
+        "targetPrice": null,
+        "stopLossPrice": null,
+        "createdAt": "2026-10-18T22:52:23.484"
+      }
+    }
+  ]
+}

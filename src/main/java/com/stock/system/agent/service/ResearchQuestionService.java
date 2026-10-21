@@ -14,6 +14,7 @@ import com.stock.system.stock.financial.FinancialPeriod;
 import com.stock.system.stock.financial.LongbridgeFinancialParser;
 import com.stock.system.stock.vo.ResearchCycleSourcesResponseVO;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -30,7 +31,7 @@ import java.util.*;
 /** 所有查询由当前 Java 对象绑定权限范围；模型只能提出有界工具请求。 */
 @Service
 public class ResearchQuestionService {
-    public static final String VERSION = "research-question-20261018-v10-reviewed-report-excerpts";
+    public static final String VERSION = "research-question-20261021-v15-financial-gaps";
     public static final int MAX_MODEL_CALLS = 4;
     public static final int MAX_TOOL_ATTEMPTS = 3;
     private final StockResearchSourceService sources;
@@ -60,7 +61,15 @@ public class ResearchQuestionService {
             金额、差额与百分比逐项保留Java给出的精确十进制数及原报单位；禁止自行换算成万元、亿元或其他币种，也不自行四舍五入。
             原单位是元就写元，百万元就写百万元；没有取得Java换算结果时不提供换算值。可加千分位逗号，不能改动有效数字。
             percent字段的单位是百分数，正文在该数后必须保留百分号%，不能省略单位或当作小数比率；没有比较值时明确缺失。
+            年度比较列缺失时，可由目标年度推得所需的上一年；用“2023年”或“FY 2023”等明确年份形式说明缺少该期，不编造金额或同比。
             财务引用只证明取得的科目，营收或利润变化不能直接证明订单变化或某个经营原因；缺失须明确说明。
+            财务科目须逐项保留其含义：REVENUE是收入／营业收入，profitBasis=NOT_APPLICABLE时不适用利润归属口径。
+            归母、股东应占或本公司权益持有人应占只描述NET_PROFIT且profitBasis=PARENT_SHAREHOLDERS的利润，不描述收入。
+            同时回答收入和利润时分别说明科目；不能把两项合称为归母口径，也不能先作这种合并说明再用收入不适用来补充纠正。
+            财务期间格式须匹配series：ANNUAL用FY 2025，SEMIANNUAL用H1 2025，QUARTER用Q3 2025等，前缀在前年份在后。
+            查询指定股票某期数字或覆盖情况时须完成read_financial_facts，即使预期该季度没有资料，也按所问期间查询，不改查全年替代。
+            工具ERROR、INVALID_REQUEST或INVALID_TOOL_ARGUMENTS表示查询尚未完成，不证明资料库没有该期间。
+            有剩余额度时按参数格式修正后补查；仍未成功则说明查询未完成。只有成功返回的UNAVAILABLE及原因才能作为未覆盖的依据。
             根据问题按需补查，通用概念或已有有效材料足够时直接回答，不为了展示工具而查询。
             当前价格问题须调用 read_latest_quote，不能将历史消息或模拟报价称为现在的真实价格。
             价格、币种、日期、来源、模拟标记和名义价差只能采用工具提供的同一快照；未复权价差不代表投资回报。
@@ -95,6 +104,9 @@ public class ResearchQuestionService {
     public Answer answer(Context context, String question, Runnable stateCheck) {
         ResearchQuestionModel model = models.getIfAvailable();
         if (model == null) throw new BusinessException(ErrorCode.RESEARCH_AGENT_DISABLED);
+        // 运行入口拥有并关闭上下文，本次追问只借用同一个实例。
+        //noinspection resource
+        var execution = Objects.requireNonNull(ResearchModelExecution.current());
         var messages = new ArrayList<Message>();
         messages.add(new SystemMessage(SYSTEM));
         var roster = context.aliases.entrySet().stream().map(entry -> Map.of("authorId", entry.getValue(),
@@ -124,7 +136,7 @@ public class ResearchQuestionService {
             boolean allowTools = round < MAX_MODEL_CALLS - 1 && attempts < MAX_TOOL_ATTEMPTS;
             AssistantMessage response = model.call(List.copyOf(messages), allowTools ? definitions() : List.of());
             if (!response.hasToolCalls()) {
-                ResearchModelExecution.current().stage(ResearchAgentProgress.Stage.VALIDATING);
+                execution.stage(ResearchAgentProgress.Stage.VALIDATING);
                 ResearchReply reply = parseReply(response.getText(), context);
                 boolean changed = revalidate(context);
                 stateCheck.run();
@@ -136,9 +148,7 @@ public class ResearchQuestionService {
             }
             if (!allowTools || response.getToolCalls().size() > 8) throw new BusinessException(ErrorCode.RESEARCH_AGENT_EXECUTION_LIMIT);
             for (var call : response.getToolCalls()) {
-                if (call.id() == null || !call.id().matches("[A-Za-z0-9_-]{1,80}") || !callIds.add(call.id())
-                        || call.name() == null || call.name().length() > 80 || !"function".equals(call.type()))
-                    throw new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
+                validateToolIdentity(call.id(), call.name(), call.type(), callIds);
             }
             messages.add(response);
             var responses = new ArrayList<ToolResponseMessage.ToolResponse>();
@@ -150,9 +160,9 @@ public class ResearchQuestionService {
                 Object result;
                 if (attempts >= MAX_TOOL_ATTEMPTS) result = error("TOOL_LIMIT", "本轮查询次数已达上限，使用已取得资料或说明未完成范围。");
                 else {
-                    ResearchModelExecution.current().stage(ResearchAgentProgress.Stage.QUERYING);
+                    execution.stage(ResearchAgentProgress.Stage.QUERYING);
                     attempts++;
-                    ResearchModelExecution.current().toolCalls++;
+                    execution.toolCalls++;
                     try {
                         result = execute(context, call.name(), call.arguments());
                         status = result instanceof Map<?, ?> map && "ERROR".equals(map.get("status")) ? "ERROR" : "COMPLETED";
@@ -164,13 +174,21 @@ public class ResearchQuestionService {
                     } catch (IllegalArgumentException failure) { result = error("INVALID_TOOL_ARGUMENTS", "工具参数不合法，未执行查询。"); }
                 }
                 if ("ERROR".equals(status)) context.onlyReportTools = false;
-                ResearchModelExecution.current().toolTrace.add(new ResearchModelExecution.ToolTrace(
-                        TOOLS.contains(call.name()) ? call.name() : "UNKNOWN_TOOL", status, (System.nanoTime() - started) / 1_000_000));
+                execution.toolTrace.add(new ResearchModelExecution.ToolTrace(
+                        TOOLS.contains(call.name()) ? call.name() : "UNKNOWN_TOOL", status, (System.nanoTime() - started) / 1_000_000,
+                        result instanceof Map<?, ?> map && map.get("errorCode") instanceof String code ? code : null));
                 responses.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(), json.writeValueAsString(result)));
             }
             messages.add(ToolResponseMessage.builder().responses(responses).build());
         }
         throw new BusinessException(ErrorCode.RESEARCH_AGENT_EXECUTION_LIMIT);
+    }
+
+    // 外部模型的身份字段按可空输入检查，保留对缺失、非法及重复编号的拒绝。
+    private void validateToolIdentity(@Nullable String id, @Nullable String name, String type, Set<String> callIds) {
+        if (id == null || !id.matches("[A-Za-z0-9_-]{1,80}") || !callIds.add(id)
+                || name == null || name.length() > 80 || !"function".equals(type))
+            throw new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
     }
 
     private Object execute(Context context, String name, String args) {
@@ -191,8 +209,8 @@ public class ResearchQuestionService {
                 }
                 LocalDate from = selected.dateFrom() == null ? parent.dateFrom() : selected.dateFrom();
                 LocalDate to = selected.dateTo() == null ? parent.dateTo() : selected.dateTo();
-                if (parent.dateFrom() != null && from != null && from.isBefore(parent.dateFrom())
-                        || parent.dateTo() != null && to != null && to.isAfter(parent.dateTo())) throw new IllegalArgumentException();
+                if (parent.dateFrom() != null && from.isBefore(parent.dateFrom())
+                        || parent.dateTo() != null && to.isAfter(parent.dateTo())) throw new IllegalArgumentException();
                 var material = sources.readCycle(context.target.user(), context.target.workspace(), context.target.stock(),
                         context.target.cycle(), new ResearchSourceFilter(author, from, to));
                 if (material.scope().coverage() != ResearchCycleSourcesResponseVO.Coverage.COMPLETE)
@@ -210,7 +228,7 @@ public class ResearchQuestionService {
                 yield Map.of("status", "COMPLETE", "scope", visibleScope(context, material), "opinions", opinions);
             }
             case "read_latest_quote" -> {
-                if (node.size() != 0) throw new IllegalArgumentException();
+                if (!node.isEmpty()) throw new IllegalArgumentException();
                 var quote = market.readLatestQuote(context.target.user(), context.target.workspace(), context.target.stock());
                 context.quote = quote;
                 String id = "quote-" + UUID.randomUUID().toString().substring(0, 8);
@@ -285,13 +303,16 @@ public class ResearchQuestionService {
         try {
             if (text == null || text.length() > 32_000) throw new IllegalArgumentException();
             stage = "QUESTION_REPLY_JSON";
-            var reply = strict.readValue(text, ResearchReply.class);
+            var payload = strict.readTree(jsonBody(text));
+            if (payload == null || payload.isMissingNode()) throw new IllegalArgumentException();
             stage = "QUESTION_REPLY_CONTRACT";
+            if (!payload.isObject()) throw new IllegalArgumentException();
+            var reply = strict.treeToValue(payload, ResearchReply.class);
             if (reply.paragraphs() == null || reply.paragraphs().isEmpty() || reply.paragraphs().size() > 8
                     || reply.missingInformation() == null || reply.missingInformation().size() > 8) throw new IllegalArgumentException();
             var ids = new HashSet<>(context.references.keySet()); ids.addAll(context.evidence.keySet());
             for (var paragraph : reply.paragraphs()) {
-                if (paragraph == null || !validText(paragraph.text()) || paragraph.sourceIds() == null
+                if (paragraph == null || invalidText(paragraph.text()) || paragraph.sourceIds() == null
                         || paragraph.sourceIds().size() > 8 || new HashSet<>(paragraph.sourceIds()).size() != paragraph.sourceIds().size()
                         || paragraph.sourceIds().stream().anyMatch(id -> !ids.contains(id))) throw new IllegalArgumentException();
                 var cited = paragraph.sourceIds().stream().map(context.evidence::get).filter(Objects::nonNull).toList();
@@ -303,12 +324,38 @@ public class ResearchQuestionService {
                 ResearchFinancialAnswerNumbers.validate(paragraph.text(), cited, originalOpinions);
                 stage = "QUESTION_REPLY_CONTRACT";
             }
-            if (reply.missingInformation().stream().anyMatch(value -> !validText(value))) throw new IllegalArgumentException();
+            if (reply.missingInformation().stream().anyMatch(this::invalidText)) throw new IllegalArgumentException();
+            // 缺口同样是要展示和保存的模型文字，不能成为财务数字校验的旁路。
+            // 只使用最终答案已引用的来源，保证保存后的依赖和本次校验范围一致。
+            var replySourceIds = reply.paragraphs().stream().flatMap(paragraph -> paragraph.sourceIds().stream())
+                    .collect(java.util.stream.Collectors.toSet());
+            var replyEvidence = replySourceIds.stream().map(context.evidence::get).filter(Objects::nonNull).toList();
+            var replyOpinionIds = replySourceIds.stream().map(context.references::get).filter(Objects::nonNull)
+                    .map(Reference::opinionId).collect(java.util.stream.Collectors.toSet());
+            var replyOpinions = context.snapshots.stream().flatMap(snapshot -> snapshot.opinions().stream())
+                    .filter(opinion -> replyOpinionIds.contains(opinion.id())).map(json::writeValueAsString).toList();
+            stage = "QUESTION_REPLY_FINANCIAL_GAPS";
+            for (String gap : reply.missingInformation()) ResearchFinancialAnswerNumbers.validate(gap, replyEvidence, replyOpinions);
+            stage = "QUESTION_REPLY_CONTRACT";
             return emptyReportReply(context).orElseGet(() -> ResearchReportAnswerSupport.ground(reply, context.evidence));
         } catch (RuntimeException failure) {
             // Only a fixed stage is retained, never model text or the parser's exception message.
-            throw ResearchModelFailure.translate(new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT), stage);
+            throw ResearchModelFailure.translate(new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT), stage,
+                    failure instanceof ResearchFinancialAnswerNumbers.Rejected rejected ? rejected.rule() : null);
         }
+    }
+    /** 仅移除完整单段 JSON 围栏或开头 BOM；不修补 JSON、提取夹杂正文中的片段或忽略字段。 */
+    private String jsonBody(String text) {
+        String body = text.strip();
+        if (body.startsWith("\uFEFF")) body = body.substring(1).stripLeading();
+        if (!body.startsWith("```")) return body;
+        int openingEnd = body.indexOf('\n');
+        int closingStart = body.length() - 3;
+        if (openingEnd < 0 || !body.endsWith("```") || closingStart <= openingEnd
+                || body.charAt(closingStart - 1) != '\n') throw new IllegalArgumentException();
+        String language = body.substring(3, openingEnd).strip();
+        if (!language.isEmpty() && !language.equalsIgnoreCase("json")) throw new IllegalArgumentException();
+        return body.substring(openingEnd + 1, closingStart).strip();
     }
     private Optional<ResearchReply> emptyReportReply(Context context) {
         if (!context.onlyReportTools || context.reportLookups.isEmpty() || !context.references.isEmpty() || !context.evidence.isEmpty()
@@ -324,7 +371,7 @@ public class ResearchQuestionService {
         }).toList();
         return Optional.of(new ResearchReply(paragraphs, List.of()));
     }
-    private boolean validText(String text) { return text != null && !text.isBlank() && text.codePointCount(0, text.length()) <= 2000; }
+    private boolean invalidText(String text) { return text == null || text.isBlank() || text.codePointCount(0, text.length()) > 2000; }
     private <T> T parseArgs(String text, Class<T> type) {
         try { return strict.readValue(text, type); }
         catch (RuntimeException failure) { throw new IllegalArgumentException(); }
@@ -340,7 +387,13 @@ public class ResearchQuestionService {
         String empty = "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}";
         String dates = "{\"type\":\"object\",\"properties\":{\"dateFrom\":{\"type\":\"string\",\"description\":\"开始日期 yyyy-MM-dd\"},\"dateTo\":{\"type\":\"string\",\"description\":\"结束日期 yyyy-MM-dd\"}},\"required\":[\"dateFrom\",\"dateTo\"],\"additionalProperties\":false}";
         String opinions = "{\"type\":\"object\",\"properties\":{\"authorId\":{\"type\":\"string\",\"description\":\"当前名单中的M编号，可省略\"},\"dateFrom\":{\"type\":\"string\"},\"dateTo\":{\"type\":\"string\"}},\"additionalProperties\":false}";
-        String financial = "{\"type\":\"object\",\"properties\":{\"series\":{\"type\":\"string\",\"enum\":[\"ANNUAL\",\"SEMIANNUAL\",\"QUARTER\"]},\"period\":{\"type\":\"string\",\"description\":\"例如 FY 2025；省略读取报告库最新可用期，不代表全部最新披露\"},\"metrics\":{\"type\":\"array\",\"maxItems\":5,\"uniqueItems\":true,\"items\":{\"type\":\"string\",\"enum\":[\"REVENUE\",\"NET_PROFIT\",\"TOTAL_ASSETS\",\"TOTAL_LIABILITIES\",\"OPERATING_CASH_FLOW\"]}}},\"required\":[\"series\"],\"additionalProperties\":false}";
+        String financial = """
+                {"type":"object","properties":{
+                  "series":{"type":"string","enum":["ANNUAL","SEMIANNUAL","QUARTER"],"description":"全年ANNUAL、半年SEMIANNUAL、单季QUARTER，须匹配period前缀"},
+                  "period":{"type":"string","pattern":"^(FY|H1|Q[1-4]) *20[0-9]{2}$","description":"前缀在前、年份在后：ANNUAL例如FY 2025，SEMIANNUAL例如H1 2025，QUARTER例如Q3 2025。查询第三季度传QUARTER和Q3 2025，由Java返回覆盖结果，不改成全年。省略读取该系列最新可用期，不代表全部最新披露"},
+                  "metrics":{"type":"array","maxItems":5,"uniqueItems":true,"items":{"type":"string","enum":["REVENUE","NET_PROFIT","TOTAL_ASSETS","TOTAL_LIABILITIES","OPERATING_CASH_FLOW"]}}
+                },"required":["series"],"additionalProperties":false}
+                """;
         return List.of(definition("read_cycle_opinions", "读取当前周期内未撤回的成员原文。可按名单M编号或日期缩小当前用户选择范围。", opinions),
                 definition("read_latest_quote", "读取当前股票的最新可用报价，保留真实时间、币种、来源及模拟标记。", empty),
                 definition("read_daily_prices", "读取当前股票最多31自然日的日K及Java名义价差。日期必须明确，实际返回可能不足或不可用。", dates),
@@ -352,12 +405,12 @@ public class ResearchQuestionService {
     private ToolCallback definition(String name, String description, String schema) {
         var definition = ToolDefinition.builder().name(name).description(description).inputSchema(schema).build();
         return new ToolCallback() {
-            @Override public ToolDefinition getToolDefinition() { return definition; }
-            @Override public String call(String arguments) { throw new IllegalStateException("Tools are executed by the bounded research workflow"); }
+            @Override public @NonNull ToolDefinition getToolDefinition() { return definition; }
+            @Override public @NonNull String call(@NonNull String arguments) { throw new IllegalStateException("Tools are executed by the bounded research workflow"); }
         };
     }
 
-    public final class Context {
+    public static final class Context {
         final Target target;
         final ResearchCycleSourcesResponseVO primary;
         final List<Answer> history;

@@ -5,8 +5,11 @@ param(
     [switch]$ApprovedFinancialData,
     [string]$ContinueFrom,
     [string[]]$CaseIds,
-    [ValidateSet('Financial', 'Reports')][string]$Suite = 'Financial',
-    [switch]$ApprovedReportData
+    [ValidateSet('Financial', 'Reports', 'Closure')][string]$Suite = 'Financial',
+    [switch]$ApprovedReportData,
+    [ValidateRange(0, 1000)][int]$ExpectedUnknownReservations = 0,
+    [string]$FixtureFailAt,
+    [switch]$ReviewEach
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -14,6 +17,14 @@ $nodePath = (Get-Command node.exe -ErrorAction Stop).Source
 $probeArguments = @('e2e/research-agent-financial-probe.mjs')
 $planArguments = @((Join-Path $projectRoot 'frontend/e2e/research-agent-financial-probe.mjs'), '--dry-run')
 if ($Suite -eq 'Reports') { $probeArguments += '--suite=reports'; $planArguments += '--suite=reports' }
+if ($Suite -eq 'Closure') { $probeArguments += '--suite=closure'; $planArguments += '--suite=closure' }
+$unknownArgument = "--expected-unknown=$ExpectedUnknownReservations"
+$probeArguments += $unknownArgument; $planArguments += $unknownArgument
+if ($ReviewEach) { $probeArguments += '--review-each'; $planArguments += '--review-each' }
+if ($PSBoundParameters.ContainsKey('FixtureFailAt')) {
+    if ($Mode -ne 'Fixture') { throw 'Fixture failure injection is forbidden in Real mode' }
+    $probeArguments += "--fixture-fail-at=$FixtureFailAt"; $planArguments += "--fixture-fail-at=$FixtureFailAt"
+}
 if ($PSBoundParameters.ContainsKey('CaseIds')) {
     $selection = '--cases=' + ($CaseIds -join ',')
     $probeArguments += $selection

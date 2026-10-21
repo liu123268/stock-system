@@ -16,6 +16,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class ResearchModelFailureTest {
+    @Test void oldToolTraceStillRestoresWithoutAnErrorCode() {
+        var json = new JsonMapper();
+        var trace = json.readValue("{\"name\":\"read_financial_facts\",\"status\":\"COMPLETED\",\"elapsedMillis\":5}",
+                ResearchModelExecution.ToolTrace.class);
+        assertThat(trace.name()).isEqualTo("read_financial_facts");
+        assertThat(trace.errorCode()).isNull();
+        assertThat(json.writeValueAsString(trace)).doesNotContain("errorCode");
+    }
     @Test void recordsSecondCallTimeoutWithoutFreeingUnknownUsageOrRetrying() {
         ChatModel chat = mock(ChatModel.class);
         var model = new ResearchQuestionModel(chat);
@@ -43,6 +51,7 @@ class ResearchModelFailureTest {
             assertThat(execution.failure.category()).isEqualTo("RATE_LIMIT");
             assertThat(execution.failure.upstreamStatus()).isEqualTo(429);
             assertThat(new JsonMapper().writeValueAsString(execution.failure)).doesNotContain("provider-body");
+            assertThat(new JsonMapper().writeValueAsString(execution.failure)).doesNotContain("validationRule");
         }
     }
     @Test void classifiesAResponseConversionFailureEvenWhenHttpWasSuccessful() {
@@ -62,5 +71,12 @@ class ResearchModelFailureTest {
             assertThat(ResearchModelFailure.translate(failure, "QUESTION_MODEL")).isSameAs(failure);
             assertThat(execution.failure.category()).isEqualTo("RESEARCH_AGENT_EXECUTION_LIMIT");
         }
+    }
+    @Test void oldSafeDiagnosticJsonStillDeserializesWithoutANewValidationRule() {
+        var json = new JsonMapper();
+        var restored = json.readValue("{\"stage\":\"QUESTION_MODEL\",\"category\":\"TIMEOUT\",\"upstreamStatus\":null,\"modelCall\":2,\"runId\":42,\"requestId\":\"test-request\"}",
+                ResearchModelFailure.Diagnostic.class);
+        assertThat(restored.validationRule()).isNull();
+        assertThat(restored.modelCall()).isEqualTo(2);
     }
 }

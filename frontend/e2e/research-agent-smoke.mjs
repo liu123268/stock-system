@@ -19,7 +19,6 @@ let page
 let workspace
 let target
 let success = false
-let cleaned = false
 const sql = query => execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', ['--host=localhost', '--port=3306', '--user=root', '--database=stock_system_test', '--default-character-set=utf8mb4', '--batch', '--skip-column-names', `--execute=${query}`], {
   encoding: 'utf8', env: { ...process.env, MYSQL_PWD: process.env.DB_PASSWORD },
 }).trim()
@@ -129,6 +128,22 @@ try {
   await page.locator('.agent-answer').waitFor()
   assert.equal((await fixtureState()).calls, before + 1)
   checks.push('reload-restores-without-model-call')
+  await fixtureState('invalid-summary-identifiers')
+  const beforeInvalidSummary = (await fixtureState()).calls
+  const previousSummaryAnswers = await page.locator('.agent-answer').count()
+  const invalidSummaryPost = page.waitForRequest(request => request.url().endsWith('/agent/summaries/stream') && request.method() === 'POST')
+  await page.getByRole('button', { name: '重新梳理', exact: true }).click()
+  const invalidSummaryRequestId = (await invalidSummaryPost).postDataJSON().requestId
+  assert.match(invalidSummaryRequestId, /^[0-9a-f-]{36}$/)
+  await page.getByRole('alert').getByText('研究助手未返回可核对的完整结果', { exact: true }).waitFor()
+  assert.equal(await page.locator('.agent-answer').count(), previousSummaryAnswers)
+  assert.equal((await fixtureState()).calls, beforeInvalidSummary + 1)
+  const invalidSummary = JSON.parse(sql(`select json_object('id',id,'status',status,'failure',cast(model_failure_json as json))
+    from agent_run where user_id=${owner.userId} and request_id='${invalidSummaryRequestId}'`))
+  assert.equal(invalidSummary.status, 'FAILED'); assert.equal(invalidSummary.failure.stage, 'SUMMARY_REPLY_CONTRACT')
+  assert.equal(sql(`select count(*) from agent_message where run_id=${invalidSummary.id}`), '0')
+  checks.push('summary-known-internal-identifiers-rejected-before-save-with-old-result-preserved')
+  await fixtureState('valid')
   const questionInput = page.getByLabel('继续提问')
   const beforeQuestions = (await fixtureState()).calls
   await questionInput.fill('成员甲最新观点和现在最新可用价分别是什么？')
@@ -187,7 +202,12 @@ try {
   assert.equal((await fixtureState()).calls, beforeFinancialRestore)
   await page.keyboard.press('Escape')
   checks.push('financial-restore-and-source-access-without-paid-request')
-  for (const guard of [{ mode: 'invalid-financial-number', name: 'number' }, { mode: 'invalid-financial-percent', name: 'percentage' }]) {
+  for (const guard of [
+    { mode: 'invalid-financial-number', name: 'number', rule: 'UNSUPPORTED_LITERAL' },
+    { mode: 'invalid-financial-percent', name: 'percentage', rule: 'PERCENT_UNIT_REQUIRED' },
+    { mode: 'invalid-financial-number-gap', name: 'number-gap', rule: 'UNSUPPORTED_LITERAL', stage: 'QUESTION_REPLY_FINANCIAL_GAPS' },
+    { mode: 'invalid-financial-percent-gap', name: 'percentage-gap', rule: 'PERCENT_UNIT_REQUIRED', stage: 'QUESTION_REPLY_FINANCIAL_GAPS' },
+  ]) {
     await fixtureState(guard.mode)
     const beforeNumberGuard = (await fixtureState()).calls
     const previousAnswers = await page.locator('.agent-answer').count()
@@ -206,14 +226,34 @@ try {
     assert.equal(numberGuard.errorCode, 'RESEARCH_AGENT_INVALID_RESULT')
     assert.equal(numberGuard.modelCalls, 2)
     assert.equal(numberGuard.costKnown, true)
-    assert.deepEqual(numberGuard.failure, { stage: 'QUESTION_REPLY_FINANCIAL', category: 'RESEARCH_AGENT_INVALID_RESULT',
-      upstreamStatus: 200, modelCall: 2, runId: numberGuard.runId, requestId: guardedRequestId })
+    assert.deepEqual(numberGuard.failure, { stage: guard.stage ?? 'QUESTION_REPLY_FINANCIAL', category: 'RESEARCH_AGENT_INVALID_RESULT',
+      upstreamStatus: 200, modelCall: 2, runId: numberGuard.runId, requestId: guardedRequestId,
+      validationRule: guard.rule })
     assert.equal(sql(`select count(*) from agent_message where run_id=${numberGuard.runId}`), '0')
     assert.equal((await fixtureState()).calls, beforeNumberGuard + 2)
     await writeFile(`${output}/financial-${guard.name}-guard.json`, JSON.stringify(numberGuard, null, 2))
     await page.locator('.agent-panel').screenshot({ path: `${output}/financial-${guard.name}-rejected.png` })
     checks.push(`financial-original-unit-${guard.name}-guard-rejects-model-conversion-without-message-or-retry`)
   }
+  await fixtureState('missing-comparison')
+  const beforeMissingComparison = (await fixtureState()).calls
+  const answersBeforeMissingComparison = await page.locator('.agent-answer').count()
+  await questionInput.fill('请查2024年收入，并说明缺少2023年比较列时能否计算同比。')
+  const missingComparisonPost = page.waitForRequest(request => request.url().endsWith('/agent/messages/stream') && request.method() === 'POST')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  const missingComparisonRequestId = (await missingComparisonPost).postDataJSON().requestId
+  assert.match(missingComparisonRequestId, /^[0-9a-f-]{36}$/)
+  await page.getByText('2024年收入660257百万元人民币，本次缺少2023年比较列，不能计算2024年相对2023年的同比。', { exact: true }).waitFor()
+  await page.getByText('未取得2023年比较列，所问同比尚无法核对。', { exact: true }).waitFor()
+  assert.equal(await page.locator('.agent-answer').count(), answersBeforeMissingComparison + 1)
+  assert.equal((await fixtureState()).calls, beforeMissingComparison + 2)
+  const missingComparisonRun = JSON.parse(sql(`select json_object('status',status,'failure',cast(model_failure_json as json))
+    from agent_run where user_id=${owner.userId} and request_id='${missingComparisonRequestId}'`))
+  assert.equal(missingComparisonRun.status, 'SUCCEEDED'); assert.equal(missingComparisonRun.failure, null)
+  await page.reload()
+  await page.getByText('2024年收入660257百万元人民币，本次缺少2023年比较列，不能计算2024年相对2023年的同比。', { exact: true }).waitFor()
+  assert.equal((await fixtureState()).calls, beforeMissingComparison + 2)
+  checks.push('financial-missing-comparison-year-accepted-over-sse-and-restored-without-another-model-call')
   await fixtureState('valid')
   if (process.env.AGENT_REPORT_RAG_PROBE === 'true') {
     const library = await api(`${base}/reports`, owner.accessToken)
@@ -622,8 +662,7 @@ try {
       select count(*) from research_cycle where id in (select id from agent_test_cycles);
       select count(*) from stock_opinion where research_cycle_id in (select id from agent_test_cycles);`)
     result.split(/\r?\n/).forEach(value => assert.equal(Number(value), 0))
-    cleaned = true
-    await writeFile(`${output}/verification.json`, JSON.stringify({ success, runId, checks, errors, databaseRemaining: cleaned ? 0 : null, model: 'LOCAL_HTTP_FIXTURE', paidRequests: 0 }, null, 2))
+    await writeFile(`${output}/verification.json`, JSON.stringify({ success, runId, checks, errors, databaseRemaining: 0, model: 'LOCAL_HTTP_FIXTURE', paidRequests: 0 }, null, 2))
   }
 }
 console.log(JSON.stringify({ success, checks, databaseRemaining: 0, paidRequests: 0 }))

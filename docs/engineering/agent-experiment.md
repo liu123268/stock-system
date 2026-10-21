@@ -170,7 +170,7 @@ StockResearchSourceIntegrationTest 在真实测试库用固定资料检查范围
 
 Service 的返回值先在 Java 内存里；模型提出的工具请求和执行结果分别追加到 `messages` 后，下一次 `model.call` 才会收到这些资料。call ID 用于配对一次工具请求和它的结果，`sourceId` 用于最终回答引用已登记的依据；两者职责不同，引用不能直接拿工具调用编号替代。财务查询的用户／空间／股票由 `context.target` 绑定，模型参数只选择期间和科目；越界或未知字段在执行 Service 前拒绝。
 
-最终回答沿 `parseReply` 分两步处理：`strict.readValue(text, ResearchReply.class)` 把 JSON 字符串转换成含 paragraphs／missingInformation 的对象，再检查段落数量、文字和引用等业务约束；能解析不代表对象符合项目要求。财务查询先把已核对的快照以 `sourceId → Evidence` 保存到 `context.evidence`，并把同一编号和数据交给模型；最终回答引用编号，Java 检查其是否已登记，返回时同时带回答与依据列表，页面按编号匹配并展示依据。编号存在只证明能对应到已登记资料，不能证明资料支持该段结论。离线观察入口为 ResearchFinancialQuestionTest 的 `sendsVerifiedFinancialSnapshotAndKeepsSourcePagesAndJavaChanges`，在 parseReply 的 readValue 行断点并步过，可对照字符串与对象字段；该测试不调用真实模型。
+最终回答沿 `parseReply` 分步处理：`strict.readTree` 先解析唯一 JSON 值，`strict.treeToValue` 再映射为含 paragraphs／missingInformation 的对象，随后检查段落数量、文字和引用等业务约束；语法失败与结构失败分别定位。能解析不代表对象符合项目要求。财务查询先把已核对的快照以 `sourceId → Evidence` 保存到 `context.evidence`，并把同一编号和数据交给模型；最终回答引用编号，Java 检查其是否已登记，返回时同时带回答与依据列表，页面按编号匹配并展示依据。编号存在只证明能对应到已登记资料，不能证明资料支持该段结论。离线观察入口为 ResearchFinancialQuestionTest 的 `sendsVerifiedFinancialSnapshotAndKeepsSourcePagesAndJavaChanges`，在 parseReply 的 readTree／treeToValue 行断点并步过，可对照字符串、JSON 节点与对象字段；该测试不调用真实模型。
 
 资料够用时模型可以直接回答。例如已有有效研究梳理，追问“订单已经增长了吗”，可以用原观点说明只是猜测，当前缺财报或权威披露；没有权威资料工具就不能补成已确认。价格问题则要求本次查报价，历史聊天里的数字只是旧快照。日 K 的实际区间和名义变化由 Java 计算，模型负责解释其口径；不能把未复权价差说成投资回报。
 
@@ -181,6 +181,8 @@ Service 的返回值先在 Java 内存里；模型提出的工具请求和执行
 读测试时核对断言检查的对象：[财务工具测试](../../src/test/java/com/stock/system/agent/ResearchFinancialQuestionTest.java) 人为指定模型的工具请求和最终回复，用于检查 Java 往返、范围和依据；真实检查脚本中的 SUCCEEDED／answer 存在断言，只能证明相应程序条件，正文数值、单位、来源及是否回答本次问题仍需与快照对照。历史报价记录中无关的日 K 缺口已转为一次实际 Prompt 修正，证据见 [缺口聚焦](../specs/004-research-agent/tasks.md#20-报价回答的资料缺口聚焦2026-10-15)；输入规则已修改与真实输出已改善分别验收。
 
 报告六题的真实比较又发现，正确财务快照仍可能被模型在正文换算错。v7 在解析新回答时核对带财务引用段落的数字与原单位组合，拒绝模型自行换算、改数或未取得的百分比；源码入口为 ResearchFinancialAnswerNumbers。它检查“该数值／单位是否在引用材料内”，不证明科目归属、增减方向和整段语义，旧记录也不据此自动改写。真实错误、作用范围和复验见 [BUG-012](bugs/BUG-012-financial-answer-unit-conversion.md)；不能把新增单元测试当作真实模型复测。
+
+v15 将同一保护补到带财务引用答案的 `missingInformation`。模型把金额写进“尚需核对”也会被用户看到、保存和恢复，因此不能只校验主要段落。缺口使用最终答案已引用的来源并集，合法缺失比较年度仍可说明；错误时保留已知用量并以 `QUESTION_REPLY_FINANCIAL_GAPS` 定位，不记录错误原文或增加模型重试。对应原理、离线坏例子及边界见 [BUG-019](bugs/BUG-019-financial-gap-validation.md)，不把程序拒绝测试写成真实模型曾输出这些错误。
 
 ## 8. 正式业务学习：断线后查原任务
 
@@ -219,6 +221,12 @@ Longbridge 端点仍只有展示币种和数值，不能完整说明金额单位
 
 ## 10. 财务真实模型检查怎样复现
 
+### 持续授权与累计预算
+
+2026-10-21 用户明确授权继续开发：必要真实调用沿原累计 10 元上限直接执行，无需逐批再次询问。本授权适用于既有官方 DeepSeek 及此前获准的自造观点、模拟行情和两份受审报告必要内容；不新开或重置账本，旧未知用量预留继续占用预算，运行前核对实际剩余额度及官方价格。开发中的必要复测可使用此持续授权，不能为了消耗额度重复调用已完成样本。
+
+单批执行或逐题语义核对失败时仍立即停止，保存失败、费用和未执行分母；先离线定位、修复并验证，再按上述持续授权另起必要复测批次，不在原请求内自动重试，也不借续做重发失败题。新增未知用量、无法确认计费或原累计额度不足时停止并报告，不以清零旧预留获得额度。后续若引入新的外部服务或未获准的数据外发，另核对其适用授权；同一已授权范围及原预算内不重复询问。
+
 [固定六题](../../scripts/agent-quality/financial-cases.mjs) 分别检查 A 股年度金额与同比、港股原报币种／单位、缺可比期、未覆盖季度、营收与订单猜测、报价缺口的相关性。期望数字从已审年度报告目录读取，保留金额字符串和原报定位；[程序检查](../../scripts/agent-quality/financial-cases.test.mjs) 验证工具快照与请求上限，不能自动判断自然语言是否支持结论。每次结果仍须逐题审阅，不能把 HTTP 成功或程序检查通过当成模型质量通过。
 
 在项目根目录先打印计划：
@@ -233,11 +241,11 @@ node frontend/e2e/research-agent-financial-probe.mjs --dry-run
 ./scripts/run-agent-financial-probe.ps1 -Mode Fixture
 ```
 
-需要只检查题库中的部分问题时，在项目根目录用 `node frontend/e2e/research-agent-financial-probe.mjs --dry-run --cases=moutai-annual,tencent-original-currency` 先确认计划；随后给启动脚本增加 `-CaseIds @('moutai-annual','tencent-original-currency')`。未指定时仍是原六题；显式空选择、未知或重复编号直接拒绝，不回退执行整套。计划、执行、股票 fixture 与续做均沿同一选择范围；续做时须传相同 CaseIds，禁止混用其他题集结果。定向真实复测仍需对应的新增调用授权，选题参数不代替授权。
+需要只检查题库中的部分问题时，在项目根目录用 `node frontend/e2e/research-agent-financial-probe.mjs --dry-run --cases=moutai-annual,tencent-original-currency` 先确认计划；随后给启动脚本增加 `-CaseIds @('moutai-annual','tencent-original-currency')`。未指定时仍是原六题；显式空选择、未知或重复编号直接拒绝，不回退执行整套。计划、执行、股票 fixture 与续做均沿同一选择范围；续做时须传相同 CaseIds，禁止混用其他题集结果。选题参数不代替授权；既有数据范围与原预算内的必要复测适用本节持续授权。
 
 [启动脚本](../../scripts/run-agent-financial-probe.ps1) 建立独立 test 后端与前端代理，Fixture 只用回环模型和模拟行情，不触碰真实实验账本。执行前检查测试端口空闲，写入前检查前后端探针及实际 SQL catalog；每题保存、恢复和相同 requestId 去重后，核对另一成员看不到本人记录。finally 只清理本轮随机账号及关联数据，并关闭自己记录的 PID／启动时间对应服务。成功输出 FINANCIAL_PROBE_OK 和 FINANCIAL_PROBE_SERVICES_CLOSED，结果位于忽略的 target/agent-financial-fixture-*。
 
-真实模式另需本轮数据范围及费用授权，命令中的开关只表达执行意图，不能代替授权：
+真实模式核对数据范围及适用授权；本节持续授权已覆盖的必要复测不重复询问，命令中的开关只表达执行意图：
 
 ```powershell
 ./scripts/run-agent-financial-probe.ps1 -Mode Real -ApprovedFinancialData
@@ -370,3 +378,30 @@ remove 的最后一个参数是 status 返回的文档 key，会同时禁止新�
 每次调用都重新走现有权限与撤回检查，没有 MCP 资料缓存。失败看 isError：SDK 可能在参数校验阶段直接返回工具错误文本，此时尚未发起源查询；进入适配器后的业务错误有固定 errorCode。未授权继续沿原 API 的 UNAUTHENTICATED、WORKSPACE_NOT_FOUND 等契约，隐藏空间存在性的规则保留。源故障、全响应超时、重定向或超限均不返回原始响应，也不在应用层自动重试。来源量及输出大小有各自上限，缩小日期范围后再由用户决定是否调用。
 
 stdout 只有协议帧，保持连接但暂未提问时没有普通命令输出是正常的；停止由客户端关闭连接／进程，直接在终端运行可 Ctrl+C。stdin EOF 会触发关闭。协议输出采用 Unicode 转义，仍是 UTF-8，客户端 JSON 解码后得到原样中文；这修复 Java SDK Windows 默认代码页读取路径造成的乱码／JSON 失败。单纯看到握手成功不能证明中文资料或业务权限已通过。实际官方客户端、打包入口、故障与清理证据只见 [任务第 30 节](../specs/004-research-agent/tasks.md#30-本机只读-mcp-服务与真实客户端2026-10-18)，个人解释能力仍待单独验收。
+
+## 14. 先行闭环的固定题集与逐题审查
+
+[综合题集](../../scripts/agent-quality/closure-cases.mjs) 固定十个问题：原六道财务／报价题，另加周期梳理、同一成员变化、观点与事实边界、指定日 K。腾讯年度题和事实边界题各预设三次独立采样，共十四次；不是失败后的自动重试。先用不读取 Key、数据库或服务的计划命令检查发送范围：
+
+```powershell
+node frontend/e2e/research-agent-financial-probe.mjs --suite=closure --review-each --expected-unknown=1 --dry-run
+./scripts/run-agent-closure-quality.ps1 -Mode Fixture
+```
+
+第二条只连回环模型替身、模拟行情及受保护的测试库，逐题检查工具、来源、恢复、幂等和个人记录隔离；它不验证真实模型语义。初始化后从实际 Service 读回三条观点，确认甲由看多转中性、乙看空及日期，再允许第一次模型请求，不能只相信构造 fixture 的代码。替身故障演练可加 `-FixtureFailAt 'tencent-original-currency#2'`：该采样完成财务工具后第二次模型请求返回 503，后续采样不得派发；该参数在 Real 模式拒绝。
+
+Real 核对第 10 节的适用授权，并使用 `-Mode Real -ApprovedClosureData -ExpectedUnknownReservations 1`。这里的 1 是当轮确认保留的历史未知笔数，不是永久配置；默认 0，必须与原累计账本探针相同。金额占用不可下降、旧预留不释放，新增未知笔数立即停止；每次新运行前重新检查原十元剩余额度。工具和模型调用上限继续沿第 10 节；实际批次、派发次数及费用只记 tasks。
+
+综合 Real 强制逐题审查：程序完成保存及幂等检查后，将执行编号和结果哈希写入 `review-request.json`，暂停下一次派发。审查者读取 `results.json` 的正文、原始财务快照、观点、报价／日 K 和题目清单，在 `review-decision.json` 填写同一编号、resultSha256、reviewer、reviewedAt，以及 sourceSupport／factBoundary／relevance／taskCompletion 四维的 PASSED 或 FAILED 和具体依据。先写临时文件再原子替换，避免读取半个 JSON。任一维失败、决定不匹配或十五分钟未审，均停止后续调用；已经发生的费用保留。等待期间没有新模型派发；审查超时保留为门禁停止，之后补做的离线审查不把原批次改成完整成功，也不自动恢复付费。该门禁属于验收脚本，不进入普通用户页面。
+
+`scorecard.json` 保留完整计划分母，分别统计程序通过、工具选择、语义已审／通过／失败／待审和任务完成，并记录请求／运行编号、模型／提示版本、工具轨迹、Token、费用及实际耗时 p50／p95。未执行不补零耗时，待审和替身不算真实质量通过；正确引用也须逐项核对金额、期间、单位、限定范围和缺口。三次采样复用同一 requestId／runId 会被拒绝，不能把幂等回包算成三次模型回答。
+
+已有结果可离线重生成审查报告，不会重新请求模型：
+
+```powershell
+node scripts/agent-quality/write-quality-report.mjs --results=target/本轮目录 --review=target/本轮目录/review.json
+```
+
+`review-template.json` 的四维默认待审，已有文件不覆盖；外部 review.json 绑定整份结果哈希，正文变化不能挪用旧评分。加 `--baseline=target/旧轮目录/results.json` 可比较同题的运行状态、版本和实际回答；问题、预期、数据及真实／替身模式不一致时，只给描述对照，不计算受控提升率。判定规则与边界检查分别见 [评分实现](../../scripts/agent-quality/quality-report.mjs) 和 [脚本测试](../../scripts/agent-quality/closure-quality.test.mjs)。
+
+仅检查器或夹具修正时，可用 `-ContinueFrom target/旧轮目录/results.json` 保留尚未发问的范围。旧目录必须有绑定哈希的完整 review.json；只允许复用已成功、费用已知、仅调用财务工具且已通过四维审查的答案，并重新核对当前受审目录、问题、价格及原分母。读过成员资料、失败答案、新未知用量均不能跨夹具复用。记录保留旧结果和源哈希，并明确跨夹具的财务样本不是同输入受控重复；旧聊天不会写入新测试账号。真正的模型执行或语义失败继续停止；修复并离线验证后的必要新批次适用第 10 节持续授权，不能借续做重发失败题。
