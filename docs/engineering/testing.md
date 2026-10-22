@@ -90,6 +90,8 @@ ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号
 
 Java 的 ReportRetrievalTest 检查有界词法检索、融合去重、重排、错误身份／股票／年度与关闭状态；ReportRetrievalEvaluationTest 由 REPORT_RAG_LOCAL_PROBE 显式启用，真实本地 ONNX／Qdrant 对同一冻结题集比较四种策略，分别保留命中、无答案、版本及耗时，finally 清理目录／16334。新报告六题及原财务选择／授权边界检查执行 `node --test scripts/agent-quality/financial-cases.test.mjs scripts/agent-quality/financial-probe-guard.test.mjs scripts/agent-quality/report-cases.test.mjs`。报告完整替身／真实入口的前置、数据外发、原累计账本及人工语义审查只维护在 [报告评估操作](agent-experiment.md#检索对照与报告回答评估)；仍执行本文件第 4／5 节的双环境探针、catalog、finally 清零与精确进程清理。
 
+ReportMaintenanceCommandTest 检查独立维护入口的旧默认值、显式路径／端口和参数拒绝。错误参数须在发布库写入前拒绝；占用端口使用真正接收请求的本机 HTTP 服务，维护失败后仍能响应，且旧报告可用版保留。伪造二进制即使由维护参数传入也不能绕过固定哈希检查；status 不要求模型或索引进程，status／remove 不静默忽略运行参数。定向回归与 ReportLibraryStoreTest、ReportRetrievalTest 一起运行。真实资产验证还应从独立工作目录启动已打包 JAR，使用缓存的受审公开片段、绝对资产路径与独立索引／端口，检查导入、重复导入不重建、移除及恢复，结束核对本轮 Java／Qdrant、目录、端口及费用账本；本机通过不替代 Linux 平台或生产验证。操作语法只见 [报告维护](agent-experiment.md#本机报告维护)，实际次数和证据只见 SPEC-004 tasks。
+
 财务正文数值保护由 ResearchFinancialAnswerNumbersTest 与 ResearchFinancialQuestionTest 检查，包含真实金额错误、百分比漏单位和共同引用中的同值数字。研究助手受控浏览器另用 invalid-financial-number／invalid-financial-percent 替身返回合法引用及错误金额／缺百分号，确认 INVALID_RESULT、旧答案保留、错误不入消息、不额外派发、费用已知；该项不占真实模型预算。人工／Codex 原文审查必须同时看正文和引用快照，SUCCEEDED 或工具金额正确不能自动判为语义通过，真实失败样本见 [BUG-012](bugs/BUG-012-financial-answer-unit-conversion.md)。
 
 ResearchQuestionModelTest 走实际框架 HTTP 序列化，覆盖工具可选轮次直接回答与原生 tool_calls：两者均须带 JSON 输出约束，后者由业务层执行。ResearchFinancialQuestionTest 的拒绝检查核对 JSON／引用校验的安全阶段、已知用量和无重试；另区分合法季度查询完成后未覆盖与参数错误未完成，核对轨迹的可选固定 errorCode。ResearchModelFailureTest 同时检查旧三字段工具轨迹 JSON 兼容及成功时不写空错误码；Chrome 的错误财务段落进一步核对 QUESTION_REPLY_FINANCIAL 落库。不得为定位格式问题把原始响应或解析异常消息加入普通日志；历史没有保存的响应不能靠新诊断反推其确切失败原因。

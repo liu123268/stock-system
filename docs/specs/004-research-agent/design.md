@@ -158,7 +158,7 @@ v10 对实际带 REPORT 引用的事实段落采用受审原文摘录交付：[R
 
 [LocalReportEmbedding](../../../src/main/java/com/stock/system/agent/report/LocalReportEmbedding.java) 使用同一固定 BGE 权重，沿 Spring AI EmbeddingModel 契约在 Java 中取 CLS 向量并归一化；查询指令与正文编码分开，拒绝截断、错误维度与非有限值。Qdrant 采用官方固定 Windows 程序，由 [ReportVectorStore](../../../src/main/java/com/stock/system/agent/report/ReportVectorStore.java) 经 Spring AI VectorStore 契约及回环 REST 调用。仅本机开关启用后按需启动，不建立 Python 业务服务；正文不为向量化外发。集合名称由正文目录与 Java 编码版本共同派生，索引元数据限定股票、年度、模型与可用状态，返回后再与权威段落匹配；最多三个候选，当前 0.45 沿预检冻结，不作为通用可信度。路径保持短名以兼容 Windows 段文件。
 
-当前只有十四段，本机维护采用同步命令和有界原子文件记录，不新增常驻 Python、后台任务表或 MQ。导入先登记 PROCESSING，再在锁外校验并建立候选索引，成功后发布 AVAILABLE；失败记 FAILED，有上一可用版时继续使用该版，没有则不能查询。首次随包初始化仍按需建立索引；在线更新后，业务查询按完整当前目录切换或重建自己的索引。维护用独立回环端口与目录，不接管日常服务；操作步骤只见 [工程笔记第 12 节](../../engineering/agent-experiment.md#12-报告检索如何进入正式助手)。大量报告、后台自动推进或跨实例并发出现时，再按 [异步方案评估](../../product/backlog.md#9-报告处理的异步方案与-mq) 比较同步、持久化任务表和 MQ。
+当前只有十四段，本机维护采用同步命令和有界原子文件记录，不新增常驻 Python、后台任务表或 MQ。导入先登记 PROCESSING，再在锁外校验并建立候选索引，成功后发布 AVAILABLE；失败记 FAILED，有上一可用版时继续使用该版，没有则不能查询。首次随包初始化仍按需建立索引；在线更新后，业务查询按完整当前目录切换或重建自己的索引。维护用独立回环端口与目录，不接管日常服务；import／retry／restore 可显式传入已核实二进制、模型目录、维护索引及端口，默认值保留。参数先校验，不能把维护索引与发布库设为相同或互相包含的目录；自定义路径不放宽资产哈希、监听归属或固定回环地址。独立 main 不自动继承 Spring 配置，操作步骤只见 [工程笔记第 12 节](../../engineering/agent-experiment.md#12-报告检索如何进入正式助手)。大量报告、后台自动推进或跨实例并发出现时，再按 [异步方案评估](../../product/backlog.md#9-报告处理的异步方案与-mq) 比较同步、持久化任务表和 MQ。
 
 工具 search_report_passages 只接受 query（最多 240 码点）和可选 year；可信股票从授权的当前周期绑定，观点日期不套用为报告日期。GET 当前 agent/reports 返回该股票可用报告／章节、检索开关和处理状态；页面每次展开资料区重新读取。无报告、无相关候选和故障分开返回。REPORT 依据保存实际段落和版本，引用 ID 由 Java 产生，最终仅保存本次真正引用的非观点依据。刷新和点击先校验当前 run 权限，再核对已发布的对应历史版本；正常更新保留旧依据，移除或发布记录损坏则不从消息 JSON 恢复原文。页面说明正在更新、更新失败时使用旧版或已移除，引用仍可打开原文、章节、PDF 页码与官方原报。
 

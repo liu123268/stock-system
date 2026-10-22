@@ -341,7 +341,30 @@ status 返回固定状态和文档 key，退出码 0、最后一行 JSON 的 sta
 & $reportJava @reportCommand import $reportLibrary target/report-tencent-reviewed.json
 ```
 
-处理失败时退出码为 1，不覆盖旧可用版；页面会说明仍可用旧版。修好本机资产或释放被其他程序占用的 16336 后，可将 import 换成 retry。中断停在 PROCESSING 也使用 retry，由新代次接替；没有后台自动重试。维护索引在 library 的同级 maintenance-index，日常查询仍使用自己的目录和 16333。
+处理失败时退出码为 1，不覆盖旧可用版；页面会说明仍可用旧版。修好本机资产或选用空闲维护端口后，可将 import 换成 retry；不要结束无法确认归属的占用进程。中断停在 PROCESSING 也使用 retry，由新代次接替；没有后台自动重试。默认维护索引在 library 的同级 maintenance-index、端口 16336，日常查询仍使用自己的目录和 16333。
+
+维护入口是独立 Java main，不会启动 Spring Boot，也不会自动继承应用的 `@Value`、dev profile 或本机导入的 properties。从其他目录执行、或调整了模型／Qdrant 的存放位置时，应明确传入维护参数；同一套已核实资产可以共享，正在使用的索引目录与端口需要隔离。以下四项只用于 import／retry／restore，旧三参数命令仍使用原默认值：
+
+| 可选参数 | 作用与默认值 |
+| --- | --- |
+| `--qdrant-binary=路径` | 对应应用的 `stock-system.agent.reports.qdrant-binary`；默认 `.local/report-rag/qdrant-1.19.2/qdrant.exe` |
+| `--model-directory=路径` | 对应应用的 `stock-system.agent.reports.model-directory`；默认 `.local/rag-preflight/model` |
+| `--runtime-directory=路径` | 维护专用索引，默认 library 同级 maintenance-index；不能与 library 相同或互相包含 |
+| `--port=端口` | 维护专用回环端口，默认 16336，范围 1024～65535；占用时拒绝，不接管其他服务 |
+
+在项目根目录的同一个 PowerShell 终端，沿用前文的 `$reportJava`、`$reportCommand`、`$reportLibrary` 与已导出的 JSON，再按下面方式传入参数。`Join-Path` 把本机资产定位为绝对路径，每个带空格的路径作为一个参数传给 Java；索引目录与日常查询目录分开。退出码为 0、最后一行 JSON 的 status 为 OK，且对应报告状态为 AVAILABLE，才表示候选索引建立和发布都完成：
+
+```powershell
+$reportRuntime = @(
+    "--qdrant-binary=$(Join-Path $PWD '.local/report-rag/qdrant-1.19.2/qdrant.exe')"
+    "--model-directory=$(Join-Path $PWD '.local/rag-preflight/model')"
+    "--runtime-directory=$(Join-Path $PWD '.local/report-rag/maintenance-index')"
+    '--port=16336'
+)
+& $reportJava @reportCommand import $reportLibrary target/report-tencent-reviewed.json @reportRuntime
+```
+
+status／remove 不启动索引，不接受这些运行参数；未知、重复、空值、非法端口和重叠目录会在读取／初始化发布库之前拒绝，输出仍是固定失败契约，不打印原始异常或参数。自定义路径不绕过 Qdrant／模型文件的固定哈希校验。当前固定 Qdrant 资产仍为 Windows 版；这些参数及本机实跑不等于 Linux 二进制、JNI、生产共享维护或云端部署已经通过，发布前置见 [部署说明第 7 节](deployment.md#7-v2-研究助手上线前置)。
 
 remove 的最后一个参数是 status 返回的文档 key，会同时禁止新检索和旧聊天原文。普通 import 不恢复已移除资料；确需重新提供时使用 restore，参数与 import 相同。移除是业务禁用，当前不自动物理删除旧正文版本或向量集合；不要为恢复一份报告删除整个 library.json，这会丢掉其他移除状态。
 
