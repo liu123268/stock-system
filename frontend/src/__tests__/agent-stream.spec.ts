@@ -102,6 +102,24 @@ describe('带认证头的助手 SSE', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('梳理可展示多于八条已核对条目，追问仍限八段', async () => {
+    const paragraphs = Array(12).fill('成员观点：已核对。') as string[]
+    response(frame('progress', progress) + frame('draft', { requestId: id, sequence: 2, runId: 7, paragraphs })
+      + frame('result', { ...completed, sequence: 3 }))
+    const onDraft = vi.fn<() => void>()
+    expect(await agentStream('/agent/summaries/stream', { requestId: id }, {
+      signal: new AbortController().signal, onProgress: vi.fn<() => void>(), onDraft,
+    })).toEqual(run)
+    expect(onDraft).toHaveBeenCalledOnce()
+  })
+
+  it('梳理临时条目也有数量上限', async () => {
+    response(frame('progress', progress) + frame('draft', { requestId: id, sequence: 2, runId: 7, paragraphs: Array(118).fill('条目') }))
+    await expect(agentStream('/agent/summaries/stream', { requestId: id }, {
+      signal: new AbortController().signal, onProgress: vi.fn<() => void>(),
+    })).rejects.toBeInstanceOf(ApiError)
+  })
+
   it('一个网络块可以携带多项合规事件，总大小不当作单事件大小', async () => {
     const padding = 'x'.repeat(96 * 1024)
     response([1, 2, 3].map(sequence => frame('progress', { ...progress, sequence, padding })).join('')

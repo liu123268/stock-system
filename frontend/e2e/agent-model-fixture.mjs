@@ -26,11 +26,12 @@ async function finishCompletion(response, body, message, finish, usedMode) {
     const content = message.content
     let split = Math.floor(content.length / 2)
     try {
-      const paragraph = JSON.stringify(JSON.parse(content).paragraphs[0])
+      const parsed = JSON.parse(content.startsWith('```json\n') ? content.slice(8, -4) : content)
+      const paragraph = JSON.stringify(parsed.paragraphs?.[0] ?? parsed.overview)
       split = content.indexOf(paragraph) + paragraph.length
     } catch { /* 非法最终 JSON 仍交给后端拒绝，不修补模型回复。 */ }
     frame({ role: 'assistant', content: content.slice(0, split) })
-    if (usedMode === 'stream-hold') await new Promise(resolve => {
+    if (['stream-hold', 'summary-late-invalid', 'summary-fence-hold'].includes(usedMode)) await new Promise(resolve => {
       const release = () => { clearTimeout(timer); heldBodies.delete(release); resolve() }
       const timer = setTimeout(release, 10_000)
       heldBodies.add(release)
@@ -51,8 +52,8 @@ const server = createServer(async (request, response) => {
     mode = JSON.parse(raw).mode
     assert.ok(['valid', 'slow', 'invalid', 'failure', 'failure-after-tool', 'invalid-financial-number', 'invalid-financial-percent',
       'invalid-financial-number-gap', 'invalid-financial-percent-gap', 'invalid-financial-no-citation',
-      'invalid-financial-no-citation-gap', 'missing-comparison', 'invalid-summary-identifiers', 'stream-hold'].includes(mode))
-    if (mode !== 'stream-hold') for (const release of heldBodies) release()
+      'invalid-financial-no-citation-gap', 'missing-comparison', 'invalid-summary-identifiers', 'stream-hold', 'summary-late-invalid', 'summary-fence-hold'].includes(mode))
+    if (!['stream-hold', 'summary-late-invalid', 'summary-fence-hold'].includes(mode)) for (const release of heldBodies) release()
   }
   if (request.url === '/_test') {
     response.setHeader('Content-Type', 'application/json')
@@ -146,12 +147,13 @@ const server = createServer(async (request, response) => {
     content.overview.text = `成员M1提出订单可能增长（${refs[0]}），未获权威依据核实。`
     content.pendingItems[0].text = '本次未提供公告、财报、新闻或行情资料。'
   }
+  if (usedMode === 'summary-late-invalid') content.members[0].sourceIds = ['unprovided-reference']
   if (usedMode === 'slow') await new Promise(resolve => setTimeout(resolve, 2200))
   response.setHeader('Content-Type', 'application/json')
   if (usedMode === 'failure') { response.writeHead(503).end('{"error":{"message":"offline fixture failure"}}'); return }
-  response.end(JSON.stringify({ id: `offline-${calls}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: 'offline-agent-fixture',
-    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: usedMode === 'invalid' ? 'invalid-json' : JSON.stringify(content) } }],
-    usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 } }))
+  const summaryText = JSON.stringify(content)
+  await finishCompletion(response, body, { role: 'assistant', content: usedMode === 'invalid' ? 'invalid-json'
+    : usedMode === 'summary-fence-hold' ? `\`\`\`json\n${summaryText}\n\`\`\`` : summaryText }, 'stop', usedMode)
 })
 server.listen(port, '127.0.0.1', () => console.log(`Offline agent fixture listening at 127.0.0.1:${port}`))
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close())

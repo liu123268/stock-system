@@ -43,6 +43,25 @@ beforeEach(() => {
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers = []; vi.useRealTimers() })
 
 describe('研究助手的个人记录与迟到响应', () => {
+  it('首次梳理的临时内容使用梳理说明，失败撤回且保留旧记录和未发送的问题', async () => {
+    let reject!: (reason: unknown) => void
+    api.generateAgent.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    api.restoreAgent.mockResolvedValue(session([answer()]))
+    const { wrapper } = create(); await flushPromises()
+    await wrapper.find('textarea').setValue('梳理后再发送的问题')
+    await wrapper.find('.agent-controls').trigger('submit')
+    const options = api.generateAgent.mock.calls[0]![3] as { onDraft: (value: { paragraphs: string[] }) => void }
+    options.onDraft({ paragraphs: ['研究概览：已有依据的概览。', '成员观点（甲）：仍待核对。'] }); await flushPromises()
+    expect(wrapper.find('.agent-draft').text()).toContain('正在梳理本次范围的研究观点')
+    expect(wrapper.find('.agent-draft').text()).not.toContain('你的问题：')
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(1)
+    reject(new ApiError('RESEARCH_AGENT_INVALID_RESULT', '研究助手未返回可核对的完整结果'))
+    await flushPromises()
+    expect(wrapper.find('.agent-draft').exists()).toBe(false)
+    expect(wrapper.findAll('.agent-answer')).toHaveLength(1)
+    expect(wrapper.find('textarea').element.value).toBe('梳理后再发送的问题')
+  })
+
   it('逐步展示真实进度，停止后保留草稿和已有答案并恢复焦点', async () => {
     let finish!: (value: unknown) => void
     api.askAgent.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))

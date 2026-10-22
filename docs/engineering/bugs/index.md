@@ -21,3 +21,4 @@
 - [BUG-017：工具参数错误被解释成资料未覆盖](BUG-017-tool-error-is-not-missing-coverage.md)
 - [BUG-018：JSON 语法与回复结构失败没有分开定位](BUG-018-reply-json-boundary-diagnostics.md)
 - [BUG-019：资料缺口成为财务数字校验的旁路](BUG-019-financial-gap-validation.md)
+- [BUG-020：细碎模型分块在背压下乱序](BUG-020-native-stream-backpressure-order.md)

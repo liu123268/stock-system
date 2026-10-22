@@ -89,7 +89,7 @@ const sql = query => execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', 
   '--default-character-set=utf8mb4', '--batch', '--skip-column-names', `--execute=${query}`,
 ], { encoding: 'utf8', env: { ...process.env, MYSQL_PWD: process.env.DB_PASSWORD }, windowsHide: true }).trim()
 async function api(path, token, method = 'GET', body) {
-  if (streamAnswers && method === 'POST' && path.endsWith('/messages')) {
+  if (streamAnswers && method === 'POST' && (path.endsWith('/messages') || path.endsWith('/summaries'))) {
     const observed = await streamPage.evaluate(async ({ path, token, body }) => {
       const { agentStream } = await import('/src/api/agent-stream.ts')
       const { TOKEN_STORAGE_KEY } = await import('/src/api/http.ts')

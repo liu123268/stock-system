@@ -22,6 +22,12 @@ public final class ResearchModelFailure {
         return translate(failure, stage, null);
     }
     static BusinessException translate(RuntimeException failure, String stage, ResearchFinancialAnswerNumbers.Rule validationRule) {
+        return translated(failure, stage, validationRule == null ? null : validationRule.name());
+    }
+    static BusinessException summary(RuntimeException failure, String stage, ResearchSummaryValidator.Rule validationRule) {
+        return translated(failure, stage, validationRule == null ? null : validationRule.name());
+    }
+    private static BusinessException translated(RuntimeException failure, String stage, String validationRule) {
         // 当前上下文由运行入口负责关闭；错误翻译只读取并补充诊断。
         //noinspection resource
         var execution = ResearchModelExecution.current();
@@ -45,7 +51,7 @@ public final class ResearchModelFailure {
         if (businessFailure != null) category = businessFailure.getErrorCode().name();
         var diagnostic = new Diagnostic(stage, category, status, execution == null ? 0 : execution.modelCalls,
                 execution == null ? null : execution.runId(), execution == null ? null : execution.requestId(),
-                validationRule == null ? null : validationRule.name());
+                validationRule);
         if (execution != null) execution.failure = diagnostic;
         LOG.warn("Research model failure run={} request={} call={} stage={} category={} upstreamStatus={} validationRule={}",
                 diagnostic.runId(), diagnostic.requestId(), diagnostic.modelCall(), stage, category, status, diagnostic.validationRule());

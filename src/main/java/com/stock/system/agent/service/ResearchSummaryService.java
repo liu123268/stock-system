@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 正式业务生成核心；HTTP 入口须在运行账本、预算和个人会话保护落地后接入。 */
+/** 正式梳理核心，负责资料、校验与来源复核；外层运行入口拥有预算和个人会话状态。 */
 @Service
 public class ResearchSummaryService {
     private final StockResearchSourceService sourceService;
@@ -74,12 +74,37 @@ public class ResearchSummaryService {
                     new ResearchSummary.Item("本次范围内没有有效观点，暂时无法梳理。", List.of()),
                     List.of(), List.of(), List.of()), null, 0, 0);
         } else {
-            generated = model.generate(input);
+            if (execution != null && execution.streamsBody()) {
+                boolean[] publish = {true};
+                var draft = new ResearchSummaryDraft(candidate -> {
+                    if (!publish[0]) return;
+                    execution.remainingMillis();
+                    sourceService.revalidate(userId, workspaceId, workspaceStockId, researchCycleId, sources);
+                    ResearchSummary checkedDraft;
+                    try { checkedDraft = validator.validateDraft(candidate, input.sources()); }
+                    catch (BusinessException invalid) { publish[0] = false; execution.draft(List.of()); return; }
+                    execution.remainingMillis();
+                    var paragraphs = new java.util.ArrayList<String>();
+                    paragraphs.add("研究概览：" + checkedDraft.overview().text());
+                    checkedDraft.changes().forEach(item -> paragraphs.add("观点变化：" + item.text()));
+                    checkedDraft.members().forEach(member -> {
+                        String name = input.sources().stream().filter(source -> source.authorId().equals(member.authorId()))
+                                .findFirst().orElseThrow().opinion().authorNickname();
+                        paragraphs.add("成员观点（" + name + "）：" + member.text());
+                    });
+                    checkedDraft.pendingItems().forEach(item -> paragraphs.add("待核对事项：" + item.text()));
+                    execution.draft(List.copyOf(paragraphs));
+                }, () -> { publish[0] = false; execution.draft(List.of()); });
+                generated = model.stream(input, draft::accept);
+            } else generated = model.generate(input);
         }
         if (execution != null) execution.stage(ResearchAgentProgress.Stage.VALIDATING);
         ResearchSummary checked;
         try { checked = validator.validate(generated.summary(), input.sources()); }
-        catch (BusinessException failure) { throw ResearchModelFailure.translate(failure, "SUMMARY_REPLY_CONTRACT"); }
+        catch (BusinessException failure) {
+            throw ResearchModelFailure.summary(failure, "SUMMARY_REPLY_CONTRACT",
+                    failure instanceof ResearchSummaryValidator.Rejected rejected ? rejected.rule() : null);
+        }
         StockResearchSourceService.SourceValidity validity = sourceService.revalidate(
                 userId, workspaceId, workspaceStockId, researchCycleId, sources);
         return new Result(checked, sources.scope(), input.sources(), validity.newOpinionsAvailable(),

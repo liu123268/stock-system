@@ -212,7 +212,8 @@ class ResearchSummaryServiceTest {
         ResearchSummaryPrompt.Input input;
         ResearchSummary summary = ResearchSummaryFixtures.summary();
 
-        Model() { super(ChatClient.builder(unused -> { throw new AssertionError("Unexpected transport call"); })); }
+        Model() { this(unused -> { throw new AssertionError("Unexpected transport call"); }); }
+        private Model(org.springframework.ai.chat.model.ChatModel transport) { super(ChatClient.builder(transport), transport); }
 
         @Override
         public Result generate(ResearchSummaryPrompt.Input input) {

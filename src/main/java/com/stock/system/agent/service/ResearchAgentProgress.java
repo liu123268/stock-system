@@ -2,7 +2,7 @@ package com.stock.system.agent.service;
 
 import java.util.List;
 
-/** 只公开确定的工作阶段，不传递模型思考、参数或尚未校验的正文。 */
+/** 公开实际阶段与已校验临时正文，不传递模型思考、参数或未校验片段。 */
 public interface ResearchAgentProgress {
     ResearchAgentProgress NONE = new ResearchAgentProgress() {};
     enum Stage { READING, QUERYING, GENERATING, VALIDATING, SAVING }

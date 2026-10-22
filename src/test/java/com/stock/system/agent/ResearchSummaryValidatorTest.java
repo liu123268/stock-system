@@ -17,6 +17,19 @@ class ResearchSummaryValidatorTest {
     private final ResearchSummaryValidator validator = new ResearchSummaryValidator();
     private final ResearchSummaryPrompt prompt = new ResearchSummaryPrompt(JsonMapper.builder().findAndAddModules().build());
 
+    @Test void aDraftCanAwaitOtherMembersButTheFinalSummaryMustCoverEveryone() {
+        var valid = ResearchSummaryFixtures.summary();
+        var prefix = new ResearchSummary(valid.overview(), valid.changes(), List.of(valid.members().get(0)), valid.pendingItems());
+        var bindings = prompt.build(ResearchSummaryFixtures.sources()).sources();
+        assertThat(validator.validateDraft(prefix, bindings).members()).hasSize(1);
+        assertThatThrownBy(() -> validator.validate(prefix, bindings))
+                .isInstanceOfSatisfying(ResearchSummaryValidator.Rejected.class,
+                        failure -> assertThat(failure.rule()).isEqualTo(ResearchSummaryValidator.Rule.MEMBER_COVERAGE));
+        var invalid = new ResearchSummary(valid.overview(), valid.changes(),
+                List.of(new ResearchSummary.Member("M1", "不属于该成员的材料", List.of("op-3"))), valid.pendingItems());
+        assertThatThrownBy(() -> validator.validateDraft(invalid, bindings)).isInstanceOf(BusinessException.class);
+    }
+
     @Test
     void rejectsMissingWrongDuplicateOrStaleMemberReferences() {
         var valid = ResearchSummaryFixtures.summary();

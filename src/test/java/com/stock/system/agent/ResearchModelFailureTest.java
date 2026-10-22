@@ -58,7 +58,8 @@ class ResearchModelFailureTest {
         try (var execution = new ResearchModelExecution(2)) {
             execution.dispatch(); execution.upstreamStatus(200);
             var cause = new org.springframework.http.converter.HttpMessageConversionException("private raw response");
-            ResearchModelFailure.translate(new IllegalStateException(cause), "QUESTION_MODEL");
+            var error = ResearchModelFailure.translate(new IllegalStateException(cause), "QUESTION_MODEL");
+            assertThat(error.getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_UNAVAILABLE);
             assertThat(execution.failure.category()).isEqualTo("RESPONSE_DECODE");
             assertThat(execution.failure.upstreamStatus()).isEqualTo(200);
             execution.dispatch();

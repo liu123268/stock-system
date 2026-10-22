@@ -114,6 +114,12 @@ class ResearchAgentIntegrationTest extends MySqlIntegrationTest {
             return new ResearchSummaryModel.Result(summary, "offline-agent-test", 100, 50);
         }).when(model).generate(any());
         doAnswer(invocation -> {
+            var result = model.generate(invocation.getArgument(0));
+            java.util.function.Consumer<String> listener = invocation.getArgument(1);
+            listener.accept(json.writeValueAsString(result.summary()));
+            return result;
+        }).when(model).stream(any(), any());
+        doAnswer(invocation -> {
             questionCalls.incrementAndGet();
             questionInputs.add(List.copyOf(invocation.getArgument(0)));
             var execution = ResearchModelExecution.current();

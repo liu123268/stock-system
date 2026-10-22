@@ -31,7 +31,7 @@ import java.util.*;
 /** 所有查询由当前 Java 对象绑定权限范围；模型只能提出有界工具请求。 */
 @Service
 public class ResearchQuestionService {
-    public static final String VERSION = "research-question-20261021-v18-stream-diagnostics";
+    public static final String VERSION = "research-question-20261022-v19-ordered-stream";
     public static final int MAX_MODEL_CALLS = 4;
     public static final int MAX_TOOL_ATTEMPTS = 3;
     private final StockResearchSourceService sources;
@@ -370,16 +370,7 @@ public class ResearchQuestionService {
     }
     /** 仅移除完整单段 JSON 围栏或开头 BOM；不修补 JSON、提取夹杂正文中的片段或忽略字段。 */
     private String jsonBody(String text) {
-        String body = text.strip();
-        if (body.startsWith("\uFEFF")) body = body.substring(1).stripLeading();
-        if (!body.startsWith("```")) return body;
-        int openingEnd = body.indexOf('\n');
-        int closingStart = body.length() - 3;
-        if (openingEnd < 0 || !body.endsWith("```") || closingStart <= openingEnd
-                || body.charAt(closingStart - 1) != '\n') throw new IllegalArgumentException();
-        String language = body.substring(3, openingEnd).strip();
-        if (!language.isEmpty() && !language.equalsIgnoreCase("json")) throw new IllegalArgumentException();
-        return body.substring(openingEnd + 1, closingStart).strip();
+        return ResearchModelJson.body(text);
     }
     private Optional<ResearchReply> emptyReportReply(Context context) {
         if (!context.onlyReportTools || context.reportLookups.isEmpty() || !context.references.isEmpty() || !context.evidence.isEmpty()

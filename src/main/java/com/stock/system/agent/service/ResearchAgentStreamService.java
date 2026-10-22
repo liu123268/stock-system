@@ -105,9 +105,9 @@ public class ResearchAgentStreamService {
 
         synchronized void detach(SseEmitter emitter) { subscribers.remove(emitter); }
         @Override public boolean cancellationRequested() { return cancelRequested; }
-        @Override public boolean streamsBody() { return command.question != null; }
+        @Override public boolean streamsBody() { return true; }
         @Override public synchronized void draft(List<String> paragraphs) {
-            if (closed || runId == null || command.question == null || cancelRequested && !paragraphs.isEmpty()) return;
+            if (closed || runId == null || cancelRequested && !paragraphs.isEmpty()) return;
             if (!paragraphs.isEmpty()) service.verifyAccess(command.target);
             var event = new Draft(key.requestId, ++sequence, runId, List.copyOf(paragraphs));
             for (var emitter : List.copyOf(subscribers)) send(emitter, "draft", event);

@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.ai.model.deepseek.autoconfigure.DeepSeekChatAutoConfiguration;
 import org.springframework.ai.model.tool.autoconfigure.ToolCallingAutoConfiguration;
 import org.springframework.ai.retry.autoconfigure.SpringAiRetryAutoConfiguration;
@@ -28,11 +29,88 @@ import static org.assertj.core.api.Assertions.*;
 
 /** 实际框架 WebClient → 随机回环 HTTP SSE；无外部模型、数据库或真实密钥。 */
 class ResearchQuestionStreamModelTest {
+    private static final String BURST_TEXT = java.util.stream.IntStream.range(0, 75)
+            .mapToObj(index -> "第" + index + "项。").collect(java.util.stream.Collectors.joining());
+    private static final String BURST_BODY = "{\"overview\":{\"text\":\"" + BURST_TEXT
+            + "\",\"sourceIds\":[\"op-1\"]},\"changes\":[],\"members\":[],\"pendingItems\":[]}";
     private final JsonMapper json = JsonMapper.builder().build();
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(DeepSeekChatAutoConfiguration.class,
-                    ToolCallingAutoConfiguration.class, SpringAiRetryAutoConfiguration.class))
-            .withUserConfiguration(ResearchAiConfiguration.class, ResearchQuestionModel.class);
+                    ToolCallingAutoConfiguration.class, SpringAiRetryAutoConfiguration.class, ChatClientAutoConfiguration.class))
+            .withUserConfiguration(ResearchAiConfiguration.class, ResearchQuestionModel.class, ResearchSummaryModel.class);
+
+    @ParameterizedTest @ValueSource(ints = {1, 20, 100})
+    void burstNativeDeltasKeepTheirOrderWhenTheConsumerBrieflyPauses(int pauseAt) throws Exception {
+        try (var provider = new Provider("summary-burst")) {
+            enabled(provider).run(context -> {
+                var pieces = new ArrayList<String>();
+                try (var execution = new ResearchModelExecution()) {
+                    var result = context.getBean(ResearchQuestionModel.class).stream(List.of(new SystemMessage("JSON")), List.of(), delta -> {
+                        pieces.add(delta);
+                        if (pieces.size() == pauseAt) {
+                            try { Thread.sleep(80); }
+                            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+                        }
+                    });
+                    assertThat(result.getText()).isEqualTo(BURST_BODY);
+                    assertThat(execution.usageKnown()).isTrue();
+                    assertThat(execution.modelCalls).isEqualTo(1);
+                }
+            });
+        }
+    }
+
+    @Test void oversizedReceivedPayloadIsRejectedWhileTheKnownUsageStillSettles() throws Exception {
+        try (var provider = new Provider("payload-too-large")) {
+            enabled(provider).run(context -> {
+                try (var execution = new ResearchModelExecution()) {
+                    assertThatThrownBy(() -> context.getBean(ResearchQuestionModel.class).stream(
+                            List.of(new SystemMessage("JSON")), List.of(), ignored -> {}))
+                            .isInstanceOfSatisfying(BusinessException.class,
+                                    failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.RESEARCH_AGENT_INVALID_RESULT));
+                    assertThat(execution.modelCalls).isEqualTo(1);
+                    assertThat(execution.usageKnown()).isTrue();
+                }
+                assertThat(provider.calls).hasValue(1);
+            });
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"summary", "summary-fence", "summary-bom"})
+    void summaryUsesTheSameNativeTransportAndSettlesOneKnownUsage(String mode) throws Exception {
+        try (var provider = new Provider(mode)) {
+            enabled(provider).run(context -> {
+                var pieces = new ArrayList<String>();
+                try (var execution = new ResearchModelExecution()) {
+                    var input = new ResearchSummaryPrompt(json).build(ResearchSummaryFixtures.sources());
+                    var result = context.getBean(ResearchSummaryModel.class).stream(input, pieces::add);
+                    assertThat(result.summary().overview().text()).isEqualTo("中文观点。");
+                    assertThat(pieces).hasSize(2);
+                    assertThat(execution.modelCalls).isEqualTo(1);
+                    assertThat(execution.inputTokens).isEqualTo(100);
+                    assertThat(execution.usageKnown()).isTrue();
+                }
+                assertThat(provider.calls).hasValue(1);
+            });
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"summary-invalid", "summary-bad-finish"})
+    void anInvalidSummaryCannotSaveItsPreviewButStillSettlesKnownUsage(String mode) throws Exception {
+        try (var provider = new Provider(mode)) {
+            enabled(provider).run(context -> {
+                try (var execution = new ResearchModelExecution()) {
+                    var input = new ResearchSummaryPrompt(json).build(ResearchSummaryFixtures.sources());
+                    assertThatThrownBy(() -> context.getBean(ResearchSummaryModel.class).stream(input, ignored -> {}))
+                            .isInstanceOf(BusinessException.class);
+                    assertThat(execution.usageKnown()).isTrue();
+                    assertThat(execution.modelCalls).isEqualTo(1);
+                    assertThat(execution.failure.stage()).startsWith("SUMMARY_");
+                }
+                assertThat(provider.calls).hasValue(1);
+            });
+        }
+    }
 
     @Test void disabledModelDoesNotRequireAnInjectedChatModel() {
         runner.withPropertyValues("spring.ai.model.chat=none").run(context -> {
@@ -157,10 +235,18 @@ class ResearchQuestionStreamModelTest {
                     exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
                     exchange.sendResponseHeaders(200, 0);
                     var output = exchange.getResponseBody();
-                    for (String text : List.of("中文", "正文", "")) {
+                    String prefix = mode.equals("summary-fence") ? "```json\n" : mode.equals("summary-bom") ? "\uFEFF" : "";
+                    var deltas = mode.startsWith("summary") ? List.of(
+                            prefix + "{\"overview\":{\"text\":\"中文观点。\",\"sourceIds\":[\"op-1\"]},",
+                            mode.equals("summary-invalid") ? "bad-json" : "\"changes\":[],\"members\":[],\"pendingItems\":[]}" + (mode.equals("summary-fence") ? "\n```" : ""), "")
+                            : List.of("中文", "正文", "");
+                    if (mode.equals("summary-burst")) deltas = java.util.stream.Stream.concat(
+                            BURST_BODY.chars().mapToObj(value -> Character.toString((char)value)), java.util.stream.Stream.of("")).toList();
+                    if (mode.equals("payload-too-large")) deltas = List.of("x".repeat(40_000), "y".repeat(40_000), "");
+                    for (String text : deltas) {
                         var choice = new java.util.LinkedHashMap<String, Object>();
                         choice.put("index", 0); choice.put("delta", Map.of("role", "assistant", "content", text));
-                        choice.put("finish_reason", !text.isEmpty() || mode.equals("no-finish") ? null : mode.equals("bad-finish") ? "length" : "stop");
+                        choice.put("finish_reason", !text.isEmpty() || mode.equals("no-finish") ? null : mode.endsWith("bad-finish") ? "length" : "stop");
                         var frame = new java.util.LinkedHashMap<String, Object>();
                         frame.put("id", "offline-stream"); frame.put("object", "chat.completion.chunk");
                         frame.put("created", 1); frame.put("model", "offline-stream-model"); frame.put("choices", List.of(choice));

@@ -90,8 +90,8 @@ public class ResearchAgentService {
                 var result = summaries.summarizePrepared(target.user(), target.workspace(), target.stock(), target.cycle(), material);
                 answer = Answer.from(result);
                 execution.remainingMillis();
-            } catch (BusinessException failure) { error = failure.getErrorCode(); }
-            catch (RuntimeException failure) { error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
+            } catch (BusinessException failure) { progress.draft(List.of()); error = failure.getErrorCode(); }
+            catch (RuntimeException failure) { progress.draft(List.of()); error = ErrorCode.RESEARCH_AGENT_UNAVAILABLE; }
             progress.stage(ResearchAgentProgress.Stage.SAVING);
             records.finish(target, started.run(), execution, material, answer, error, () -> sources.revalidate(
                     target.user(), target.workspace(), target.stock(), target.cycle(), material));

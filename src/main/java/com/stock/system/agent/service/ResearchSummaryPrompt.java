@@ -17,7 +17,7 @@ import java.util.Map;
 
 @Component
 public class ResearchSummaryPrompt {
-    public static final String VERSION = "research-summary-20261019-v3-quote-aware";
+    public static final String VERSION = "research-summary-20261022-v7-ordered-stream";
 
     /** 由本轮学生的自然语言要求落成代码；日期的必要性依回答任务决定。 */
     public static final String ANSWER_RULE = "简洁概括，说明观点来自谁；普通概述可省略日期，"

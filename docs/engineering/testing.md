@@ -70,6 +70,10 @@ ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号
 
 007 的受控 SSE 检查用本地 HTTP 模型替身，不新增付费调用。`ResearchQuestionStreamModelTest` 从实际 Spring AI／WebClient 请求随机回环 SSE，核对分块、结束标记、用量一次结算、取消后读完用量、未知预留、HTTP 错误零重试，以及编码后请求超限必须在派发计数前拒绝（含单个 Mono 缓冲区）。`ResearchReplyDraftTest` 覆盖逐字符中文／转义／字符串内括号、完整围栏与 BOM、未闭合对象不显示、坏结构撤回和其他属性顺序退回最终解析。最终结构失败的细分阶段用自造回复验证，只记固定诊断、不保存模型原文，也不据此补造旧真实失败根因。
 
+梳理共用原生传输后，同一回环类另验梳理完整 DTO、BOM／单个完整 JSON 围栏、坏 JSON、异常结束标记及已知用量结算。`ResearchSummaryDraftTest` 覆盖逐字符中文／转义、分区字段顺序、数组未闭合不展示内部条目、重复或额外字段撤回；`ResearchSummaryValidatorTest` 同时证明预览可等待后续成员、正式结果不得缺成员、预览中的越界引用仍拒绝。Chrome 的 summary-stream-pending、停止概览、概览后非法成员及刷新恢复走实际 Java／MySQL／HTTP 原生流，检查临时正文未入库、四宽度可见和失败保留旧答案；首个梳理样例也覆盖完整 JSON 围栏。只增加临时展示，不放宽最终结构、引用和来源要求。
+
+原生传输还必须覆盖很多细碎分块与消费停顿：当前回环类逐字符发送固定 JSON，在第 1／20／100 块暂停消费，验证最终正文完全同序；另验接收载荷超限整轮拒绝但已知用量仍结算。该场景在旧 toIterable(1) 直连 SDK 时实际失败，两块正文替身没有暴露问题，复现与缓冲边界见 [BUG-020](bugs/BUG-020-native-stream-backpressure-order.md)。梳理最终失败另按语法、根字段、各分区映射及固定校验规则分类；ResearchSummaryFailureTest 核对规则诊断不含正文或引用值，历史失败不据此补造原因。
+
 `ResearchAgentIntegrationTest` 验证初始认证／异步分派、重复订阅只有一次执行、停止前后状态、已知／未知用量、取消归属、工具轮次和停止前绑定；继续复用真实 JDBC catalog 守卫与精确清理。前端 `agent-stream.spec.ts` 检查 UTF-8 分块、CRLF／多行 data、心跳、序号／对象归属、draft 快照／撤回、截断、事件大小、权限错误及 AbortSignal；`research-agent-panel.spec.ts` 检查临时正文与已保存回答分开、失败／停止撤掉预览并保留原消息与输入、换周期迟到事件和停止恢复。Chrome 的 `research-agent-smoke.mjs` 让上游在首个完整段落后受控等待，核对已有 draft 时 run 仍为 RUNNING、agent_message 尚未入库，刷新以 GET 恢复且不另发 POST，停止撤回并取得已知用量，四宽度及原报告／财务／权限流程继续执行；沿现有 `scripts/run-agent-report-probe.ps1` 的拥有进程与数据清理入口。真实模型逐段采样另用原财务入口的 `-StreamAnswers -ReviewEach`，用量、首段耗时、程序终态和逐题来源语义分别记录；替身通过不充当真实质量证据。
 
 本地停止为协作式：等待当前 HTTP 结束再结算，测试不能只断开浏览器就声称已停止供应商调用；已发出但无用量仍占原预留。页面刷新只恢复 pending 编号与服务端状态，不把会话内存草稿当成已持久化。初轮 Chrome 若只因草稿刷新期望写错失败，保留失败证据并修正测试边界；正常 SSE 断开应由 AsyncRequestNotUsableException 专用处理收尾，不再尝试往流写 JSON 错误。实际结果、次数和证据只见 [任务第 29 节](../specs/004-research-agent/tasks.md#29-sse-进度最终结果与主动停止2026-10-18)。

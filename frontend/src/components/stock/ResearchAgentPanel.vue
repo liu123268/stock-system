@@ -21,14 +21,16 @@ const busy = ref(false)
 const cancelRequested = ref(false)
 const cancelling = ref(false)
 const draftParagraphs = ref<string[]>([])
+const draftIsSummary = ref(false)
 let streamController: AbortController | undefined
 const progressText: Record<AgentStage, string> = {
   READING: '正在读取本周期资料…', QUERYING: '正在查询问题所需资料…', GENERATING: '正在整理回答…',
   VALIDATING: '正在核对正文和引用…', SAVING: '正在结算并保存运行状态…',
 }
 function detachStream() { streamController?.abort(); streamController = undefined; draftParagraphs.value = [] }
-function streamOptions(request: ReturnType<typeof capture>) {
+function streamOptions(request: ReturnType<typeof capture>, summary = false) {
   detachStream()
+  draftIsSummary.value = summary
   streamController = new AbortController()
   cancelRequested.value = false
   cancelling.value = false; returnFocusAfterCancel = false
@@ -281,7 +283,7 @@ async function generate() {
   busy.value = true
   error.value = ''
   notices.value = '正在核对本周期资料并整理观点，请稍候。'
-  const stream = streamOptions(request)
+  const stream = streamOptions(request, true)
   try {
     const run = (await generateAgent(request.target, requestId, {
       ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}),
@@ -540,7 +542,8 @@ onBeforeUnmount(() => { saveDraft(); disposed = true; version++; originalVersion
       <p v-else class="agent-note">{{ run.message || '该结果已失效，请重新梳理。' }}</p>
     </article>
     <article v-if="busy && draftParagraphs.length && !cancelRequested && !cancelling" class="agent-draft" aria-label="正在生成的回答" aria-busy="true">
-      <p class="agent-your-question">你的问题：{{ question }}</p>
+      <p v-if="draftIsSummary" class="agent-your-question">正在梳理本次范围的研究观点</p>
+      <p v-else class="agent-your-question">你的问题：{{ question }}</p>
       <p class="agent-note" role="status">生成中，完成后可查看依据。</p>
       <p v-for="(paragraph, index) in draftParagraphs" :key="index" class="agent-prose">{{ paragraph }}</p>
     </article>

@@ -50,7 +50,9 @@ export async function agentStream(url: string, body: { requestId: string } & Rec
         if (!stages.includes(value.stage as AgentStage)) throw interrupted()
         options.onProgress(value as unknown as AgentProgress)
       } else if (kind === 'draft') {
-        if (value.runId == null || !Array.isArray(value.paragraphs) || value.paragraphs.length > 8 ||
+        // 梳理最多概览1＋变化8＋来源成员100＋待核对8；追问仍最多八段。
+        const maxParagraphs = url.endsWith('/summaries/stream') ? 117 : 8
+        if (value.runId == null || !Array.isArray(value.paragraphs) || value.paragraphs.length > maxParagraphs ||
           value.paragraphs.some(text => typeof text !== 'string' || !text.trim() || Array.from(text).length > 2000)) throw interrupted()
         options.onDraft?.(value as unknown as AgentDraft)
       } else if (kind === 'failure') {

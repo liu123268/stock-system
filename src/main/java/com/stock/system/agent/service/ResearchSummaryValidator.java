@@ -16,7 +16,23 @@ import java.util.regex.Pattern;
 /** 检查结构与引用关系；不能据此宣称文字的每个判断均已获得语义证明。 */
 @Component
 public class ResearchSummaryValidator {
+    public enum Rule { SHAPE, ITEM_TEXT, INTERNAL_IDENTIFIER, SOURCE_IDS, UNKNOWN_SOURCE, DUPLICATE_SOURCE,
+        SOURCE_REQUIRED, CHANGE_REFERENCES, MEMBER_ID, MEMBER_LATEST, MEMBER_SOURCE, MEMBER_COVERAGE }
+    public static final class Rejected extends BusinessException {
+        private final Rule rule;
+        private Rejected(Rule rule) { super(ErrorCode.RESEARCH_AGENT_INVALID_RESULT); this.rule = rule; }
+        public Rule rule() { return rule; }
+    }
     public ResearchSummary validate(ResearchSummary summary, List<SourceBinding> sources) {
+        return validate(summary, sources, true);
+    }
+
+    /** 预览仅允许尚未到达的成员暂缺；已有条目仍检查全部引用和前后关系。 */
+    public ResearchSummary validateDraft(ResearchSummary summary, List<SourceBinding> sources) {
+        return validate(summary, sources, false);
+    }
+
+    private ResearchSummary validate(ResearchSummary summary, List<SourceBinding> sources, boolean complete) {
         require(summary != null && summary.overview() != null);
         require(summary.changes() != null && summary.changes().size() <= 8);
         require(summary.pendingItems() != null && summary.pendingItems().size() <= 8);
@@ -30,7 +46,7 @@ public class ResearchSummaryValidator {
         }
         Pattern internalText = internalTextPattern(sources);
         item(summary.overview().text(), summary.overview().sourceIds(), allowed, internalText);
-        require(!summary.overview().sourceIds().isEmpty() || sources.isEmpty());
+        require(!summary.overview().sourceIds().isEmpty() || sources.isEmpty(), Rule.SOURCE_REQUIRED);
         for (ResearchSummary.Item change : summary.changes()) {
             require(change != null);
             item(change.text(), change.sourceIds(), allowed, internalText);
@@ -38,20 +54,20 @@ public class ResearchSummaryValidator {
             for (String id : change.sourceIds()) {
                 authors.add(allowed.get(id).authorId());
             }
-            require(change.sourceIds().size() >= 2 && authors.size() == 1);
+            require(change.sourceIds().size() >= 2 && authors.size() == 1, Rule.CHANGE_REFERENCES);
         }
         Set<String> members = new HashSet<>();
         for (ResearchSummary.Member member : summary.members()) {
             require(member != null);
             item(member.text(), member.sourceIds(), allowed, internalText);
             require(member.authorId() != null && latest.containsKey(member.authorId())
-                    && members.add(member.authorId()));
-            require(member.sourceIds().contains(latest.get(member.authorId())));
+                    && members.add(member.authorId()), Rule.MEMBER_ID);
+            require(member.sourceIds().contains(latest.get(member.authorId())), Rule.MEMBER_LATEST);
             for (String id : member.sourceIds()) {
-                require(allowed.get(id).authorId().equals(member.authorId()));
+                require(allowed.get(id).authorId().equals(member.authorId()), Rule.MEMBER_SOURCE);
             }
         }
-        require(members.equals(latest.keySet()));
+        require(!complete || members.equals(latest.keySet()), Rule.MEMBER_COVERAGE);
         for (ResearchSummary.Item pending : summary.pendingItems()) {
             require(pending != null);
             item(pending.text(), pending.sourceIds(), allowed, internalText);
@@ -79,23 +95,27 @@ public class ResearchSummaryValidator {
     }
 
     private Pattern tokenPattern(String alternatives) {
+        // alternatives 会含多项以 | 连接的编号，分组让前后边界约束整组，不能直接删除。
+        //noinspection RegExpUnnecessaryNonCapturingGroup
         return Pattern.compile("(?<![A-Za-z0-9_-])(?:" + alternatives + ")(?![A-Za-z0-9_-])");
     }
 
     private void item(String text, List<String> ids, Map<String, SourceBinding> allowed, Pattern internalText) {
-        require(text != null && !text.isBlank() && text.codePointCount(0, text.length()) <= 1000);
+        require(text != null && !text.isBlank() && text.codePointCount(0, text.length()) <= 1000, Rule.ITEM_TEXT);
         // 昵称或原文恰含M1等真实字面时保留，不把局部展示约束变成全局内容禁令。
-        require(internalText == null || !internalText.matcher(text).find());
-        require(ids != null && ids.size() <= 8);
+        require(internalText == null || !internalText.matcher(text).find(), Rule.INTERNAL_IDENTIFIER);
+        require(ids != null && ids.size() <= 8, Rule.SOURCE_IDS);
         Set<String> distinct = new HashSet<>();
         for (String id : ids) {
-            require(id != null && allowed.containsKey(id) && distinct.add(id));
+            require(id != null && allowed.containsKey(id), Rule.UNKNOWN_SOURCE);
+            require(distinct.add(id), Rule.DUPLICATE_SOURCE);
         }
     }
 
     private void require(boolean valid) {
-        if (!valid) {
-            throw new BusinessException(ErrorCode.RESEARCH_AGENT_INVALID_RESULT);
-        }
+        require(valid, Rule.SHAPE);
+    }
+    private void require(boolean valid, Rule rule) {
+        if (!valid) throw new Rejected(rule);
     }
 }
