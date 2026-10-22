@@ -52,9 +52,9 @@ flowchart LR
 
 研究输入只取需求 P-007 所需字段；显示作者与来源引用映射由 Java 保存。模型不接收 LoginUser、用户认证资料、邀请码、完整业务对象或内部执行权限。用户输入与资料正文作为待分析内容，不允许其中的文字修改工具清单、读取范围或权限。
 
-初次模型结果分为 `overview`、`changes`、`members`、`pendingItems`；条目携带本次返回资料中的引用标识。`quote`、`scope`、作者展示映射与生成时间由 Java 组成，不由模型生成。梳理模型接收观点、日期、内部成员别名／显示昵称，以及与页面展示相同的 Java 报价快照，避免把模型此前未见报价误写成页面没有行情；没有增加外部查询，报价仍由 Java 独立展示。缺失或未知状态不扩大为市场不存在报价。追问使用正文段落与引用的结构，允许简短回答，无需反复输出三块摘要。
+初次模型结果分为 `overview`、`changes`、`members`、`pendingItems`；条目携带本次返回资料中的引用标识。`quote`、`scope`、作者展示映射与生成时间由 Java 组成，不由模型生成。梳理模型接收观点、日期、内部成员别名／显示昵称，以及与页面展示相同的 Java 报价快照，避免把模型此前未见报价误写成页面没有行情；没有增加外部查询，报价仍由 Java 独立展示。authorNames 对照由本次已绑定且已筛选的资料生成，text 使用对应昵称，成员正文只需判断和理由；编号只留在结构字段。Java 仍拒绝正文中本次已知内部编号，不删改错误正文后保存；具体失败与表达补强见 [BUG-015](../../engineering/bugs/BUG-015-summary-model-context-and-page-scope.md)。缺失或未知状态不扩大为市场不存在报价。追问使用正文段落与引用的结构，允许简短回答，无需反复输出三块摘要。
 
-固定生成核心位于 ResearchSummaryService／ResearchSummaryPrompt／ResearchSummaryModel／ResearchSummaryValidator。Service 禁止外层数据库事务包裹模型调用；Prompt 使用字段白名单与每次生成的 M1／M2 作者别名，不发送账号身份或完整业务响应。发送前限制序列化消息为 60 KiB，实际完整 HTTP 请求派发前再限制 64 KiB，均不当作 Token 计费量。模型通过 ChatClient 一次同步请求，显式 JSON 对象输出、非思考模式和 2,000 输出 Token；保留用量，拒绝截断、空／不可解析／额外字段结果。Validator 检查正文长度、合法且不重复的引用、同成员前后记录、每成员最新观点及完整成员覆盖，然后重新核对来源。成员条数受本次资料上限约束，changes／pendingItems 各最多 8 项。004 已接 HTTP、预算、幂等与持久化；005 的追问使用 ResearchQuestionService／ResearchQuestionModel，通过 ChatModel 显式控制工具循环，输出 paragraphs＋missingInformation。段落 1～8 条，每段最多 2,000 字符、8 个引用，缺口最多 8 条；合法引用只来自实际工具或有效历史，通用解释可无引用。结构校验不证明语义正确。
+固定生成核心位于 ResearchSummaryService／ResearchSummaryPrompt／ResearchSummaryModel／ResearchSummaryValidator。Service 禁止外层数据库事务包裹模型调用；Prompt 使用字段白名单与每次生成的 M1／M2 作者别名，不发送账号身份或完整业务响应。发送前限制序列化消息为 60 KiB，实际完整 HTTP 请求派发前再限制 64 KiB，均不当作 Token 计费量。梳理只派发一次无工具模型请求；同步接口使用 ChatClient，流式入口使用第 6.3 节的原生传输，均显式 JSON 对象输出、非思考模式和 2,000 输出 Token；保留用量，拒绝截断、空／不可解析／额外字段结果。Validator 检查正文长度、合法且不重复的引用、同成员前后记录、每成员最新观点及完整成员覆盖，然后重新核对来源。成员条数受本次资料上限约束，changes／pendingItems 各最多 8 项。004 已接 HTTP、预算、幂等与持久化；005 的追问使用 ResearchQuestionService／ResearchQuestionModel，通过 ChatModel 显式控制工具循环，输出 paragraphs＋missingInformation。段落 1～8 条，每段最多 2,000 字符、8 个引用，缺口最多 8 条；合法引用只来自实际工具或有效历史，通用解释可无引用。结构校验不证明语义正确。
 
 梳理正文使用昵称，authorId／sourceIds 只保留在结构字段。对本次已知内部编号的独立字面新增展示检查；合法昵称、原文恰含 M1 等真实术语时保留，不因此新增账号规则或全局禁词。该检查只作用于新梳理结果，不追溯改写历史正文；不能证明所有自然语言判断均正确。真实坏例子和修复机制见 [BUG-015](../../engineering/bugs/BUG-015-summary-model-context-and-page-scope.md)。
 

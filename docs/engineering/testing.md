@@ -66,7 +66,7 @@ PowerShell 用 `npm.cmd`，后端使用系统 `mvn`。
 
 财务数字保护同时覆盖正文、资料缺口和省略引用的情况。ResearchFinancialQuestionTest 覆盖 `missingInformation` 中虚构换算、错单位、缺百分号和错误百分比的拒绝；实际取得财务后删除引用不能关闭校验，未引用的资产快照不能授权最终缺口中的金额。正例保留缺失比较年、原报单位、纯报告说明、只使用合法报价引用及不查询财务的概念定义。Chrome 的 invalid-financial-number-gap／invalid-financial-percent-gap 和 invalid-financial-no-citation／invalid-financial-no-citation-gap 走原 SSE，核对固定诊断、已知用量、错误消息零入库、旧答案保留及无自动重试。该检查只证明程序边界，不是新增真实模型质量采样。
 
-ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号 ID 归一为本地别名数字；不连模型或数据库。它保留报价 AVAILABLE 却声称未提供行情、正文带内部编号的旧输出，验证新编号检查拒绝，并确认新版 Prompt 输入包含同一可用报价。ResearchSummaryServiceTest 覆盖可用／不可用报价和实际昵称，Validator 测试保留原文 M1 术语等合法字面。Chrome 的 invalid-summary-identifiers 走 SSE 验证旧答案保留、SUMMARY_REPLY_CONTRACT 安全诊断和错误不入消息；真实表达质量仍需按逐题门禁复测，不能用回放冒充新模型回答。
+ResearchSummaryReplayTest 使用已捕获的自造真实模型坏例子，账号 ID 归一为本地别名数字；不连模型或数据库。它保留报价 AVAILABLE 却声称未提供行情、正文带内部编号的旧输出，验证新编号检查拒绝，并确认新版 Prompt 输入包含同一可用报价及实际 authorNames 对照。ResearchSummaryServiceTest 覆盖可用／不可用报价和实际昵称，成员筛选同时检查对照仅含选中成员，不能额外泄露未选成员；Validator 测试保留原文 M1 术语等合法字面。Chrome 的 invalid-summary-identifiers 走 SSE 验证旧答案保留、SUMMARY_REPLY_CONTRACT 安全诊断和错误不入消息；真实表达质量仍需按逐题门禁复测，不能用回放冒充新模型回答。
 
 007 的受控 SSE 检查用本地 HTTP 模型替身，不新增付费调用。`ResearchQuestionStreamModelTest` 从实际 Spring AI／WebClient 请求随机回环 SSE，核对分块、结束标记、用量一次结算、取消后读完用量、未知预留、HTTP 错误零重试，以及编码后请求超限必须在派发计数前拒绝（含单个 Mono 缓冲区）。`ResearchReplyDraftTest` 覆盖逐字符中文／转义／字符串内括号、完整围栏与 BOM、未闭合对象不显示、坏结构撤回和其他属性顺序退回最终解析。最终结构失败的细分阶段用自造回复验证，只记固定诊断、不保存模型原文，也不据此补造旧真实失败根因。
 

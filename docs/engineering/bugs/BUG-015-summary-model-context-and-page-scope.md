@@ -18,6 +18,10 @@ Prompt 明确 text 用 authorName，M 编号和 op 编号只在结构字段；Va
 
 ## 验证与复习
 
+2026-10-22 的原生流完整题集再次在首次梳理拒绝正文编号，安全诊断明确为 SUMMARY_REPLY_CONTRACT／INTERNAL_IDENTIFIER。前八次已审通过，计划十四次、实际九次，后五次未派发；原结果保留在 target/agent-closure-real-20261022-210455-235858a6。此次没有保存原始模型正文，因此只确认命中已知内部编号规则，不能判断具体编号、所在分区或反推其他旧失败原因。校验阻止错误保存不等于模型已稳定遵守表达要求。
+
+梳理 v8 在同一 JSON 资料中增加由当前 SourceBinding 生成的 authorNames 对照，明确 text 提及作者时使用对应昵称、成员正文只写判断及理由，并要求四区正文自检。对照只包含当前选中成员，不附带账号 ID，也不新增资料查询；原消息／HTTP 大小守卫仍生效。Java 不删改错误正文，不放宽编号拒绝、引用或最新观点检查，不自动补发付费请求。回放检查实际序列化对照，筛选 Service 检查未选成员不进入对照；新版本完整回归与真实采样只见 [任务第 39 节](../../specs/004-research-agent/tasks.md#39-当前版本全量收尾与完整题集2026-10-22)，不把提示词补强写成任意回复都可靠的保证。
+
 [真实坏例子回放](../../../src/test/java/com/stock/system/agent/ResearchSummaryReplayTest.java)、[Service](../../../src/test/java/com/stock/system/agent/ResearchSummaryServiceTest.java) 与 [Validator](../../../src/test/java/com/stock/system/agent/ResearchSummaryValidatorTest.java) 分别验证旧输出拒绝、同一报价输入与展示、可用／不可用状态及合法昵称／术语边界。Chrome 用本地替身检查 SSE 错误保留旧结果、错误不入消息和安全失败阶段；具体次数与后续真实复测只见 [任务第 32 节](../../specs/004-research-agent/tasks.md#32-梳理报价范围与正文编号补修2026-10-19)。
 
 项目解释时先画清每层实际看到的数据：Java 已查到什么、模型收到什么、页面展示什么，三个集合不能互相替代。结构和引用验证通过只说明格式与关系合法，不证明所有覆盖说明正确；修复原始输入与继续做真实语义核对缺一不可。

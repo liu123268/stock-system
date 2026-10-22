@@ -92,6 +92,10 @@ class ResearchSummaryServiceTest {
         assertThat(result.scope().filter()).isEqualTo(filter);
         assertThat(model.input.user()).contains("2026-10-13", "2026-10-14", "\"authorId\":\"M1\"")
                 .doesNotContain("authorUserId", "成员乙");
+        var selectedNames = JsonMapper.builder().findAndAddModules().build()
+                .readTree(model.input.user().substring(model.input.user().indexOf('{'))).path("authorNames");
+        assertThat(selectedNames.size()).isEqualTo(1);
+        assertThat(selectedNames.path("M1").asString()).isEqualTo(original.opinions().get(0).authorNickname());
     }
 
     @Test

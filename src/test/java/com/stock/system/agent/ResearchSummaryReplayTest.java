@@ -39,6 +39,9 @@ class ResearchSummaryReplayTest {
             var user = json.readTree(input.user().substring(input.user().indexOf('{')));
             assertThat(user.path("quote").path("status").asString()).isEqualTo("AVAILABLE");
             assertThat(user.path("quote").path("price").asInt()).isEqualTo(612);
+            assertThat(user.path("authorNames").size()).isEqualTo(2);
+            assertThat(user.path("authorNames").path("M1").asString()).isEqualTo("自造成员甲");
+            assertThat(user.path("authorNames").path("M2").asString()).isEqualTo("自造成员乙");
             assertThat(input.user()).contains("自造成员甲", "自造成员乙");
             assertThat(input.system()).contains("不能因此写", "所有text正文使用authorName显示昵称")
                     .doesNotContain("没有提供公告、财报、新闻或行情资料");

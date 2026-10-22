@@ -17,7 +17,7 @@ import java.util.Map;
 
 @Component
 public class ResearchSummaryPrompt {
-    public static final String VERSION = "research-summary-20261022-v7-ordered-stream";
+    public static final String VERSION = "research-summary-20261022-v8-display-names";
 
     /** 由本轮学生的自然语言要求落成代码；日期的必要性依回答任务决定。 */
     public static final String ANSWER_RULE = "简洁概括，说明观点来自谁；普通概述可省略日期，"
@@ -35,10 +35,13 @@ public class ResearchSummaryPrompt {
             仅针对明确提供的日期／成员子范围整理，不宣称覆盖整个周期。
             仅使用提供的 sourceId 和 authorId；不能编造来源、参与者、URL、报价或读取范围。
             所有text正文使用authorName显示昵称，不写M1等作者编号或op-1等引用编号；编号只放在authorId和sourceIds结构字段。
+            authorNames给出本次作者编号到显示昵称的完整对照；text提到作者时逐字使用对应昵称，不在昵称后追加编号或括号引用。
+            members.text只写该成员最新判断和理由，无需重复作者标签；overview、changes和pendingItems提到作者时同样使用显示昵称。
+            输出前逐一检查四个区域的text，移除其中的内部作者编号和来源编号，仅在authorId、sourceIds中保留编号；不输出自检说明。
             输出一个 JSON 对象，四个字段均必填，不添加其他字段，不用 Markdown 代码块：
             {"overview":{"text":"简短概括","sourceIds":[]},
-             "changes":[{"text":"同一成员前后变化","sourceIds":["op-1","op-2"]}],
-             "members":[{"authorId":"M1","text":"最新观点及理由","sourceIds":["op-2"]}],
+             "changes":[{"text":"用显示昵称说明同一成员前后变化","sourceIds":["op-1","op-2"]}],
+             "members":[{"authorId":"M1","text":"只写该成员最新判断及理由","sourceIds":["op-2"]}],
              "pendingItems":[{"text":"资料缺口及影响","sourceIds":[]}]}
             每段 text 非空且不超过 1000 个字符，最多引用 8 条来源。
             overview 概括成员观点时必须带引用。changes 与 pendingItems 各最多 8 项。
@@ -60,10 +63,12 @@ public class ResearchSummaryPrompt {
 
     public Input build(ResearchCycleSourcesResponseVO sources, ResearchMarketDataService.Quote quote) {
         Map<Long, String> authors = new LinkedHashMap<>();
+        Map<String, String> authorNames = new LinkedHashMap<>();
         List<SourceBinding> bindings = new ArrayList<>();
         List<ModelOpinion> materials = new ArrayList<>();
         for (OpinionSource source : sources.opinions()) {
             String author = authors.computeIfAbsent(source.authorUserId(), unused -> "M" + (authors.size() + 1));
+            authorNames.putIfAbsent(author, source.authorNickname());
             String id = "op-" + source.id();
             bindings.add(new SourceBinding(id, author, source));
             materials.add(new ModelOpinion(id, author, source.authorNickname(), source.createdAt(),
@@ -75,7 +80,7 @@ public class ResearchSummaryPrompt {
                 + objectMapper.writeValueAsString(new ModelInput(sources.stockCode(), sources.stockName(),
                 sources.startedAt(), sources.endedAt(), sources.scope().readAt(),
                 new ModelScope(sources.scope().filter().dateFrom(), sources.scope().filter().dateTo(),
-                        authors.get(sources.scope().filter().authorUserId())), quote, materials));
+                        authors.get(sources.scope().filter().authorUserId())), quote, authorNames, materials));
         // 只为当前核心组件保护消息大小；完整 HTTP 请求与预算门控在页面入口接入前落实。
         byte[] messages = objectMapper.writeValueAsBytes(Map.of("messages", List.of(
                 Map.of("role", "system", "content", system), Map.of("role", "user", "content", user))));
@@ -90,7 +95,8 @@ public class ResearchSummaryPrompt {
 
     private record ModelInput(String stockCode, String stockName, LocalDateTime startedAt,
                               LocalDateTime endedAt, LocalDateTime readAt, ModelScope selectedScope,
-                              ResearchMarketDataService.Quote quote, List<ModelOpinion> opinions) {}
+                              ResearchMarketDataService.Quote quote, Map<String, String> authorNames,
+                              List<ModelOpinion> opinions) {}
     private record ModelScope(LocalDate dateFrom, LocalDate dateTo, String authorId) {}
     private record ModelOpinion(String sourceId, String authorId, String authorName,
                                 LocalDateTime createdAt, String type, String stance, String reason,
