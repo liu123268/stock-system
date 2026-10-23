@@ -235,9 +235,19 @@ Vue → Spring Boot（权限、目录与参数校验）→ 行情网关
 
 该命令做两件事：没有本地 client_id 时，按[官方快速开始](https://open.longbridge.com/zh-CN/docs/getting-started)动态注册 `stock-system-local-java-sdk` public client，新注册回调为 `http://localhost:18080/callback`；然后用 `OAuthBuilder` 执行浏览器授权，最长等待 10 分钟。本机 Windows 保留端口范围包含 SDK 默认的 60355，因此新注册和 SDK 均使用 18080；已有 client_id 始终复用，旧配置缺少回调端口时保留原来的 60355，不自动重注册或覆盖配置。脚本在终端打印授权 URL，由用户在已登录新账号的 Chrome 普通窗口打开，不自动唤起默认浏览器。授权页须核对为新账号，浏览器回调时命令窗口保持打开。终端出现 `LONGBRIDGE_OAUTH_OK` 才证明 SDK 授权完成；这一步不连接数据库、不建立行情连接，不能当作新账号行情权限验收。
 
-脚本把公开 client_id 和回调端口写到 Git 忽略的 `.env.longbridge-local.properties`（`local.longbridge.client-id`、`local.longbridge.callback-port`）。授权时临时设置子进程的 `LONGBRIDGE_CLIENT_ID`，不设置 Windows 用户／系统永久环境变量。`dev` 导入该文件，运行目录应为项目根目录；也可通过非敏感的 `LONGBRIDGE_CLIENT_ID` 覆盖。Token 的保存和刷新交给官方 SDK，Windows 位于 `%USERPROFILE%\.longbridge\openapi\tokens\<client_id>`。项目不读取或手写该缓存，也不从旧 CLI 拷贝 Token；旧账号授权文件不自动删除，不影响生产账号。
+脚本把公开 client_id 和回调端口写到 Git 忽略的 `.env.longbridge-local.properties`（`local.longbridge.client-id`、`local.longbridge.callback-port`）。授权时临时设置子进程的 `LONGBRIDGE_CLIENT_ID`，不设置 Windows 用户／系统永久环境变量。`dev` 导入该文件，运行目录应为项目根目录；也可通过非敏感的 `LONGBRIDGE_CLIENT_ID` 覆盖。Token 的保存和刷新交给官方 SDK，Windows 位于 `%USERPROFILE%\.longbridge\openapi\tokens\<client_id>`。项目不读取或手写缓存内的凭据，也不从旧 CLI 拷贝 Token；一次性观测只查询文件元数据。旧账号授权文件不自动删除，不影响生产账号。
 
-授权成功后重启本地后端，确保旧 Java 进程拥有的 CLI 连接先退出，再使用新 SDK 连接。2026-10-07 网页搜索、K 线和历史分时已经真实验收；A 股休市当天验证明确的非交易日响应，没有将无曲线算作接口故障。自动刷新仍需在 SDK 管理的授权实际到期后验证，不强制编辑真实 Token 文件或用文件存在冒充刷新成功。已有本地开发服务由用户正常关闭；自动化不得批量结束 Java 或 longbridge。云端的安装、授权、Token 挂载和镜像维持原方案，见[部署说明](deployment.md)。
+授权成功后重启本地后端，确保旧 Java 进程拥有的 CLI 连接先退出，再使用新 SDK 连接。2026-10-07 网页搜索、K 线和历史分时已经真实验收；A 股休市当天验证明确的非交易日响应，没有将无曲线算作接口故障。自动刷新须采到自然临近到期／到期时的真实刷新链路，不强制编辑真实 Token 文件或用文件存在冒充刷新成功。已有本地开发服务由用户正常关闭；自动化不得批量结束 Java 或 longbridge。云端的安装、授权、Token 挂载和镜像维持原方案，见[部署说明](deployment.md)。
+
+#### OAuth 自动刷新的只读观察
+
+固定 SDK 4.5.0 的 [OAuthToken 实现](https://github.com/longbridge/openapi/blob/68080b64ee02836e2fec625e9605dc5389abdb17/rust/crates/oauth/src/token.rs#L59) 在距离到期不足五分钟时判定需要刷新，构建与后续取凭据都会沿 SDK 内部刷新流程；有效缓存复用时不重新保存。它与 [Config.refreshAccessToken](https://github.com/longbridge/openapi/blob/68080b64ee02836e2fec625e9605dc5389abdb17/java/javasrc/src/main/java/com/longbridge/Config.java#L218) 的旧 API Key 刷新不同，后者不适用于当前 OAuth。
+
+一次性入口是 [observe-longbridge-sdk-oauth.ps1](../../scripts/observe-longbridge-sdk-oauth.ps1)。在项目根目录用 PowerShell 7 执行 `./scripts/observe-longbridge-sdk-oauth.ps1 -Mode Offline`，以七项离线判定检查有效复用、写入、报价失败、交互授权、文件替换、时间倒退和无新时间戳的尺寸变化；不连接网络或读取授权。显式 `-Mode Live` 才读取既有公开 client_id、让 SDK 处理授权并读取一次已批准股票报价，不接数据库或回答模型。
+
+Live 启动前拒绝可能占用连接或更新同一 SDK 缓存的项目后端／CLI／探测进程，授权缓存缺失在创建 OAuth 前拒绝，回调也拒绝交互授权。它只记录前后创建时间、修改时间和尺寸，不读凭据内容、不改系统时间、不伪造过期；子 Java 最长六十秒，按 PID／创建时间管理并关闭。结果和进程记录保存在忽略的 target/longbridge-oauth-observation-*。
+
+`VALID_QUOTE_NO_CACHE_WRITE` 表示报价成功、没有观察到缓存写入，刷新验收仍待自然事件。`CACHE_WRITE_DURING_SUCCESSFUL_SDK_REQUEST` 只产生待核对证据，还须结合固定源码、进程归属和 SDK 路径审查，不能仅凭文件时间自动勾选 CODE-206I。实际观察只见 [CODE-206I 记录](../specs/002-stock-research/tasks.md#code-206i刷新只读观察2026-10-23)，无需用户另外手测，也不重复派发收费问题等待 Token 过期。
 
 ### 9.3 可配置项与降级
 
