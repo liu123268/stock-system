@@ -6,6 +6,8 @@ import com.stock.system.admin.vo.AdminUserDetailResponseVO;
 import com.stock.system.admin.vo.AdminUserSummaryResponseVO;
 import com.stock.system.common.api.PageResponseVO;
 import com.stock.system.common.api.Result;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.stock.system.security.LoginUser;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/admin/users")
+@Tag(name = "09 管理员账号治理", description = "仅超级管理员可访问。")
 public class AdminUserController {
 
     private final AdminGovernanceService governanceService;
@@ -26,6 +29,7 @@ public class AdminUserController {
     }
 
     @GetMapping
+    @Operation(summary = "分页查询账号")
     public Result<PageResponseVO<AdminUserSummaryResponseVO>> list(
             @AuthenticationPrincipal LoginUser currentUser,
             @RequestParam(defaultValue = "1") int page,
@@ -38,6 +42,7 @@ public class AdminUserController {
     }
 
     @GetMapping("/{userId}")
+    @Operation(summary = "读取账号治理详情")
     public Result<AdminUserDetailResponseVO> detail(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long userId
@@ -46,6 +51,7 @@ public class AdminUserController {
     }
 
     @PostMapping("/{userId}/disable")
+    @Operation(summary = "禁用账号并使其旧 Token 失效")
     public Result<AdminUserDetailResponseVO> disable(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long userId
@@ -54,6 +60,7 @@ public class AdminUserController {
     }
 
     @PostMapping("/{userId}/restore")
+    @Operation(summary = "恢复账号")
     public Result<AdminUserDetailResponseVO> restore(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long userId

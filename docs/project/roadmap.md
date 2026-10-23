@@ -358,7 +358,7 @@ Agent 与既有 Java 专题并行，不以学完 JUC／JVM、独立写完整接�
 
 - README 项目介绍、架构图、ER 图和截图；
 - 一键或可复现启动方式；
-- OpenAPI 接口文档；
+- OpenAPI 接口文档（已补本地自动生成与 Swagger UI，见 [使用与验证](../engineering/api.md)）；
 - 核心测试结果；
 - 索引和性能实验报告；
 - 已验证项目亮点；

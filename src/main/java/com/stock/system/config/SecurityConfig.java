@@ -2,6 +2,7 @@ package com.stock.system.config;
 
 import com.stock.system.security.JwtAuthenticationFilter;
 import com.stock.system.security.RestAuthenticationEntryPoint;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,7 +28,9 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             RestAuthenticationEntryPoint authenticationEntryPoint,
-            SecurityContextRepository requestSecurityContextRepository
+            SecurityContextRepository requestSecurityContextRepository,
+            @Value("${springdoc.api-docs.enabled:false}") boolean apiDocsEnabled,
+            @Value("${springdoc.swagger-ui.enabled:false}") boolean swaggerUiEnabled
     ) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
@@ -38,7 +41,14 @@ public class SecurityConfig {
                         exception
                                 .authenticationEntryPoint(authenticationEntryPoint)
                                 .accessDeniedHandler(authenticationEntryPoint))
-                .authorizeHttpRequests(authorize -> authorize
+                .authorizeHttpRequests(authorize -> {
+                    if (apiDocsEnabled) {
+                        authorize.requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll();
+                    }
+                    if (swaggerUiEnabled) {
+                        authorize.requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll();
+                    }
+                    authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/api/auth/register",
@@ -46,7 +56,8 @@ public class SecurityConfig {
                                 "/error"
                         ).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
-                        .anyRequest().authenticated())
+                        .anyRequest().authenticated();
+                })
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

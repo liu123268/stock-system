@@ -14,6 +14,8 @@ V1 核心业务已有云端发布；V2 研究助手已完成限定范围的本�
 
 本机操作从 [本地启动](docs/engineering/development.md#4-一键启动) 开始，展示时可按 [本机演示顺序](docs/engineering/development.md#本机演示顺序) 操作；项目讲述与能力证据见 [项目亮点](docs/career/highlights.md)。
 
+开发后端启动后，在 `http://localhost:8082/swagger-ui.html` 浏览按当前路由与 DTO 生成的接口文档；JSON／YAML 导出、JWT 调试及 SSE 约定见 [本地接口文档](docs/engineering/api.md)。
+
 ## 技术栈
 
 - 后端：Java 17、Spring Boot、Spring Security、MyBatis-Plus、MySQL、Redis/Lettuce、Flyway、Longbridge Java SDK（本地）／OpenAPI CLI（生产）

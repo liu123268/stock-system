@@ -1,6 +1,8 @@
 package com.stock.system.stock.controller;
 
 import com.stock.system.common.api.Result;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.stock.system.security.LoginUser;
 import com.stock.system.stock.service.StockMarketPreviewService;
 import com.stock.system.stock.vo.StockCandlestickSeriesVO;
@@ -18,6 +20,7 @@ import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/market/stocks")
+@Tag(name = "07 空间行情预览")
 public class WorkspaceStockMarketController {
 
     private final StockMarketPreviewService previewService;
@@ -27,6 +30,7 @@ public class WorkspaceStockMarketController {
     }
 
     @GetMapping("/{code}")
+    @Operation(summary = "按股票代码预览行情", description = "仍需有效空间成员权限；不创建共享股票或研究周期。")
     public Result<StockMarketPreviewResponseVO> detail(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,
@@ -36,6 +40,7 @@ public class WorkspaceStockMarketController {
     }
 
     @GetMapping("/{code}/candlesticks")
+    @Operation(summary = "按股票代码预览 K 线")
     public Result<StockCandlestickSeriesVO> candlesticks(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,
@@ -49,6 +54,7 @@ public class WorkspaceStockMarketController {
     }
 
     @GetMapping("/{code}/intraday")
+    @Operation(summary = "按股票代码预览分时")
     public Result<StockIntradaySeriesVO> intraday(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,

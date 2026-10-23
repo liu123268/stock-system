@@ -39,6 +39,8 @@ super_admin_operation_log：按 action 指向治理目标，无管理员外键
 
 ### 5.1 命名与统一响应
 
+当前全站路由／DTO 的机器可读契约由 springdoc 生成，统一错误、JWT 与助手 SSE 的文档补充方案和入口见 [接口文档](../../engineering/api.md)；下方保留业务设计，不维护第二份手写完整路由表。
+
 - 命名规范见 [项目结构](../../engineering/project-structure.md#3-后端命名规则)；
 - 原 `Result<Integer code, String msg, T data>` 只有 `1/0` 且普通业务异常通常仍返回 HTTP 200，无法稳定区分空间权限、状态和邀请失败；CODE-001 已统一升级为 `Result<String code, String message, T data>`；
 - `code` 使用稳定、可读的英文枚举值，`message` 使用可展示的中文说明，`data` 只保存成功结果或必要的失败详情；前端不能通过匹配中文文案判断流程；

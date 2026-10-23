@@ -2,6 +2,8 @@ package com.stock.system.agent.controller;
 
 import com.stock.system.agent.service.ResearchMarketDataService;
 import com.stock.system.common.api.Result;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.stock.system.security.LoginUser;
 import com.stock.system.stock.dto.ResearchSourceFilter;
 import com.stock.system.stock.service.StockResearchSourceService;
@@ -19,6 +21,7 @@ import java.time.LocalDate;
 /** 页面准备资料的只读入口；不创建会话、不调用模型或发生生成费用。 */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/stocks/{workspaceStockId}/research/cycles/{researchCycleId}/agent")
+@Tag(name = "08 研究助手")
 public class ResearchAgentContextController {
     private final StockResearchSourceService sources;
     private final ResearchMarketDataService marketData;
@@ -29,6 +32,7 @@ public class ResearchAgentContextController {
     }
 
     @GetMapping("/context")
+    @Operation(summary = "准备助手的可见资料与行情", description = "不创建会话、不调用模型；行情不可用与资料范围按实际响应说明。")
     public Result<Context> context(@AuthenticationPrincipal LoginUser user, @PathVariable Long workspaceId,
                                    @PathVariable Long workspaceStockId, @PathVariable Long researchCycleId,
                                    @RequestParam(required = false) Long authorUserId,

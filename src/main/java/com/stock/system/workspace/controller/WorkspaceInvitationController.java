@@ -7,6 +7,8 @@ import com.stock.system.workspace.service.WorkspaceInvitationService;
 import com.stock.system.workspace.vo.CurrentInvitationResponseVO;
 import com.stock.system.workspace.vo.InvitationHistoryResponseVO;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +24,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/invitations")
+@Tag(name = "04 空间邀请")
 public class WorkspaceInvitationController {
 
     private final WorkspaceInvitationService invitationService;
@@ -31,6 +34,7 @@ public class WorkspaceInvitationController {
     }
 
     @GetMapping("/current")
+    @Operation(summary = "读取当前邀请码")
     public Result<CurrentInvitationResponseVO> current(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId
@@ -39,6 +43,7 @@ public class WorkspaceInvitationController {
     }
 
     @GetMapping
+    @Operation(summary = "读取邀请码历史")
     public Result<List<InvitationHistoryResponseVO>> history(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId
@@ -47,6 +52,7 @@ public class WorkspaceInvitationController {
     }
 
     @PostMapping
+    @Operation(summary = "生成或更换邀请码", description = "仅 OWNER 可操作，使用当前邀请标识校验并发变化。")
     @ResponseStatus(HttpStatus.CREATED)
     public Result<CurrentInvitationResponseVO> create(
             @AuthenticationPrincipal LoginUser currentUser,
@@ -61,6 +67,7 @@ public class WorkspaceInvitationController {
     }
 
     @DeleteMapping("/{invitationId}")
+    @Operation(summary = "停用邀请码", description = "仅 OWNER 可操作。")
     public Result<Void> revoke(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,

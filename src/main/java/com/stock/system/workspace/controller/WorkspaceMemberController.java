@@ -7,6 +7,8 @@ import com.stock.system.workspace.service.WorkspaceMemberService;
 import com.stock.system.workspace.vo.WorkspaceDetailResponseVO;
 import com.stock.system.workspace.vo.WorkspaceMemberResponseVO;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +22,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}")
+@Tag(name = "03 空间成员")
 public class WorkspaceMemberController {
 
     private final WorkspaceMemberService memberService;
@@ -29,6 +32,7 @@ public class WorkspaceMemberController {
     }
 
     @GetMapping("/members")
+    @Operation(summary = "列出空间有效成员")
     public Result<List<WorkspaceMemberResponseVO>> list(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId
@@ -37,6 +41,7 @@ public class WorkspaceMemberController {
     }
 
     @PostMapping("/leave")
+    @Operation(summary = "退出空间", description = "OWNER 必须先转让所有权。")
     public Result<Void> leave(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId
@@ -46,6 +51,7 @@ public class WorkspaceMemberController {
     }
 
     @DeleteMapping("/members/{userId}")
+    @Operation(summary = "移除空间成员", description = "仅 OWNER 可操作。")
     public Result<Void> remove(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,
@@ -56,6 +62,7 @@ public class WorkspaceMemberController {
     }
 
     @PostMapping("/ownership-transfer")
+    @Operation(summary = "转让空间所有权", description = "仅 OWNER 可操作，目标必须是账号正常的有效成员。")
     public Result<WorkspaceDetailResponseVO> transfer(
             @AuthenticationPrincipal LoginUser currentUser,
             @PathVariable Long workspaceId,

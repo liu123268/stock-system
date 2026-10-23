@@ -22,6 +22,7 @@
         <java.version>17</java.version>
         <spring-ai.version>2.0.1</spring-ai.version>
         <mcp-sdk.version>2.1.0</mcp-sdk.version>
+        <springdoc.version>3.1.1</springdoc.version>
     </properties>
 
     <dependencyManagement>
@@ -41,6 +42,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+
+        <!-- 从 MVC 路由与 DTO 生成本项目接口契约；文档端点默认关闭。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
         </dependency>
 
         <!-- 参数校验：校验注册、登录等接口收到的数据是否合法 -->

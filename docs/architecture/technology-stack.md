@@ -51,7 +51,7 @@
 
 | 技术                            | 状态／版本   | 用途                                           | 证据或引入条件                                                             |
 | ------------------------------- | ------------ | ---------------------------------------------- | -------------------------------------------------------------------------- |
-| OpenAPI / springdoc             | 计划         | 接口契约和 Swagger UI                          | 空间接口进入稳定实现时                                                     |
+| OpenAPI / springdoc             | 已使用（springdoc `3.1.1`／OpenAPI `3.1`） | 从 MVC／DTO 生成契约和 Swagger UI | 本机 dev／test 开启，其他环境默认关闭；入口与验证见 [接口文档](../engineering/api.md) |
 | Apifox                          | 计划         | 人工联调和流程测试                             | OpenAPI 契约形成后                                                         |
 | Longbridge OpenAPI / Java SDK / CLI | 已使用（SDK `4.5.0`，CLI `v0.28.5`） | dev 官方授权及真实行情 SDK 探测通过；prod 保留已验证 CLI | dev 采用官方 SDK OAuth 和单个 QuoteContext；prod 继续管理 `longbridge serve`；两种传输共用四类行情网关与缓存，账号分离 |
 | 行情适配层                      | 目录、Mock、Longbridge | 已使用       | 三个 provider 分别管理标准身份／最新报价、K 线和分时；隔离业务与供应商 DTO |
