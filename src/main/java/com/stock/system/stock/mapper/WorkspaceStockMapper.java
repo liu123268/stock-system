@@ -77,11 +77,15 @@ public interface WorkspaceStockMapper extends BaseMapper<WorkspaceStock> {
             JOIN app_user latest_author ON latest_author.id = latest_opinion.author_user_id
             JOIN (
                 SELECT
-                    research_cycle_id,
+                    scoped_opinion.research_cycle_id,
                     COUNT(*) AS opinion_count,
-                    COUNT(DISTINCT author_user_id) AS participant_count
-                FROM stock_opinion
-                GROUP BY research_cycle_id
+                    COUNT(DISTINCT scoped_opinion.author_user_id) AS participant_count
+                FROM stock_opinion scoped_opinion
+                JOIN research_cycle scoped_cycle ON scoped_cycle.id = scoped_opinion.research_cycle_id
+                JOIN workspace_stock scoped_stock ON scoped_stock.id = scoped_cycle.workspace_stock_id
+                WHERE scoped_stock.workspace_id = #{workspaceId}
+                  AND scoped_cycle.status = 'ACTIVE'
+                GROUP BY scoped_opinion.research_cycle_id
             ) opinion_stats ON opinion_stats.research_cycle_id = rc.id
             WHERE ws.workspace_id = #{workspaceId}
             ORDER BY
