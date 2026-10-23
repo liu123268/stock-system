@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path'
 import * as financialSuite from '../../scripts/agent-quality/financial-cases.mjs'
 import * as reportSuite from '../../scripts/agent-quality/report-cases.mjs'
 import * as closureSuite from '../../scripts/agent-quality/closure-cases.mjs'
+import * as marketSuite from '../../scripts/agent-quality/market-cases.mjs'
 import { checkBudgetStart, checkBudgetAfter } from '../../scripts/agent-quality/probe-budget.mjs'
 import { artifactHash, buildScorecard, writeReviewArtifacts } from '../../scripts/agent-quality/quality-report.mjs'
 import { awaitSourceReview } from '../../scripts/agent-quality/review-gate.mjs'
@@ -15,8 +16,8 @@ const streamAnswers = args.includes('--stream-answers')
 const suites = args.filter(arg => arg.startsWith('--suite='))
 assert.ok(suites.length <= 1, '只能指定一次检查题库')
 const suite = suites.length ? suites[0].slice('--suite='.length) : 'financial'
-assert.ok(['financial', 'reports', 'closure'].includes(suite), '未知检查题库')
-const { selectCases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } = { financial: financialSuite, reports: reportSuite, closure: closureSuite }[suite]
+assert.ok(['financial', 'reports', 'closure', 'market'].includes(suite), '未知检查题库')
+const { selectCases, pricing, loadCatalog, expectedFor, checkProgramResult, continuationRows } = { financial: financialSuite, reports: reportSuite, closure: closureSuite, market: marketSuite }[suite]
 const unknownArguments = args.filter(arg => arg.startsWith('--expected-unknown='))
 assert.ok(unknownArguments.length <= 1, '只能指定一次历史未知笔数')
 const unknownText = unknownArguments.length ? unknownArguments[0].slice('--expected-unknown='.length) : '0'
@@ -47,7 +48,8 @@ const plan = { cases: cases.map(item => ({ ...item, expected: expectedFor(item, 
   ...(suite !== 'financial' ? { suite } : {}),
   ...(suite === 'closure' ? { fixtureVersion: closureSuite.fixtureVersion, executions: executions.map(item => ({
     id: item.executionId, caseId: item.id, sample: item.sample })) } : {}),
-  data: suite === 'reports' ? 'SELF_MADE_OPINIONS_AND_BOUNDED_REVIEWED_PUBLIC_REPORT_PASSAGES_AND_FINANCIAL_FACTS'
+  data: suite === 'market' ? 'SELF_MADE_OPINIONS_AND_REAL_LONGBRIDGE_SDK_PUBLIC_MARKET_DATA'
+    : suite === 'reports' ? 'SELF_MADE_OPINIONS_AND_BOUNDED_REVIEWED_PUBLIC_REPORT_PASSAGES_AND_FINANCIAL_FACTS'
     : 'SELF_MADE_OPINIONS_MOCK_MARKET_AND_REVIEWED_PUBLIC_FINANCIAL_FACTS',
   realBudget: 'ORIGINAL_CUMULATIVE_10_YUAN_LEDGER', semanticReview: 'REQUIRED' }
 if (args.includes('--dry-run')) {
@@ -56,10 +58,14 @@ if (args.includes('--dry-run')) {
 }
 if (mode === 'real') {
   if (streamAnswers) assert.equal(reviewEach, true, '流式真实检查须逐题核对来源后放行')
-  if (suite === 'reports') assert.equal(process.env.AGENT_REPORT_MODEL_PROBE, 'true', '真实报告原文检查须另行显式启用，并核对该轮授权')
+  if (suite === 'market') {
+    assert.equal(process.env.AGENT_MARKET_MODEL_PROBE, 'true', '真实行情联用须显式启用，不能继承财务或模拟行情开关')
+    assert.ok(streamAnswers && reviewEach, '真实行情联用须原生流式并逐题审查')
+  } else if (suite === 'reports') assert.equal(process.env.AGENT_REPORT_MODEL_PROBE, 'true', '真实报告原文检查须另行显式启用，并核对该轮授权')
   else assert.equal(process.env.AGENT_FINANCIAL_MODEL_PROBE, 'true', '真实财务资料检查须另行显式启用，并核对该轮授权')
   if (suite === 'closure') assert.equal(reviewEach, true, '综合真实验收须逐题核对正文和依据后放行')
 }
+if (suite === 'market') assert.equal(mode, 'real', '真实行情联用不能用模型替身或模拟行情代替')
 const continuationPath = process.env.AGENT_FINANCIAL_CONTINUE_FROM
 if (streamAnswers) assert.ok(!continuationPath, '流式验收不复用其他传输或旧批次答案')
 const previous = continuationPath ? JSON.parse(await readFile(resolve(continuationPath), 'utf8')) : null
@@ -82,6 +88,8 @@ let after = null
 let owner
 let databaseRemaining
 const sourceFixtures = []
+const marketStockSource = `AG_MARKET_${runId}`
+const browserEvidence = []
 const streamEvidence = []
 let streamBrowser, streamPage
 const sql = query => execFileSync(process.env.MYSQL_CLIENT_PATH ?? 'mysql.exe', [
@@ -116,6 +124,7 @@ async function api(path, token, method = 'GET', body) {
 function id(value) { assert.ok(Number.isSafeInteger(value) && value > 0); return value }
 async function save() {
   const artifact = { runId, mode, plan, continuation, before, after, sourceFixtures, results,
+    ...(suite === 'market' ? { browserEvidence } : {}),
     programSuccess: success, semanticReview: reviewEach ? 'PER_ROW_SOURCE_REVIEW_SEE_SCORECARD' : 'PENDING_HUMAN_REVIEW' }
   await writeFile(`${output}/results.json`, JSON.stringify(artifact, null, 2))
   await writeFile(`${output}/scorecard.json`, JSON.stringify(buildScorecard(artifact), null, 2))
@@ -152,18 +161,23 @@ try {
     before = await api('/test/agent-budget', owner.accessToken)
     checkBudgetStart(before, expectedUnknownReservations)
   }
+  if (suite === 'market') {
+    assert.match(marketStockSource, /^AG_MARKET_[a-z0-9]+$/)
+    if (!stocksBefore.get('600519.SH')) sql(`insert into stock(code,name,exchange,currency,listing_status,source) values('600519.SH','贵州茅台','SSE','CNY','LISTED','${marketStockSource}')`)
+    assert.equal(sql("select concat(exchange,':',currency) from stock where code='600519.SH' and source<>'LOCAL_MOCK'"), 'SSE:CNY')
+  }
   const workspace = id((await api('/workspaces', owner.accessToken, 'POST', { name: `财务核对自造样本${runId}` })).workspaceId)
   const invitation = await api(`/workspaces/${workspace}/invitations`, owner.accessToken, 'POST', { expectedInvitationId: null })
   await api('/workspaces/join', member.accessToken, 'POST', { inviteCode: invitation.inviteCode })
   const targets = new Map()
   for (const symbol of stocksBefore.keys()) {
     const target = await api(`/workspaces/${workspace}/stocks`, owner.accessToken, 'POST', { code: symbol,
-      stance: suite === 'closure' && symbol === '00700.HK' ? 'BULLISH' : 'NEUTRAL', reason: '验收自造观点：成员甲猜测新订单可能增长，尚待权威资料核对。',
+      stance: (suite === 'closure' && symbol === '00700.HK') || suite === 'market' ? 'BULLISH' : 'NEUTRAL', reason: '验收自造观点：成员甲猜测新订单可能增长，尚待权威资料核对。',
       observationNote: '这是新建测试样本，不是实际研究记录。', horizon: 'MEDIUM', targetPrice: null, stopLossPrice: null })
     id(target.workspaceStockId); id(target.researchCycleId)
     const cycleBase = `/workspaces/${workspace}/stocks/${target.workspaceStockId}/research/cycles/${target.researchCycleId}`
     targets.set(symbol, `${cycleBase}/agent`)
-    if (suite === 'closure' && symbol === '00700.HK') {
+    if ((suite === 'closure' && symbol === '00700.HK') || suite === 'market') {
       const opinionPath = `/workspaces/${workspace}/stocks/${target.workspaceStockId}/opinions`
       const common = { researchCycleId: target.researchCycleId, type: 'UPDATE', horizon: 'MEDIUM', targetPrice: null, stopLossPrice: null }
       await api(opinionPath, member.accessToken, 'POST', { ...common, stance: 'BEARISH',
@@ -172,11 +186,27 @@ try {
         reason: '验收自造观点：成员甲调整为中性，因为订单增长尚无权威依据确认。', observationNote: '等待权威订单披露，不凭成员推测下结论。' })
     }
     const sources = await api(`${cycleBase}/sources`, owner.accessToken)
+    let market
+    if (suite === 'market') {
+      const quote = (await api('/stocks/search?keyword=600519', owner.accessToken)).find(item => item.code === symbol)
+      marketSuite.checkRealQuote(quote)
+      const candles = await api(`/workspaces/${workspace}/stocks/${target.workspaceStockId}/candlesticks?period=day&count=20&before=2026-10-22T16:00:00Z`, owner.accessToken)
+      assert.equal(candles.source, 'LONGBRIDGE_OPENAPI'); assert.equal(candles.simulated, false)
+      const dailyPrices = candles.candlesticks.filter(item => item.time.slice(0, 10) >= '2026-10-19' && item.time.slice(0, 10) <= '2026-10-22').sort((a, b) => a.time.localeCompare(b.time))
+      assert.ok(dailyPrices.length >= 2, '真实日K未取得足够交易日，不能派发模型')
+      market = { quote, dailyPrices }
+    }
     sourceFixtures.push({ symbol, scope: sources.scope, opinions: sources.opinions.map(item => ({
       sourceId: `op-${item.id}`, authorName: item.authorNickname, createdAt: item.createdAt,
-      type: item.type, stance: item.stance, reason: item.reason, observationNote: item.observationNote })) })
+      type: item.type, stance: item.stance, reason: item.reason, observationNote: item.observationNote })), ...(market ? { market } : {}) })
   }
   if (suite === 'closure') closureSuite.checkSourceFixtures(sourceFixtures, cases)
+  if (suite === 'market') {
+    const opinions = sourceFixtures[0].opinions
+    assert.equal(opinions.length, 3)
+    assert.deepEqual(opinions.filter(item => item.authorName === '自造成员甲').map(item => item.stance), ['BULLISH', 'NEUTRAL'])
+    assert.equal(opinions.find(item => item.authorName === '自造成员乙').stance, 'BEARISH')
+  }
   for (const testCase of pendingCases) {
     if (mode === 'real') checkBudgetStart(after ?? before, expectedUnknownReservations)
     if (testCase.executionId === fixtureFailAt) {
@@ -213,6 +243,38 @@ try {
     assert.equal(repeated.runId, run.runId)
     assert.equal(Number(sql(`select model_calls from agent_run where id=${id(run.runId)}`)), row.modelCalls, '幂等恢复不能新增模型调用')
     assert.equal((await api(base, member.accessToken)).messages.length, 0)
+    if (suite === 'market') {
+      const assistantUrl = `${frontend}${base.replace(/\/agent$/, '/assistant')}`
+      const errors = []
+      const onPageError = error => errors.push(error.name)
+      streamPage.on('pageerror', onPageError)
+      for (const width of [1440, 390]) {
+        await streamPage.setViewportSize({ width, height: 960 })
+        await streamPage.goto(assistantUrl)
+        const article = streamPage.locator(`article[data-run-id="${run.runId}"]`)
+        await article.waitFor({ state: 'visible' })
+        await article.locator('.agent-prose').first().waitFor({ state: 'visible' })
+        const evidenceButton = article.getByRole('button', { name: testCase.operation === 'SUMMARY' ? /查看.*的原文/ : /查看.*依据/ }).first()
+        await evidenceButton.click()
+        const dialog = streamPage.locator('dialog[open]')
+        await dialog.waitFor({ state: 'visible' })
+        const expectedContent = testCase.operation === 'SUMMARY' ? '验收自造观点' : 'LONGBRIDGE_OPENAPI'
+        // showModal 早于异步依据加载；弹窗可见不表示正文已到达。
+        await dialog.getByText(expectedContent, { exact: false }).first().waitFor({ state: 'visible' })
+        assert.ok((await dialog.innerText()).includes(expectedContent))
+        await streamPage.screenshot({ path: `${output}/${testCase.id}-evidence-${width}.png`, fullPage: true })
+        await dialog.getByRole('button', { name: testCase.operation === 'SUMMARY' ? '关闭原文' : '关闭依据' }).click()
+        await streamPage.reload()
+        await streamPage.locator(`article[data-run-id="${run.runId}"]`).waitFor({ state: 'visible' })
+        assert.equal(await streamPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+        await streamPage.screenshot({ path: `${output}/${testCase.id}-restored-${width}.png`, fullPage: true })
+        assert.equal(Number(sql(`select model_calls from agent_run where id=${id(run.runId)}`)), row.modelCalls)
+        browserEvidence.push({ id: testCase.id, width, citationOpened: true, refreshRestored: true, extraModelCalls: 0 })
+      }
+      streamPage.off('pageerror', onPageError)
+      assert.deepEqual(errors, [], '真实助手页不得出现脚本错误')
+      await save()
+    }
     if (mode === 'real') {
       const latest = await api('/test/agent-budget', owner.accessToken)
       checkBudgetAfter(after ?? before, latest)
@@ -245,7 +307,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 1000))
   }
   const stockCleanup = [...stocksBefore].filter(([, existed]) => !existed).map(([symbol]) =>
-    `delete from stock where code='${symbol}' and source='LOCAL_MOCK' and not exists(select 1 from workspace_stock where stock_id=stock.id);`).join('\n')
+    `delete from stock where code='${symbol}' and source='${suite === 'market' ? marketStockSource : 'LOCAL_MOCK'}' and not exists(select 1 from workspace_stock where stock_id=stock.id);`).join('\n')
   const remaining = sql(`create temporary table q_users as select id from app_user where username in (${list});
     create temporary table q_spaces as select id from workspace where created_by_user_id in (select id from q_users);
     create temporary table q_stocks as select id from workspace_stock where workspace_id in (select id from q_spaces);
@@ -276,7 +338,8 @@ try {
     select count(*) from workspace_invitation where workspace_id in (select id from q_spaces);
     select count(*) from workspace_stock where id in (select id from q_stocks);
     select count(*) from research_cycle where id in (select id from q_cycles);
-    select count(*) from stock_opinion where research_cycle_id in (select id from q_cycles);`)
+    select count(*) from stock_opinion where research_cycle_id in (select id from q_cycles);
+    ${suite === 'market' ? `select count(*) from stock where source='${marketStockSource}';` : ''}`)
   remaining.split(/\r?\n/).forEach(value => assert.equal(Number(value), 0))
   databaseRemaining = 0
   await save()

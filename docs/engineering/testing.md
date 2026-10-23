@@ -1,6 +1,6 @@
 # 测试与验收规则
 
-更新时间：2026-10-14
+更新时间：2026-10-23
 
 ## 1. 测试目标与选择
 
@@ -101,6 +101,8 @@ ResearchQuestionModelTest 走实际框架 HTTP 序列化，覆盖工具可选轮
 纯报告空查询的 Java 覆盖说明检查包括 NO_REPORT／NO_MATCH 去重、模型常识句不进入最终回复、混合财务材料不被替换，以及有工具参数错误时不冒充成功空检索；报告范围与真实性仍从实际 Service 结果核对，不由用户或模型声明的“没有资料”触发。
 
 ResearchReportAnswerSupportTest 检查报告事实段落交付完整受审原文、计划限定保留、去重及混引拒绝。ResearchReportAnswerReplayTest 只有显式指定 REPORT_ANSWER_REPLAY 为 target 内已有实验 results.json 时执行，不连模型或数据库，另存输入哈希、原始模型版本和新流程版本。回放后仍用原题程序契约与原文清单核对，不把零新增请求的回放写成新版本真实模型复测；实现取舍见 [BUG-013](bugs/BUG-013-report-scope-generalization.md)。
+
+真实 SDK 行情与助手的三题联用沿 [Market 检查](agent-experiment.md#真实行情与研究助手联用)，不能以普通 mock 题集替代，也不默认加入普通回归。启动前排除已有连接，写入前沿第 4 节双环境探针与实际 catalog 保护，费用沿原账本；只有真实非模拟报价／日 K 可用才派发模型。程序与四维语义分别检查，1440／390px 打开异步依据和原文、刷新恢复不增加模型调用。离线检查将 market-cases.test.mjs 加入第 2.5 节原 Node 检查，覆盖模拟旁路、来源／对象／币种错误、未来数据时间、独立舍入及实际工具约束；执行证据归 [任务第 42 节](../specs/004-research-agent/tasks.md#42-本地-sdk-真实行情与助手联用2026-10-23)。
 
 ### 2.6 本机 MCP 协议与实际业务链路
 

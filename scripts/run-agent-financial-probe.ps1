@@ -5,8 +5,9 @@ param(
     [switch]$ApprovedFinancialData,
     [string]$ContinueFrom,
     [string[]]$CaseIds,
-    [ValidateSet('Financial', 'Reports', 'Closure')][string]$Suite = 'Financial',
+    [ValidateSet('Financial', 'Reports', 'Closure', 'Market')][string]$Suite = 'Financial',
     [switch]$ApprovedReportData,
+    [switch]$ApprovedMarketData,
     [ValidateRange(0, 1000)][int]$ExpectedUnknownReservations = 0,
     [string]$FixtureFailAt,
     [switch]$ReviewEach,
@@ -19,6 +20,7 @@ $probeArguments = @('e2e/research-agent-financial-probe.mjs')
 $planArguments = @((Join-Path $projectRoot 'frontend/e2e/research-agent-financial-probe.mjs'), '--dry-run')
 if ($Suite -eq 'Reports') { $probeArguments += '--suite=reports'; $planArguments += '--suite=reports' }
 if ($Suite -eq 'Closure') { $probeArguments += '--suite=closure'; $planArguments += '--suite=closure' }
+if ($Suite -eq 'Market') { $probeArguments += '--suite=market'; $planArguments += '--suite=market' }
 $unknownArgument = "--expected-unknown=$ExpectedUnknownReservations"
 $probeArguments += $unknownArgument; $planArguments += $unknownArgument
 if ($ReviewEach) { $probeArguments += '--review-each'; $planArguments += '--review-each' }
@@ -35,6 +37,9 @@ if ($PSBoundParameters.ContainsKey('CaseIds')) {
 # 在读取 Key、启动服务或写测试数据之前核对本轮问题范围。
 $null = & $nodePath @planArguments
 if ($LASTEXITCODE -ne 0) { throw 'Invalid question selection; no service or model request was started' }
+if ($Suite -eq 'Market' -and ($Mode -ne 'Real' -or -not $ApprovedMarketData -or -not $ReviewEach -or -not $StreamAnswers -or $ContinueFrom)) {
+    throw 'Market requires explicitly approved real public market data, native streams and sequential review; continuation and fixture mode are forbidden'
+}
 $javaPath = if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin/java.exe'))) {
     Join-Path $env:JAVA_HOME 'bin/java.exe'
 } else { 'D:\Program Files\Java\jdk-17\bin\java.exe' }
@@ -49,7 +54,9 @@ $ledgerPath = Join-Path $projectRoot '.local/agent-experiment/budget.jsonl'
 if ($ContinueFrom) { $ContinueFrom = (Resolve-Path -LiteralPath $ContinueFrom -ErrorAction Stop).Path }
 $modelKey = 'offline-financial-fixture-key'
 if ($Mode -eq 'Real') {
-    if ($Suite -eq 'Reports') {
+    if ($Suite -eq 'Market') {
+        if (-not $ApprovedMarketData) { throw 'Real market data scope is required' }
+    } elseif ($Suite -eq 'Reports') {
         if (-not $ApprovedReportData) { throw 'Real mode requires the bounded report passages and question scope to have been explicitly authorized' }
     } elseif (-not $ApprovedFinancialData) { throw 'Real mode requires the financial data scope to have been explicitly authorized' }
     if (-not (Test-Path -LiteralPath $ledgerPath)) { throw 'The original experiment ledger is required; it must not be recreated' }
@@ -57,6 +64,17 @@ if ($Mode -eq 'Real') {
     $keyLine = Get-Content -LiteralPath $keyPath | Where-Object { $_ -match '^deepseek\.api-key\s*=' } | Select-Object -First 1
     $modelKey = ($keyLine -replace '^deepseek\.api-key\s*=', '').Trim()
     if ($modelKey -notmatch '^sk-\S+$') { throw 'A valid local DeepSeek Key is required; it is never printed or passed on the command line' }
+}
+$marketClientId = $null
+if ($Suite -eq 'Market') {
+    # 同一账号不可因验收再开一条行情连接；不关闭或复用不明身份的用户进程。
+    $existingMarket = @(Get-CimInstance Win32_Process -Filter "Name = 'java.exe' OR Name = 'javaw.exe' OR Name = 'longbridge.exe'" -ErrorAction Stop |
+        Where-Object { $_.Name -eq 'longbridge.exe' -or $_.CommandLine -match 'StockSystemApplication|stock-system-0.0.1-SNAPSHOT' })
+    if ($existingMarket.Count) { throw 'An existing application or CLI may own the local market connection; it was not stopped' }
+    $clientLine = Get-Content -LiteralPath (Join-Path $projectRoot '.env.longbridge-local.properties') |
+        Where-Object { $_ -match '^local\.longbridge\.client-id\s*=' } | Select-Object -First 1
+    $marketClientId = ($clientLine -replace '^local\.longbridge\.client-id\s*=', '').Trim()
+    if ($marketClientId -notmatch '^[0-9a-fA-F-]{36}$') { throw 'Existing local SDK client configuration is required; tokens are never read or modified' }
 }
 $testPorts = @(18082, 18083, 18084)
 if ($Suite -eq 'Reports') { $testPorts += 16335 }
@@ -92,7 +110,7 @@ try {
     $arguments = @('-jar', 'target/stock-system-0.0.1-SNAPSHOT.jar', '--spring.profiles.active=test',
         '--server.port=18082', '--server.address=127.0.0.1',
         '--spring.datasource.url=jdbc:mysql://localhost:3306/stock_system_test?createDatabaseIfNotExist=false&useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai',
-        '--stock-system.market.mode=mock', '--spring.ai.model.chat=deepseek', '--stock-system.agent.budget-yuan=10',
+        "--stock-system.market.mode=$(if ($Suite -eq 'Market') { 'longbridge' } else { 'mock' })", '--spring.ai.model.chat=deepseek', '--stock-system.agent.budget-yuan=10',
         '--spring.ai.deepseek.chat.model=deepseek-flash', '--spring.ai.deepseek.chat.thinking.type=disabled', '--spring.ai.deepseek.chat.max-tokens=2000')
     if ($Mode -eq 'Real') {
         $arguments += @('--spring.ai.deepseek.base-url=https://api.deepseek.com', "--stock-system.agent.experiment-ledger=$ledgerPath")
@@ -100,6 +118,10 @@ try {
     if ($Suite -eq 'Reports') {
         $arguments += @('--stock-system.agent.reports.enabled=true', '--stock-system.agent.reports.port=16335',
             "--stock-system.agent.reports.storage-directory=$reportRuntime", "--stock-system.agent.reports.catalog-directory=$(Join-Path $reportRuntime 'library')")
+    }
+    if ($Suite -eq 'Market') {
+        $arguments += @('--stock-system.market.longbridge.transport=sdk', "--stock-system.market.longbridge.client-id=$marketClientId",
+            '--stock-system.market.longbridge.minimum-request-interval=100ms', '--stock-system.market.redis.enabled=false')
     }
     $null = Start-Owned 'backend' $javaPath $arguments $projectRoot @{ DEEPSEEK_API_KEY = $modelKey; SPRING_AI_DEEPSEEK_API_KEY = $modelKey }
     $null = Start-Owned 'frontend' $nodePath @('node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '18083', '--strictPort') (Join-Path $projectRoot 'frontend') @{ VITE_API_TARGET = 'http://localhost:18082'; VITE_DEV_PORT = '18083' }
@@ -118,6 +140,7 @@ try {
         AGENT_FINANCIAL_PROBE_OUTPUT = $outputRoot; MYSQL_CLIENT_PATH = $mysqlPath;
         AGENT_FINANCIAL_CONTINUE_FROM = $ContinueFrom;
         AGENT_REPORT_MODEL_PROBE = if ($Mode -eq 'Real' -and $Suite -eq 'Reports') { 'true' } else { 'false' }
+        AGENT_MARKET_MODEL_PROBE = if ($Mode -eq 'Real' -and $Suite -eq 'Market') { 'true' } else { 'false' }
     }
     $runner.WaitForExit()
     $null = $owned[-1].OutTask.GetAwaiter().GetResult(); $null = $owned[-1].ErrTask.GetAwaiter().GetResult()
