@@ -30,6 +30,8 @@ group by opinion.research_cycle_id;
 
 上面是聚合分支的简化示例。完整旧 SQL 固定在 [对照基线](../../src/test/resources/performance/workspace-stock-list-before.sql)，当前 SQL 从 MyBatis 实际注册的 `MappedStatement` 取得，不另写一份候选 SQL 来代替生产映射。
 
+基线资源直接使用 JDBC 的 `?` 占位符，读取后由 `PreparedStatement` 绑定一个 `workspaceId`。Mapper 注解中的 `#{workspaceId}` 则先由 MyBatis 转为 JDBC 占位符，机制见 [官方参数说明](https://mybatis.org/mybatis-3/sqlmap-xml.html#Parameters)。普通 `.sql` 资源不经过 MyBatis，不能依靠 Java 字符串替换让文件中的模板语法在运行时才变成有效 SQL；两层的参数形式应与实际执行入口对应。
+
 业务语义保持：最近观点仍排除撤回并按时间／ID 稳定选择；观点数和参与人数继续包含本周期保留的撤回审计记录；历史周期和其他空间不混入当前统计。排序、返回字段和权限入口保持原职责。统计仍在一条 Mapper SQL 内完成，使用已有索引，本轮没有数据库结构迁移。
 
 ## 2. 实验条件与方法

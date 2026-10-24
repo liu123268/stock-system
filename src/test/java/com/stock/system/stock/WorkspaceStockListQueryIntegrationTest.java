@@ -163,8 +163,8 @@ class WorkspaceStockListQueryIntegrationTest extends MySqlIntegrationTest {
         try (var input = getClass().getResourceAsStream("/performance/workspace-stock-list-before.sql")) {
             assertThat(input).isNotNull();
             String sql = new String(input.readAllBytes(), StandardCharsets.UTF_8);
-            int bindings = sql.split("#\\{workspaceId}", -1).length - 1;
-            return new Query(sql.replace("#{workspaceId}", "?"), bindings);
+            // 资源本身是 JDBC SQL；不能依赖 Java 替换来掩盖普通 .sql 文件中的模板语法。
+            return new Query(sql, 1);
         }
     }
 

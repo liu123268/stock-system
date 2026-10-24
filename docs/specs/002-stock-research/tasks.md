@@ -345,6 +345,8 @@ Offline **7 项判定通过**，目录 **target/longbridge-oauth-observation-202
 
 本轮文档检查通过 **72 份 Markdown、1206 个本地链接／锚点**，git diff --check 通过；观察器源码另核对无尾随空白。文件时间仅为观测元数据，不保存或推算实际凭据过期字段；SDK 处理真实凭据与观察器不解析凭据分别表述。
 
+同日 **22:32** 按用户要求继续核对唯一未验收项，再运行一次已有 Live 入口，证据为 **target/longbridge-oauth-observation-20261023-223244-3e8b43c4**。报价成功、授权回调 0，缓存元数据仍未变化，结果仍为 **VALID_QUOTE_NO_CACHE_WRITE**，不能勾选真实续期验收。进程 16824 已退出，独立清理核对该 PID 不存在且无所属监听；无数据库连接、模型请求或云端操作，预算账本哈希不变。当前本机开发和 SQL 修复已完成，尚未提交不表示修复未生效；余下真实续期验证须等待 SDK 正常请求遇到自然临近到期，不通过重复报价或伪造过期制造完成。
+
 ### CODE-212：共享自选统计 SQL 优化（2026-10-23）
 
 - [x] 补阶段 7 既有 SQL 对照交付。`WorkspaceStockMapper.selectActiveList` 的统计分支先约束当前空间／活动周期，再沿已有索引聚合；保留一条 Mapper SQL、原返回和排序、最近未撤回观点及包含撤回的审计计数。本轮没有新索引、Flyway 迁移或开发库写入。机制与完整实验只见 [性能报告](../../engineering/sql-performance.md)。
@@ -352,3 +354,13 @@ Offline **7 项判定通过**，目录 **target/longbridge-oauth-observation-202
 - [x] 首轮 `target/sql-list-performance-20261023/` 三档完整对照保留；增加清理后的统计恢复与证据目录保护后，普通全量及打包通过，再执行最终独立实验 `target/sql-list-performance-20261023-final/`。全量／单独启用的计数、实际数据量、SQL 哈希、配对耗时与估计／实际计划只在报告维护，不跨轮拼接样本。最终实验自 19:11:38 起，前一次全量／打包于 19:11:29 完成，数据库实验无并行重叠。最终 JAR SHA-256 `ac1a6f4fd257ef4561122c65b59b03ac9b4043bcf354bbf4d0c704adc09169ee`。
 - [x] 最终 fixture 涉及三账号、十只模拟股票、目标与背景空间／成员／共享股票／周期／观点，当前活动观点固定，最大背景十万条。finally 按本轮 ID 精确删除七表数据，`statisticsRestored=true`；额外 SQL 复核业务十五表及本轮模拟股票均 0、测试库 V16、命名锁空闲，见 `target/sql-list-test-database-audit.txt`。进程审计 `target/sql-list-final-process-audit.json` 确认无本轮项目 Java／Node／Python、无相关端口残留，默认仍 dev／`stock_system`；用户 MySQL 服务保留。
 - 原费用账本 SHA-256 `fea2c9edcc7916eca403652ffbaeb784d180a14bd73844d3a6700ccc4e676d08` 不变，新增模型／行情请求和费用 0；未启动浏览器或日常 dev 服务，没有云端连接、发布、提交或推送。统计分支收益不代表整站／生产容量，零背景数据的开销与实验局限保留在报告；个人教学与能力检查仍暂停。
+
+#### 提交后参数格式复核（2026-10-23）
+
+用户在 `9be2599` 提交后提及曾看到一条错误，未保留位置／原文且无法回忆；本轮不把推断写成该条错误的确定根因。提交时工作区干净，两个本次新增／修改 Java 源码在独立输出目录重新 javac，退出 0、诊断 0；IDE 日志没有提供这次错误的可用明细。
+
+发现并只读复现另一项确定问题：基线普通 `.sql` 保存了 `#{workspaceId}`，直接交给 MySQL 解析产生 1064，转成 JDBC 参数再绑定则 EXPLAIN 通过；运行测试原先主动替换模板，所以此前回归成功与资源自身语法问题可以同时成立。已把资源改成 `?`，读取器直接加载并绑定一个值，正文说明只在 [报告](../../engineering/sql-performance.md) 维护。
+
+修复前渲染 SQL 与修复后资源逐字节相同，SHA-256 仍为报告原基线 `d637285cb5373d64d616eb2b4bf1cdd614418d2bf61395f0083c8f595e2bb774`，原性能样本保留，未重跑规模／收费实验。证据为 `target/commit-error-check-20261023-200607/` 下独立编译、SQL 复现及哈希核对；定向 `WorkspaceStockListQueryIntegrationTest,StockResearchIntegrationTest` **23 项，22 通过、1 规模开关跳过，失败／错误 0**，见 `target/commit-error-targeted-tests.log`。本轮没有宣称重跑全量或确认原 IDEA 提示已消失。
+
+本次两组列表 fixture 的七表清理均为 0，额外只读审计十五业务表及本轮模拟股票为 0，命名锁空闲；无项目 Java／相关端口残留，见 `target/commit-error-database-audit.txt`、`target/commit-error-process-audit.json`。原费用账本未变、无新费用或云端操作；原提交历史保留，修复尚未提交／推送。

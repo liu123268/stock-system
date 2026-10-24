@@ -48,7 +48,7 @@ JOIN (
     FROM stock_opinion
     GROUP BY research_cycle_id
 ) opinion_stats ON opinion_stats.research_cycle_id = rc.id
-WHERE ws.workspace_id = #{workspaceId}
+WHERE ws.workspace_id = ?
 ORDER BY
     CASE rc.attention_level WHEN 'FOCUS' THEN 0 ELSE 1 END,
     rc.started_at DESC,
